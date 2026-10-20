@@ -23,3 +23,13 @@ for (const width of [360, 390, 768, 1280]) {
     expect(riskSize.content).toBeLessThanOrEqual(riskSize.viewport + 1);
   });
 }
+
+test("audit panel requires connected API and shows no fabricated events", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Menüyü aç" }).click();
+  await page.getByRole("button", { name: "Olay Kayıtları" }).click();
+  await expect(page.getByRole("heading", { name: "Olay Kayıtları", level: 1 })).toBeVisible();
+  await expect(page.getByText("Yerel API bağlantısı gerekiyor")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Geçmişi Yenile" })).toBeDisabled();
+});
