@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hmac import compare_digest
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import Engine, create_engine, select, text, update
+from sqlalchemy import Engine, create_engine, text, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -67,7 +67,7 @@ def create_app(
     def liveness() -> dict[str, str]:
         return {"status": "alive"}
 
-    @app.get("/health/ready")
+    @app.get("/health/ready", response_model=None)
     def readiness() -> JSONResponse | dict[str, str]:
         if db_engine is None:
             return JSONResponse(status_code=503, content={"status": "db_unconfigured"})
@@ -101,7 +101,7 @@ def create_app(
     def put_settings(payload: SettingsUpdate) -> SettingsSnapshot:
         if db_engine is None:
             raise HTTPException(status_code=503, detail="Database not configured")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         with Session(db_engine) as session:
             try:
                 with session.begin():
@@ -137,7 +137,9 @@ def create_app(
                         )
                     )
             except IntegrityError as exc:
-                raise HTTPException(status_code=409, detail="Stale settings version; reload") from exc
+                raise HTTPException(
+                    status_code=409, detail="Stale settings version; reload"
+                ) from exc
             except SQLAlchemyError as exc:
                 raise HTTPException(status_code=503, detail="Database unavailable") from exc
         return SettingsSnapshot(version=payload.expected_version + 1, settings=payload.settings)
