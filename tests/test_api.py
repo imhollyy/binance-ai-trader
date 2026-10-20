@@ -110,3 +110,28 @@ def test_audit_written(client: TestClient) -> None:
         "/api/v1/settings", headers=h, json={"expected_version": 0, "settings": settings}
     )
     assert resp.status_code == 200
+
+
+def test_audit_endpoint_has_no_settings_payload(client: TestClient) -> None:
+    headers = {"X-Admin-Token": TOKEN}
+    initial = client.get("/api/v1/audit", headers=headers)
+    assert initial.status_code == 200
+    assert initial.json() == {"events": []}
+    assert client.get("/api/v1/audit").status_code == 401
+    snapshot = client.get("/api/v1/settings", headers=headers).json()
+    saved = client.put(
+        "/api/v1/settings",
+        headers=headers,
+        json={"expected_version": 0, "settings": snapshot["settings"]},
+    )
+    assert saved.status_code == 200
+    audit = client.get("/api/v1/audit?limit=1", headers=headers)
+    assert audit.status_code == 200
+    assert len(audit.json()["events"]) == 1
+    event = audit.json()["events"][0]
+    assert event["version"] == 1
+    assert event["action"] == "settings_updated"
+    assert "data" not in event
+    assert "spot_capital_usdt" not in str(event)
+    assert client.get("/api/v1/audit?limit=0", headers=headers).status_code == 422
+    assert client.get("/api/v1/audit?limit=101", headers=headers).status_code == 422
