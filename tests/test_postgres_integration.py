@@ -189,8 +189,18 @@ def test_one_shot_public_ingestion_is_idempotent_and_reports_missing(
         assert "X-MBX-APIKEY" not in request.headers
         rows = [
             [
-                ms, "100", "110", "90", "105.000000000000000001", "5",
-                ms + 59_999, "0", 1, "0", "0", "0",
+                ms,
+                "100",
+                "110",
+                "90",
+                "105.000000000000000001",
+                "5",
+                ms + 59_999,
+                "0",
+                1,
+                "0",
+                "0",
+                "0",
             ]
             for ms in times
         ]
@@ -224,9 +234,7 @@ def test_banned_public_endpoint_never_writes_to_postgres(postgres_engine: Engine
 
     client = PublicSpotMarketClient(transport=httpx.MockTransport(handler))
     with pytest.raises(MarketRateLimited) as caught:
-        ingest_once(
-            postgres_engine, client, symbol="BTCUSDT", interval="1m", now_ms=240_000
-        )
+        ingest_once(postgres_engine, client, symbol="BTCUSDT", interval="1m", now_ms=240_000)
     assert caught.value.retry_after_seconds == 60
     assert count == 1
     with Session(postgres_engine) as session:
