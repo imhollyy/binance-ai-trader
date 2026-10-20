@@ -121,24 +121,33 @@ def register_paper_spot_read_route(
                     .order_by(PaperSpotJournalRow.id.desc())
                     .limit(events_limit)
                 ).all()
-                total_positions = session.scalar(
-                    select(func.count())
-                    .select_from(PaperSpotPositionRow)
-                    .where(PaperSpotPositionRow.account_id == account.id)
-                ) or 0
-                open_positions = session.scalar(
-                    select(func.count())
-                    .select_from(PaperSpotPositionRow)
-                    .where(
-                        PaperSpotPositionRow.account_id == account.id,
-                        PaperSpotPositionRow.status == "open",
+                total_positions = (
+                    session.scalar(
+                        select(func.count())
+                        .select_from(PaperSpotPositionRow)
+                        .where(PaperSpotPositionRow.account_id == account.id)
                     )
-                ) or 0
-                total_events = session.scalar(
-                    select(func.count())
-                    .select_from(PaperSpotJournalRow)
-                    .where(PaperSpotJournalRow.account_id == account.id)
-                ) or 0
+                    or 0
+                )
+                open_positions = (
+                    session.scalar(
+                        select(func.count())
+                        .select_from(PaperSpotPositionRow)
+                        .where(
+                            PaperSpotPositionRow.account_id == account.id,
+                            PaperSpotPositionRow.status == "open",
+                        )
+                    )
+                    or 0
+                )
+                total_events = (
+                    session.scalar(
+                        select(func.count())
+                        .select_from(PaperSpotJournalRow)
+                        .where(PaperSpotJournalRow.account_id == account.id)
+                    )
+                    or 0
+                )
                 return PaperSpotLedgerView(
                     initialized=True,
                     account=PaperSpotAccountView(
