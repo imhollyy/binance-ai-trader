@@ -42,7 +42,8 @@ def test_paper_spot_read_auth_origin_and_empty_state(
         .status_code
         == 403
     )
-    assert client.get(uri, headers={"X-Admin-Token": TOKEN, "Host": "evil.example"}).status_code == 400
+    host_response = client.get(uri, headers={"X-Admin-Token": TOKEN, "Host": "evil.example"})
+    assert host_response.status_code == 400
     response = client.get(uri, headers={"X-Admin-Token": TOKEN})
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store, private"
@@ -56,7 +57,8 @@ def test_paper_spot_read_auth_origin_and_empty_state(
     assert body["total_positions"] == body["open_positions"] == body["total_events"] == 0
     assert session.scalar(select(func.count()).select_from(PaperSpotAccountRow)) == 0
     assert session.scalar(select(func.count()).select_from(PaperSpotJournalRow)) == 0
-    assert client.get(uri + "?events_limit=101", headers={"X-Admin-Token": TOKEN}).status_code == 422
+    invalid_limit = client.get(uri + "?events_limit=101", headers={"X-Admin-Token": TOKEN})
+    assert invalid_limit.status_code == 422
 
 
 def test_paper_account_values_are_strings_not_live_equity(
