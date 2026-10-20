@@ -104,16 +104,19 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
 
     with Session(engine) as session:
         assert open_paper_spot(session, _intent("first"), "buy-first") == first
-    with Session(engine) as session, pytest.raises(
-        PaperExecutionRejected, match="paper_idempotency_conflict"
+    with (
+        Session(engine) as session,
+        pytest.raises(PaperExecutionRejected, match="paper_idempotency_conflict"),
     ):
         open_paper_spot(session, _intent("first", price="101"), "buy-first")
-    with Session(engine) as session, pytest.raises(
-        PaperExecutionRejected, match="duplicate_paper_trade_id"
+    with (
+        Session(engine) as session,
+        pytest.raises(PaperExecutionRejected, match="duplicate_paper_trade_id"),
     ):
         open_paper_spot(session, _intent("first"), "buy-other")
-    with Session(engine) as session, pytest.raises(
-        PaperExecutionRejected, match="unmarked_open_position_fail_closed"
+    with (
+        Session(engine) as session,
+        pytest.raises(PaperExecutionRejected, match="unmarked_open_position_fail_closed"),
     ):
         open_paper_spot(session, _intent("second"), "buy-second")
     assert _counts(engine) == (1, 2, 1)
@@ -123,33 +126,32 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
         settings_row = session.get(TradingSettingsRow, 1)
         assert settings_row is not None
         settings_row.version = 2
-        settings_row.data = RiskSettings(
-            bot_enabled=False, manual_approval=True
-        ).model_dump(mode="json")
-    with Session(engine) as session, pytest.raises(
-        PaperExecutionRejected, match="manual_approval_required"
+        settings_row.data = RiskSettings(bot_enabled=False, manual_approval=True).model_dump(
+            mode="json"
+        )
+    with (
+        Session(engine) as session,
+        pytest.raises(PaperExecutionRejected, match="manual_approval_required"),
     ):
         close_paper_spot(session, "first", D("110"), "sell-first")
     with Session(engine) as session:
-        closed = close_paper_spot(
-            session, "first", D("110"), "sell-first", explicit_approval=True
-        )
+        closed = close_paper_spot(session, "first", D("110"), "sell-first", explicit_approval=True)
     assert closed.event_type == "spot_sell"
     assert closed.cash_after_usdt == D("1009.685005000000000000")
     assert closed.realized_pnl_delta_usdt == D("9.685005000000000000")
     assert _counts(engine) == (1, 3, 1)
     with Session(engine) as session:
         assert close_paper_spot(session, "first", D("110"), "sell-first") == closed
-    with Session(engine) as session, pytest.raises(
-        PaperExecutionRejected, match="paper_idempotency_conflict"
+    with (
+        Session(engine) as session,
+        pytest.raises(PaperExecutionRejected, match="paper_idempotency_conflict"),
     ):
         close_paper_spot(session, "first", D("109"), "sell-first")
-    with Session(engine) as session, pytest.raises(
-        PaperExecutionRejected, match="paper_position_not_open"
+    with (
+        Session(engine) as session,
+        pytest.raises(PaperExecutionRejected, match="paper_position_not_open"),
     ):
-        close_paper_spot(
-            session, "first", D("110"), "sell-again", explicit_approval=True
-        )
+        close_paper_spot(session, "first", D("110"), "sell-again", explicit_approval=True)
 
     # A new SQLAlchemy engine (equivalent to an API process restart) sees the same
     # ledger receipt and settled cash, rather than silently resetting the account.
@@ -163,21 +165,20 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
     finally:
         restarted.dispose()
 
-    with Session(engine) as session, pytest.raises(
-        PaperExecutionRejected, match="paper_bot_disabled"
+    with (
+        Session(engine) as session,
+        pytest.raises(PaperExecutionRejected, match="paper_bot_disabled"),
     ):
         open_paper_spot(session, _intent("second"), "buy-second")
     with Session(engine) as session, session.begin():
         settings_row = session.get(TradingSettingsRow, 1)
         assert settings_row is not None
         settings_row.version = 3
-        settings_row.data = RiskSettings(
-            bot_enabled=True, manual_approval=False
-        ).model_dump(mode="json")
+        settings_row.data = RiskSettings(bot_enabled=True, manual_approval=False).model_dump(
+            mode="json"
+        )
 
-    def fail_journal_write(
-        session: Session, _context: object, _instances: object
-    ) -> None:
+    def fail_journal_write(session: Session, _context: object, _instances: object) -> None:
         if any(isinstance(obj, PaperSpotJournalRow) for obj in session.new):
             raise RuntimeError("simulated_journal_failure")
 
@@ -199,9 +200,7 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
         assert second.event_type == "spot_buy"
     for bad in (D("NaN"), D("1.0000000000000000001"), D("Infinity")):
         with Session(engine) as session, pytest.raises(PaperExecutionRejected):
-            open_paper_spot(
-                session, _intent("invalid", quantity=str(bad)), "buy-invalid"
-            )
+            open_paper_spot(session, _intent("invalid", quantity=str(bad)), "buy-invalid")
 
     with Session(engine) as session:
         final = close_paper_spot(session, "second", D("110"), "sell-second")
@@ -213,8 +212,9 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
         row = session.get(PaperSpotAccountRow, 1)
         assert row is not None
         row.cash_usdt += D("1")
-    with Session(engine) as session, pytest.raises(
-        PaperExecutionRejected, match="paper_ledger_reconciliation_failed"
+    with (
+        Session(engine) as session,
+        pytest.raises(PaperExecutionRejected, match="paper_ledger_reconciliation_failed"),
     ):
         open_paper_spot(session, _intent("third"), "buy-third")
 
