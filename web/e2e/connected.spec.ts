@@ -29,6 +29,11 @@ test("connected paper risk settings persist from mobile panel into PostgreSQL", 
   await expect(page.getByText("2.345 USDT")).toBeVisible();
   await expect(page.getByText("150 USDT")).toBeVisible();
 
+  await page.getByRole("button", { name: "Menüyü aç" }).click();
+  await page.getByRole("button", { name: "Piyasa Verileri" }).click();
+  await page.getByRole("button", { name: "Geçmişi Göster" }).click();
+  await expect(page.getByText("Henüz kayıtlı mum verisi yok")).toBeVisible();
+
   await page.reload();
   await expect(page.getByText("Gerçek alım-satım kapalı.", { exact: false })).toBeVisible();
 });
