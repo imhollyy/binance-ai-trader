@@ -17,6 +17,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from binance_ai_trader.api_config import ApiConfig
 from binance_ai_trader.models import AuditRow, SpotCandleRow, TradingSettingsRow
+from binance_ai_trader.paper_read_api import register_paper_spot_read_route
 from binance_ai_trader.risk_schemas import RiskSettings, SettingsSnapshot, SettingsUpdate
 
 
@@ -240,6 +241,7 @@ def create_app(
                 raise HTTPException(status_code=503, detail="Database unavailable") from exc
         return SettingsSnapshot(version=payload.expected_version + 1, settings=payload.settings)
 
+    register_paper_spot_read_route(app, require_admin, db_engine)
     return app
 
 
