@@ -1,0 +1,31 @@
+services:
+  database:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trader
+      POSTGRES_DB: trader_dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - paper_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trader -d trader_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      TRADING_MODE: paper
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?Set ADMIN_TOKEN in .env}
+      DATABASE_URL: postgresql+psycopg://trader:${POSTGRES_PASSWORD}@database:5432/trader_dev
+    ports:
+      - "127.0.0.1:8000:8000"
+
+volumes:
+  paper_db:
