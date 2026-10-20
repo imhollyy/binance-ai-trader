@@ -5,8 +5,8 @@ import {
   Eye, EyeOff, FileClock, Layers3, LockKeyhole, Menu, Save,
   Settings2, ShieldCheck, ShieldAlert, Wallet, X
 } from "lucide-react";
-import { useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
 type Section = "dashboard" | "market" | "bot" | "risk" | "strategies" | "positions" | "logs";
 type Market = "spot" | "futures";
@@ -58,10 +58,10 @@ const nav = [
 function Row({label, desc, children}:{label:string;desc?:string;children:ReactNode}) {
   return <div className="setting-row"><div><strong>{label}</strong>{desc && <small>{desc}</small>}</div><div className="control">{children}</div></div>;
 }
-function NumberBox({value, onChange, min, max, step=1, unit=""}:{
-  value:number;onChange:(n:number)=>void;min:number;max:number;step?:number;unit?:string;
+function NumberBox({label, value, onChange, min, max, step=1, unit=""}:{
+  label:string;value:number;onChange:(n:number)=>void;min:number;max:number;step?:number;unit?:string;
 }) {
-  return <div className="num-box"><input aria-label={"Miktar " + unit} type="number" inputMode="decimal"
+  return <div className="num-box"><input aria-label={label} type="number" inputMode="decimal"
     min={min} max={max} step={step} value={value}
     onChange={event=>onChange(Number(event.target.value))}/><span>{unit}</span></div>;
 }
@@ -75,6 +75,8 @@ export default function Dashboard() {
   const [section,setSection] = useState<Section>("dashboard");
   const [drawer,setDrawer] = useState(false);
   const [dialog,setDialog] = useState(false);
+  const dialogRef = useRef<HTMLElement>(null);
+  const dialogOpenerRef = useRef<HTMLElement | null>(null);
   const [secret,setSecret] = useState("");
   const [visible,setVisible] = useState(false);
   const [address,setAddress] = useState("http://127.0.0.1:8000");
@@ -89,6 +91,42 @@ export default function Dashboard() {
   const [spotInterval,setSpotInterval] = useState<SpotInterval>("1m");
   const [storedCandles,setStoredCandles] = useState<StoredSpotCandle[]>([]);
   const [marketLoad,setMarketLoad] = useState<"idle"|"loading"|"ready"|"error">("idle");
+
+  useEffect(() => {
+    if (!dialog) return;
+    dialogRef.current?.focus();
+    return () => dialogOpenerRef.current?.focus();
+  }, [dialog]);
+
+  function openDialog(opener: HTMLElement) {
+    dialogOpenerRef.current = opener;
+    setDialog(true);
+  }
+
+  function handleDialogKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setDialog(false);
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]'
+    ) ?? []);
+    if (!controls.length) {
+      event.preventDefault();
+      return;
+    }
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   function change<K extends keyof Risk>(key:K, value:Risk[K]) {
     setRisk(current => ({...current,[key]:value}));
@@ -175,7 +213,7 @@ export default function Dashboard() {
     <Save size={16}/>{busy?"Kaydediliyor":"Ayarları Kaydet"}</button>;
   return <div className="shell">
     {drawer&&<button className="scrim" aria-label="Menüyü kapat" onClick={()=>setDrawer(false)}/>}
-    <aside className={"sidebar "+(drawer?"opened":"")}>
+    <aside inert={dialog} className={"sidebar "+(drawer?"opened":"")}>
       <div className="identity">
         <div className="logo"><Activity size={23}/></div><div><strong>TradePilot</strong><small>AI Trading Console</small></div>
         <button className="mobile-close" onClick={()=>setDrawer(false)} aria-label="Kapat"><X size={20}/></button>
@@ -188,12 +226,12 @@ export default function Dashboard() {
       )}</nav>
       <div className="sidebar-footer"><LockKeyhole size={16}/> PAPER ONLY<br/> Canlı emir özelliği yok.</div>
     </aside>
-    <main className="main">
+    <main inert={dialog} className="main">
       <header className="toolbar">
         <div className="toolbar-left"><button className="hamburger" onClick={()=>setDrawer(true)} aria-label="Menüyü aç">
           <Menu size={23}/></button><span>TradePilot</span><ChevronRight size={14}/><strong>{activeTitle}</strong></div>
         <div className="toolbar-right"><span className="pill">● PAPER MODE</span>
-          <button className="connect-button" aria-label={connected?"Yerel API Bağlı":"API Bağlan"} onClick={()=>setDialog(true)}><Settings2 size={17}/>
+          <button className="connect-button" aria-label={connected?"Yerel API Bağlı":"API Bağlan"} onClick={event=>openDialog(event.currentTarget)}><Settings2 size={17}/>
           <span>{connected?"Yerel API Bağlı":"API Bağlan"}</span></button></div>
       </header>
       <div className="content">
@@ -303,8 +341,8 @@ export default function Dashboard() {
         {section==="bot"&&<section className="surface form">
           <div className="section-title"><div><h2>Bot Yapılandırması</h2><p>Bu ayarlar tek başına işlem başlatmaz.</p></div>{saveButton}</div>
           <h3>Hedef Piyasa</h3><div className="segmented" role="group" aria-label="Piyasa tercihi">
-            <button className={risk.market_type==="spot"?"selected":""} onClick={()=>market("spot")}>Spot</button>
-            <button className={risk.market_type==="futures"?"selected":""} onClick={()=>market("futures")}>Futures (Sanal)</button>
+            <button aria-pressed={risk.market_type==="spot"} className={risk.market_type==="spot"?"selected":""} onClick={()=>market("spot")}>Spot</button>
+            <button aria-pressed={risk.market_type==="futures"} className={risk.market_type==="futures"?"selected":""} onClick={()=>market("futures")}>Futures (Sanal)</button>
           </div>
           <Row label="Botu etkinleştirme isteği" desc="Worker yok; sadece gelecekte uygulanmak üzere saklanır.">
             <Switch label="Bot etkinleşme tercihi" value={risk.bot_enabled} onChange={v=>change("bot_enabled",v)}/></Row>
@@ -318,15 +356,15 @@ export default function Dashboard() {
           <div className="section-title"><div><h2>Risk Yönetimi</h2><p>Spot ve Futures bütçelerini ayrı yönet.</p></div>{saveButton}</div>
           <h3>Sanal Sermaye</h3>
           <div className="field-grid">
-            <Row label="Spot bütçesi" desc="0 – 1.000.000 USDT"><NumberBox unit="USDT" value={risk.spot_capital_usdt} min={0} max={1000000} onChange={v=>change("spot_capital_usdt",v)}/></Row>
-            <Row label="Futures bütçesi" desc="0 – 1.000.000 USDT"><NumberBox unit="USDT" value={risk.futures_capital_usdt} min={0} max={1000000} onChange={v=>change("futures_capital_usdt",v)}/></Row>
+            <Row label="Spot bütçesi" desc="0 – 1.000.000 USDT"><NumberBox label="Spot bütçesi (USDT)" unit="USDT" value={risk.spot_capital_usdt} min={0} max={1000000} onChange={v=>change("spot_capital_usdt",v)}/></Row>
+            <Row label="Futures bütçesi" desc="0 – 1.000.000 USDT"><NumberBox label="Futures bütçesi (USDT)" unit="USDT" value={risk.futures_capital_usdt} min={0} max={1000000} onChange={v=>change("futures_capital_usdt",v)}/></Row>
           </div>
           <h3>Risk Limitleri</h3><div className="field-grid">
-            <Row label="İşlem başına risk" desc="%0,05 – %2"><NumberBox unit="%" step={0.05} min={0.05} max={2} value={risk.risk_per_trade_pct} onChange={v=>change("risk_per_trade_pct",v)}/></Row>
-            <Row label="Günlük zarar sınırı" desc="%0,1 – %5"><NumberBox unit="%" step={0.1} min={0.1} max={5} value={risk.daily_loss_limit_pct} onChange={v=>change("daily_loss_limit_pct",v)}/></Row>
-            <Row label="Maksimum düşüş" desc="%1 – %15"><NumberBox unit="%" min={1} max={15} value={risk.max_drawdown_pct} onChange={v=>change("max_drawdown_pct",v)}/></Row>
-            <Row label="Açık pozisyon sayısı" desc="1 – 10"><NumberBox min={1} max={10} value={risk.max_open_positions} onChange={v=>change("max_open_positions",v)}/></Row>
-            <Row label="Maksimum kaldıraç" desc="Spot: 1×, sanal Futures: 1–5×"><NumberBox unit="×" min={1} max={risk.market_type==="spot"?1:5} value={risk.max_leverage} onChange={v=>change("max_leverage",v)}/></Row>
+            <Row label="İşlem başına risk" desc="%0,05 – %2"><NumberBox label="İşlem başına risk (%)" unit="%" step={0.05} min={0.05} max={2} value={risk.risk_per_trade_pct} onChange={v=>change("risk_per_trade_pct",v)}/></Row>
+            <Row label="Günlük zarar sınırı" desc="%0,1 – %5"><NumberBox label="Günlük zarar sınırı (%)" unit="%" step={0.1} min={0.1} max={5} value={risk.daily_loss_limit_pct} onChange={v=>change("daily_loss_limit_pct",v)}/></Row>
+            <Row label="Maksimum düşüş" desc="%1 – %15"><NumberBox label="Maksimum düşüş (%)" unit="%" min={1} max={15} value={risk.max_drawdown_pct} onChange={v=>change("max_drawdown_pct",v)}/></Row>
+            <Row label="Açık pozisyon sayısı" desc="1 – 10"><NumberBox label="Açık pozisyon sayısı" min={1} max={10} value={risk.max_open_positions} onChange={v=>change("max_open_positions",v)}/></Row>
+            <Row label="Maksimum kaldıraç" desc="Spot: 1×, sanal Futures: 1–5×"><NumberBox label="Maksimum kaldıraç (×)" unit="×" min={1} max={risk.market_type==="spot"?1:5} value={risk.max_leverage} onChange={v=>change("max_leverage",v)}/></Row>
           </div>
           <Row label="Stop-loss zorunlu" desc="Güvenlik gereği kapatılamaz."><Switch label="Stop-loss zorunlu" value={true} onChange={()=>{}} disabled/></Row>
         </section>}
@@ -359,8 +397,8 @@ export default function Dashboard() {
         <footer>TradePilot · Local Development · Gerçek işlemler kapalı</footer>
       </div>
     </main>
-    {dialog&&<div className="modal-layer"><button className="modal-scrim" aria-label="Kapat"
-      onClick={()=>setDialog(false)}/><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-heading">
+    {dialog&&<div className="modal-layer"><button className="modal-scrim" tabIndex={-1} aria-hidden="true"
+      onClick={()=>setDialog(false)}/><section ref={dialogRef} tabIndex={-1} onKeyDown={handleDialogKeyDown} className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-heading">
       <div className="modal-heading"><div className="modal-icon"><LockKeyhole size={23}/></div>
         <button onClick={()=>setDialog(false)} aria-label="Kapat"><X size={20}/></button></div>
       <h2 id="modal-heading">Yerel API Bağlantısı</h2>

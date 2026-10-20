@@ -14,9 +14,8 @@ test("connected paper risk settings persist from mobile panel into PostgreSQL", 
 
   await page.getByRole("button", { name: "Menüyü aç" }).click();
   await page.getByRole("button", { name: "Risk Yönetimi" }).click();
-  const budgets = page.getByRole("spinbutton", { name: "Miktar USDT" });
-  await budgets.nth(0).fill("2345");
-  await budgets.nth(1).fill("150");
+  await page.getByRole("spinbutton", { name: "Spot bütçesi (USDT)" }).fill("2345");
+  await page.getByRole("spinbutton", { name: "Futures bütçesi (USDT)" }).fill("150");
   await page.getByRole("button", { name: "Ayarları Kaydet" }).click();
   await expect(page.getByRole("status")).toContainText("veritabanına kaydedildi");
 
