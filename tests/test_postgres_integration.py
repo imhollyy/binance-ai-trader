@@ -239,3 +239,29 @@ def test_banned_public_endpoint_never_writes_to_postgres(postgres_engine: Engine
     assert count == 1
     with Session(postgres_engine) as session:
         assert session.query(SpotCandleRow).count() == 0
+
+
+def test_postgres_stored_market_api_preserves_decimal_text(postgres_engine: Engine) -> None:
+    item = Candle(
+        symbol="ETHUSDT",
+        interval="5m",
+        open_time_ms=0,
+        close_time_ms=299_999,
+        open=Decimal("200.123456789123456789"),
+        high=Decimal("210.123456789123456789"),
+        low=Decimal("190.000000000000000001"),
+        close=Decimal("205.123456789123456789"),
+        volume=Decimal("5.123456789123456789"),
+    )
+    with Session(postgres_engine) as session, session.begin():
+        assert save_closed_candles(session, [item], now_ms=300_000) == 1
+    app = create_app(config=ApiConfig(database_url=None, admin_token=TOKEN), engine=postgres_engine)
+    with TestClient(app) as client:
+        result = client.get(
+            "/api/v1/market/candles?symbol=ETHUSDT&interval=5m",
+            headers=HEADERS,
+        )
+        assert result.status_code == 200
+        assert result.json()["source"] == "stored_public_spot"
+        assert result.json()["candles"][0]["close"] == "205.123456789123456789"
+        assert result.json()["candles"][0]["volume"] == "5.123456789123456789"

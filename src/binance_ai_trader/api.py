@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from hmac import compare_digest
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from binance_ai_trader.api_config import ApiConfig
-from binance_ai_trader.models import AuditRow, TradingSettingsRow
+from binance_ai_trader.models import AuditRow, SpotCandleRow, TradingSettingsRow
 from binance_ai_trader.risk_schemas import RiskSettings, SettingsSnapshot, SettingsUpdate
 
 
@@ -29,6 +30,25 @@ class AuditEvent(BaseModel):
 
 class AuditLog(BaseModel):
     events: list[AuditEvent]
+
+
+class StoredSpotCandle(BaseModel):
+    """Closed OHLCV data from storage; decimals serialize as JSON strings."""
+
+    open_time_ms: int
+    close_time_ms: int
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: Decimal
+
+
+class StoredCandleHistory(BaseModel):
+    source: str = "stored_public_spot"
+    symbol: str
+    interval: str
+    candles: list[StoredSpotCandle]
 
 
 class RuntimeStatus(BaseModel):
@@ -127,6 +147,49 @@ def create_app(
                         )
                         for row in entries
                     ]
+                )
+        except SQLAlchemyError as exc:
+            raise HTTPException(status_code=503, detail="Database unavailable") from exc
+
+    @app.get("/api/v1/market/candles", dependencies=[Depends(require_admin)])
+    def stored_spot_candles(
+        symbol: str = Query(default="BTCUSDT", pattern=r"^(BTCUSDT|ETHUSDT)$"),
+        interval: str = Query(default="1m", pattern=r"^(1m|5m|15m)$"),
+        limit: int = Query(default=30, ge=1, le=100),
+    ) -> StoredCandleHistory:
+        """Read only completed Spot candles already stored in PostgreSQL.
+
+        This endpoint NEVER fetches Binance or claims to serve live prices.
+        """
+
+        if db_engine is None:
+            raise HTTPException(status_code=503, detail="Database not configured")
+        try:
+            with Session(db_engine) as session:
+                rows = session.scalars(
+                    select(SpotCandleRow)
+                    .where(
+                        SpotCandleRow.symbol == symbol,
+                        SpotCandleRow.interval == interval,
+                    )
+                    .order_by(SpotCandleRow.open_time_ms.desc())
+                    .limit(limit)
+                ).all()
+                return StoredCandleHistory(
+                    symbol=symbol,
+                    interval=interval,
+                    candles=[
+                        StoredSpotCandle(
+                            open_time_ms=row.open_time_ms,
+                            close_time_ms=row.close_time_ms,
+                            open=row.open,
+                            high=row.high,
+                            low=row.low,
+                            close=row.close,
+                            volume=row.volume,
+                        )
+                        for row in rows
+                    ],
                 )
         except SQLAlchemyError as exc:
             raise HTTPException(status_code=503, detail="Database unavailable") from exc

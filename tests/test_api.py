@@ -1,15 +1,17 @@
 """FastAPI contract: safe status, authentication and optimistic settings updates."""
 
 from collections.abc import Iterator
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.orm import Session
 
 from binance_ai_trader.api import create_app
 from binance_ai_trader.api_config import ApiConfig
-from binance_ai_trader.models import Base
+from binance_ai_trader.models import Base, SpotCandleRow
 
 TOKEN = "this-is-a-dev-test-token-of-40-characters"
 
@@ -135,3 +137,52 @@ def test_audit_endpoint_has_no_settings_payload(client: TestClient) -> None:
     assert "spot_capital_usdt" not in str(event)
     assert client.get("/api/v1/audit?limit=0", headers=headers).status_code == 422
     assert client.get("/api/v1/audit?limit=101", headers=headers).status_code == 422
+
+
+def test_stored_candles_requires_auth_and_valid_filters(client: TestClient) -> None:
+    h = {"X-Admin-Token": TOKEN}
+    assert client.get("/api/v1/market/candles").status_code == 401
+    result = client.get("/api/v1/market/candles", headers=h)
+    assert result.status_code == 200
+    assert result.json() == {
+        "source": "stored_public_spot", "symbol": "BTCUSDT", "interval": "1m", "candles": []
+    }
+    for query in ["symbol=DOGEUSDT", "interval=1h", "limit=0", "limit=101"]:
+        assert client.get("/api/v1/market/candles?" + query, headers=h).status_code == 422
+
+
+def test_stored_candles_are_newest_first_and_precision_is_string() -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with Session(engine) as session, session.begin():
+        for ident, open_ms in [(1, 0), (2, 60_000)]:
+            session.add(
+                SpotCandleRow(
+                    id=ident,
+                    symbol="BTCUSDT",
+                    interval="1m",
+                    open_time_ms=open_ms,
+                    close_time_ms=open_ms + 59_999,
+                    open=Decimal("100.25"),
+                    high=Decimal("102.5"),
+                    low=Decimal("99.5"),
+                    close=Decimal("101.75"),
+                    volume=Decimal("5.25"),
+                )
+            )
+    app = create_app(config=ApiConfig(database_url=None, admin_token=TOKEN), engine=engine)
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/market/candles?symbol=BTCUSDT&interval=1m&limit=1",
+            headers={"X-Admin-Token": TOKEN},
+        )
+        assert response.status_code == 200
+        candles = response.json()["candles"]
+        assert len(candles) == 1
+        assert candles[0]["open_time_ms"] == 60_000
+        assert candles[0]["close"] == "101.750000000000000000"
+    engine.dispose()
