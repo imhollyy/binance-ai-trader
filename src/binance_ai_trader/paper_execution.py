@@ -248,7 +248,7 @@ def _risk_state(account: PaperSpotAccountRow, events: list[PaperSpotJournalRow])
             continue
         if event.created_at > now:
             raise PaperExecutionRejected("future_paper_journal_event")
-        if event.created_at.date() < now.date():
+        if event.created_at.astimezone(UTC).date() < now.date():
             start += event.realized_pnl_delta_usdt
         cumulative += event.realized_pnl_delta_usdt
         peak = max(peak, account.initial_capital_usdt + cumulative)
