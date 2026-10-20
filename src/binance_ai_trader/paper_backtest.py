@@ -177,7 +177,10 @@ def run_paper_spot_backtest(
         raise PaperBacktestRejected("invalid_history_type")
     try:
         quality = evaluate_closed_spot_feed(
-            history, symbol=symbol, interval=interval, now_ms=as_of_ms,
+            history,
+            symbol=symbol,
+            interval=interval,
+            now_ms=as_of_ms,
             min_history=warmup_candles,
         )
     except ValueError as exc:
@@ -220,11 +223,14 @@ def run_paper_spot_backtest(
                 )
                 trade_id = f"bt_{signal_index}"
                 book = simulate_spot_buy(
-                    book, settings, state,
+                    book,
+                    settings,
+                    state,
                     SpotBuyIntent(
                         trade_id, symbol, reference, decision.quantity, decision.stop_price
                     ),
-                    explicit_approval=decision.explicit_approval, costs=costs,
+                    explicit_approval=decision.explicit_approval,
+                    costs=costs,
                 )
                 position = book.positions[-1]
                 fill_price = position.entry_fill_price
@@ -245,11 +251,14 @@ def run_paper_spot_backtest(
         assert book is not before
         fills.append(
             BacktestFill(
-                trade_id=trade_id, action=decision.action,
+                trade_id=trade_id,
+                action=decision.action,
                 signal_close_time_ms=history[signal_index].close_time_ms,
                 fill_open_time_ms=next_open.open_time_ms,
-                reference_open_price=reference, assumed_fill_price=fill_price,
-                fee_usdt=fee, realized_pnl_delta_usdt=realized,
+                reference_open_price=reference,
+                assumed_fill_price=fill_price,
+                fee_usdt=fee,
+                realized_pnl_delta_usdt=realized,
                 cash_after_usdt=book.cash_usdt,
             )
         )
