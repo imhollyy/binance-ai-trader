@@ -59,7 +59,7 @@ jobs:
           echo "Paper API not ready"; exit 1
       - name: Browser to API to PostgreSQL round-trip
         working-directory: web
-        run: npm run test:e2e -- --grep "connected paper risk"
+        run: npm run test:e2e -- --grep "connected paper"
       - name: Clean up disposable CI database
         if: always()
         run: docker compose down -v --remove-orphans
