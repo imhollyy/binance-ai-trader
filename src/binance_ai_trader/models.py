@@ -28,9 +28,7 @@ class AuditRow(Base):
     __tablename__ = "settings_audit"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    settings_id: Mapped[int] = mapped_column(
-        ForeignKey("trading_settings.id"), nullable=False
-    )
+    settings_id: Mapped[int] = mapped_column(ForeignKey("trading_settings.id"), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     action: Mapped[str] = mapped_column(String(40), nullable=False)
     data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
