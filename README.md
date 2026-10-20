@@ -44,3 +44,11 @@ Stop without deleting volume: `docker compose down`. Do **not** run `docker comp
 Feature PRs -> `dev` -> reviewed releases on `main`. Public history and logs must never include API keys, balances or proprietary strategies.
 
 See [architecture](docs/ARCHITECTURE.md), [security](SECURITY.md) and [Sprint 01](docs/SPRINT_01.md).
+
+## Stored public Spot data (BT-003D)
+
+Authenticated local GET `/api/v1/market/candles?symbol=BTCUSDT&interval=1m&limit=30`
+returns only previously imported **closed** public Spot candles. All OHLCV decimal
+values are returned as JSON **strings** to avoid floating-point rounding.
+If no data were imported the `candles` list is empty. This is **not**
+a live ticker: no exchange request or scheduled worker is triggered by this endpoint.
