@@ -1,0 +1,71 @@
+name: Docker Persistence Smoke
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - "Dockerfile"
+      - "compose.yaml"
+      - "migrations/**"
+      - "src/**"
+      - "scripts/**"
+      - ".github/workflows/docker-smoke.yml"
+      - "pyproject.toml"
+  push:
+    branches: [main, dev]
+    paths:
+      - "Dockerfile"
+      - "compose.yaml"
+      - "migrations/**"
+      - "src/**"
+      - "scripts/**"
+      - ".github/workflows/docker-smoke.yml"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  persistence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Disposable CI fixture credentials, never connected to actual Binance.
+      POSTGRES_PASSWORD: ci_test_only_alphanumeric_password_012345
+      ADMIN_TOKEN: ci_test_only_admin_token_0123456789012345
+      TRADING_MODE: paper
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Docker Compose
+        run: docker compose version
+      - name: Build and start disposable database and API
+        run: docker compose up --build -d
+      - name: Wait for API readiness
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS --max-time 2 http://127.0.0.1:8000/health/ready > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          echo "API readiness failed"; exit 1
+      - name: Seed paper settings
+        run: python3 scripts/docker_smoke.py seed
+      - name: Stop without deleting database volume
+        run: docker compose down
+      - name: Recreate containers with existing volume
+        run: docker compose up --build -d
+      - name: Wait for recreated API
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS --max-time 2 http://127.0.0.1:8000/health/ready > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          echo "Recreated API readiness failed"; exit 1
+      - name: Assert persisted settings and audit records
+        run: python3 scripts/docker_smoke.py verify
+      - name: Clean up disposable CI volume
+        if: always()
+        run: docker compose down -v --remove-orphans
