@@ -226,6 +226,41 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
     with Session(engine) as session:
         assert close_paper_spot(session, "second", D("110"), "sell-second") == final
 
+    # Race two DIFFERENT trade IDs for one shared paper cash account.
+    # While one unmarked position exists, the second buy must fail closed.
+    competing = Barrier(2)
+
+    def compete(index: int) -> PaperTradeReceipt | str:
+        competing.wait(timeout=10)
+        with Session(engine) as session:
+            try:
+                return open_paper_spot(
+                    session, _intent(f"race-{index}"), f"buy-race-{index}"
+                )
+            except PaperExecutionRejected as exc:
+                return str(exc)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(compete, range(2)))
+    receipts = [item for item in outcomes if isinstance(item, PaperTradeReceipt)]
+    rejects = [item for item in outcomes if isinstance(item, str)]
+    assert len(receipts) == 1
+    assert rejects == ["unmarked_open_position_fail_closed"]
+    assert _counts(engine) == (3, 6, 1)
+
+    # A hypothetical stop is NOT a guaranteed fill. An adverse close well
+    # below the stop realizes a loss and must block the next new buy.
+    winner = receipts[0]
+    with Session(engine) as session:
+        loss = close_paper_spot(
+            session, winner.trade_id, D("50"), "sell-race-loss"
+        )
+    assert loss.realized_pnl_delta_usdt < D("-40")
+    with Session(engine) as session, pytest.raises(
+        PaperExecutionRejected, match="daily_loss_limit"
+    ):
+        open_paper_spot(session, _intent("blocked-after-loss"), "buy-after-loss")
+
 
 def test_cost_validation_never_sends_orders() -> None:
     # Unsupported simulated costs or non-finite prices are rejected by
