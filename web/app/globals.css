@@ -42,3 +42,33 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:0.01ms!important}
 }
+
+
+/* BT-004D3: exact-value, read-only PAPER Spot accounting surface. */
+.paper-ledger{max-width:1120px}
+.paper-ledger-warning{border:1px solid #eddaac;border-radius:10px;background:#fff9ec;color:#725a2a;font-size:12px;line-height:1.65;padding:14px;margin:18px 0}
+.paper-ledger-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}
+.paper-ledger-stats article{display:flex;flex-direction:column;min-width:0;gap:8px;padding:17px;border:1px solid #e4eaf5;border-radius:12px;background:#f8faff}
+.paper-ledger-stats span,.paper-ledger-caption{font-size:12px;color:#71839e;line-height:1.6}
+.paper-ledger-stats strong{font-size:16px;color:#283954;overflow-wrap:anywhere}
+.paper-ledger-caption{margin:14px 0}
+.paper-ledger h3{margin:25px 0 14px}
+.paper-ledger-list{display:flex;flex-direction:column;gap:11px}
+.paper-ledger-record,.paper-ledger-event{border:1px solid #e3eaf4;border-radius:12px;padding:16px;min-width:0}
+.paper-ledger-record-title{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.paper-ledger-record-title strong{font-size:13px;color:#304363;overflow-wrap:anywhere}
+.paper-ledger-record-title span{font-size:11px;background:#edf2fb;color:#486593;padding:5px 9px;border-radius:20px}
+.paper-ledger-record dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 18px;margin:15px 0 0}
+.paper-ledger-record dl>div{min-width:0}
+.paper-ledger-record dt{font-size:11px;color:#7e8ea8;margin-bottom:5px}
+.paper-ledger-record dd{font-size:12px;font-weight:650;color:#354761;overflow-wrap:anywhere;margin:0}
+.paper-ledger-event{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.paper-ledger-event>div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.paper-ledger-event strong{font-size:12px;color:#324663}
+.paper-ledger-event small,.paper-ledger-event span{font-size:11px;color:#7789a4;overflow-wrap:anywhere}
+@media(max-width:780px){
+.paper-ledger-stats{grid-template-columns:1fr}
+.paper-ledger-record dl{grid-template-columns:1fr}
+.paper-ledger-event{flex-direction:column}
+.paper-ledger-event>div{width:100%}
+}
