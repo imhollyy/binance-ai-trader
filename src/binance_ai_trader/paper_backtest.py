@@ -27,6 +27,7 @@ from binance_ai_trader.paper_spot import (
 from binance_ai_trader.risk_schemas import RiskSettings
 
 DAY_MS = 86_400_000
+DEFAULT_COSTS = PaperCosts()  # Frozen dataclass; safe shared default.
 BacktestAction = Literal["buy", "sell"]
 
 
@@ -134,7 +135,7 @@ def run_paper_spot_backtest(
     as_of_ms: int,
     settings: RiskSettings,
     decisions: Sequence[BacktestDecision],
-    costs: PaperCosts = PaperCosts(),
+    costs: PaperCosts = DEFAULT_COSTS,
     warmup_candles: int = 50,
     source_error: MarketDataError | None = None,
 ) -> PaperBacktestResult:
