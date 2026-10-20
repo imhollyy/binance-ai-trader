@@ -36,6 +36,9 @@ from binance_ai_trader.paper_spot import (
 from binance_ai_trader.risk_schemas import RiskSettings
 
 SCALE = Decimal("0.000000000000000001")
+LockedPaperState = tuple[
+    RiskSettings, PaperSpotAccountRow, list[PaperSpotPositionRow], list[PaperSpotJournalRow]
+]
 
 
 class PaperExecutionRejected(ValueError):
@@ -109,9 +112,7 @@ def _receipt(row: PaperSpotJournalRow, trade_id: str) -> PaperTradeReceipt:
     )
 
 
-def _locked_state(
-    session: Session,
-) -> tuple[RiskSettings, PaperSpotAccountRow, list[PaperSpotPositionRow], list[PaperSpotJournalRow]]:
+def _locked_state(session: Session) -> LockedPaperState:
     if session.get_bind().dialect.name != "postgresql":
         raise PaperExecutionRejected("postgresql_required")
     settings_row = session.scalar(
@@ -186,7 +187,7 @@ def _reconcile(
             ):
                 raise PaperExecutionRejected("invalid_paper_opening_event")
             continue
-        position = by_id.get(event.position_id)
+        position = by_id.get(event.position_id) if event.position_id is not None else None
         if position is None:
             raise PaperExecutionRejected("paper_event_position_missing")
         if event.event_type == "spot_buy":
