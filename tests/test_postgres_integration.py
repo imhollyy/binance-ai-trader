@@ -13,7 +13,11 @@ from sqlalchemy.orm import Session
 
 from binance_ai_trader.api import create_app
 from binance_ai_trader.api_config import ApiConfig
-from binance_ai_trader.models import AuditRow
+from decimal import Decimal
+
+from binance_ai_trader.market_data import Candle
+from binance_ai_trader.market_store import missing_stored_candles, save_closed_candles
+from binance_ai_trader.models import AuditRow, SpotCandleRow
 
 DB_URL = os.environ.get("TEST_POSTGRES_URL")
 TOKEN = "integration-test-only-admin-token-12345"
@@ -30,6 +34,7 @@ def postgres_engine() -> Iterator[Engine]:
     engine = create_engine(DB_URL, pool_pre_ping=True)
     with engine.begin() as connection:
         connection.execute(text("TRUNCATE TABLE settings_audit, trading_settings RESTART IDENTITY"))
+        connection.execute(text("TRUNCATE TABLE spot_candles RESTART IDENTITY"))
     yield engine
     engine.dispose()
 
@@ -102,3 +107,70 @@ def test_failed_validation_does_not_change_audit(postgres_engine: Engine) -> Non
         assert rejected.status_code == 422
         assert client.get("/api/v1/audit", headers=HEADERS).json()["events"] == []
         assert client.get("/api/v1/settings", headers=HEADERS).json()["version"] == 0
+
+
+def test_postgres_closed_candle_upsert_and_gap_scan(postgres_engine: Engine) -> None:
+    first = Candle(
+        symbol="BTCUSDT",
+        interval="1m",
+        open_time_ms=0,
+        close_time_ms=59_999,
+        open=Decimal("100.123456789123456789"),
+        high=Decimal("110.123456789123456789"),
+        low=Decimal("90.000000000000000001"),
+        close=Decimal("105.123456789123456789"),
+        volume=Decimal("15.123456789123456789"),
+    )
+    third = Candle(
+        symbol="BTCUSDT",
+        interval="1m",
+        open_time_ms=120_000,
+        close_time_ms=179_999,
+        open=Decimal("106"),
+        high=Decimal("111"),
+        low=Decimal("101"),
+        close=Decimal("110"),
+        volume=Decimal("20"),
+    )
+    with Session(postgres_engine) as session:
+        with session.begin():
+            assert save_closed_candles(session, [first, third], now_ms=180_000) == 2
+            assert save_closed_candles(session, [first, third], now_ms=180_000) == 0
+        gaps = missing_stored_candles(
+            session, symbol="BTCUSDT", interval="1m", start_ms=0, end_ms=120_000
+        )
+        assert gaps == [60_000]
+        stored = session.query(SpotCandleRow).order_by(SpotCandleRow.open_time_ms).all()
+        assert len(stored) == 2
+        assert stored[0].open == first.open
+        assert stored[0].volume == first.volume
+
+    assert DB_URL is not None
+    postgres_engine.dispose()
+    restored = create_engine(DB_URL, pool_pre_ping=True)
+    try:
+        with Session(restored) as session:
+            assert session.query(SpotCandleRow).count() == 2
+            assert missing_stored_candles(
+                session, symbol="BTCUSDT", interval="1m", start_ms=0, end_ms=120_000
+            ) == [60_000]
+    finally:
+        restored.dispose()
+
+
+def test_candle_store_rejects_partial_candles(postgres_engine: Engine) -> None:
+    incomplete = Candle(
+        symbol="ETHUSDT",
+        interval="1m",
+        open_time_ms=120_000,
+        close_time_ms=179_999,
+        open=Decimal("100"),
+        high=Decimal("110"),
+        low=Decimal("90"),
+        close=Decimal("105"),
+        volume=Decimal("5"),
+    )
+    with Session(postgres_engine) as session:
+        with pytest.raises(ValueError, match="fully closed"):
+            save_closed_candles(session, [incomplete], now_ms=170_000)
+        assert session.query(SpotCandleRow).count() == 0
