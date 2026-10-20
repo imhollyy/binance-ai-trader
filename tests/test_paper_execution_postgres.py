@@ -13,10 +13,13 @@ from decimal import Decimal
 from threading import Barrier
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session
 
+from binance_ai_trader.api import create_app
+from binance_ai_trader.api_config import ApiConfig
 from binance_ai_trader.models import (
     PaperSpotAccountRow,
     PaperSpotJournalRow,
@@ -257,6 +260,47 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
         pytest.raises(PaperExecutionRejected, match="daily_loss_limit"),
     ):
         open_paper_spot(session, _intent("blocked-after-loss"), "buy-after-loss")
+
+
+    # Read an actual persisted PostgreSQL ledger through the local API.
+    # The GET must not mutate balances, journals or positions.
+    with Session(engine) as session:
+        account_before = session.get(PaperSpotAccountRow, 1)
+        assert account_before is not None
+        cash_before = account_before.cash_usdt
+    counts_before = _counts(engine)
+    api = create_app(
+        config=ApiConfig(database_url=None, admin_token="isolated-paper-api-test-token-123456"),
+        engine=engine,
+    )
+    with TestClient(api) as client:
+        headers = {"X-Admin-Token": "isolated-paper-api-test-token-123456"}
+        assert client.get("/api/v1/paper/spot").status_code == 401
+        result = client.get(
+            "/api/v1/paper/spot?positions_limit=2&events_limit=2", headers=headers
+        )
+        assert result.status_code == 200
+        assert result.headers["cache-control"] == "no-store, private"
+        body = result.json()
+        assert body["initialized"] is True
+        assert body["mode"] == "paper"
+        assert body["source"] == "persisted_paper_spot"
+        assert body["total_positions"] == 3
+        assert body["open_positions"] == 0
+        assert body["total_events"] == 7
+        assert len(body["positions"]) == 2
+        assert len(body["events"]) == 2
+        assert body["events"][0]["event_type"] == "spot_sell"
+        assert body["account"]["cash_usdt"] == str(cash_before)
+        assert isinstance(body["positions"][0]["entry_fill_price"], str)
+        assert isinstance(body["events"][0]["fee_usdt"], str)
+        assert "unrealized_pnl" not in body
+        assert "equity" not in body
+    assert _counts(engine) == counts_before
+    with Session(engine) as session:
+        account_after = session.get(PaperSpotAccountRow, 1)
+        assert account_after is not None
+        assert account_after.cash_usdt == cash_before
 
 
 def test_cost_validation_never_sends_orders() -> None:
