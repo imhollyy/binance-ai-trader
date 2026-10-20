@@ -1,10 +1,10 @@
 # Binance AI Trader
 
-A private, staged research project for Binance Global public market data and (later) paper trading.
+A **public, research-only** Python project for Binance Global market-data infrastructure and (later) paper trading. Source code and Git history are visible to everyone.
 
-> **SAFE BY DEFAULT:** BT-001 cannot place orders, access an exchange account, use leverage, or trade with real funds. There is no exchange client or API-key configuration in this version.
+> **SAFE BY DEFAULT:** BT-001 cannot place orders, access an exchange account, use leverage, or trade with real funds. No Binance API keys or authenticated clients are used.
 
-## Current milestone: BT-001 — Project bootstrap
+## Current milestone: BT-001 — Project bootstrap (complete on `dev`)
 
 - Python 3.12 application using a `src/` package layout
 - Configuration that **refuses any mode other than `paper`**
@@ -12,7 +12,7 @@ A private, staged research project for Binance Global public market data and (la
 - GitHub Actions CI with read-only permissions
 - Architecture, security and sprint documentation
 
-**Not yet implemented:** Binance REST/WebSocket data collection, a database, trading strategies, paper order matching, dashboard, production hosting, or live trading. These require separate reviewed packages.
+**Not yet implemented:** Binance REST/WebSocket collection, database, strategies, paper matching, dashboard, production hosting or live trading.
 
 ## Quick start
 
@@ -29,10 +29,14 @@ python -m mypy src tests
 
 On Windows PowerShell, activate with `.venv\Scripts\Activate.ps1`.
 
-The CLI prints `mode=paper | live_trading=disabled`. A `TRADING_MODE=live` environment variable fails closed.
+The CLI prints `mode=paper | live_trading=disabled`. A `TRADING_MODE=live` variable fails closed.
+
+## Public-repository security
+
+**Never commit API keys, credentials, private account balances, identifiable trade history, proprietary strategies or production secrets.** Public Actions logs, issues, pull requests and past commits are visible. Any future live-trading engine must undergo a separate security review and can reside in a private repository/service.
 
 ## Development workflow
 
-`feat/*` branches -> PR into `dev` -> reviewed release PR into `main`. Do not merge unless CI is green and safety checks are verified locally. CI may be unavailable if Actions usage is exhausted.
+`feat/*` -> PR into `dev` -> reviewed release PR into `main`. Merge only when CI passes, safety checks pass and changes are reviewed.
 
 See [architecture](docs/ARCHITECTURE.md), [security](SECURITY.md), and [sprint checklist](docs/SPRINT_01.md).
