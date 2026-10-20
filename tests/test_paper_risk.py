@@ -29,13 +29,15 @@ def safe_state(
 
 
 def spot_settings(**values: object) -> RiskSettings:
-    return RiskSettings.model_validate({
-        "market_type": "spot",
-        "spot_capital_usdt": 1000,
-        "bot_enabled": True,
-        "manual_approval": False,
-        **values,
-    })
+    return RiskSettings.model_validate(
+        {
+            "market_type": "spot",
+            "spot_capital_usdt": 1000,
+            "bot_enabled": True,
+            "manual_approval": False,
+            **values,
+        }
+    )
 
 
 def test_disabled_bot_always_rejects() -> None:

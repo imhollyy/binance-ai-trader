@@ -103,13 +103,9 @@ def evaluate_paper_risk(
     ):
         return _reject("invalid_paper_account_state")
 
-    if state.equity_usdt <= state.day_start_equity_usdt * (
-        1 - _pct(settings.daily_loss_limit_pct)
-    ):
+    if state.equity_usdt <= state.day_start_equity_usdt * (1 - _pct(settings.daily_loss_limit_pct)):
         return _reject("daily_loss_limit")
-    if state.equity_usdt <= state.peak_equity_usdt * (
-        1 - _pct(settings.max_drawdown_pct)
-    ):
+    if state.equity_usdt <= state.peak_equity_usdt * (1 - _pct(settings.max_drawdown_pct)):
         return _reject("maximum_drawdown_limit")
     if state.open_positions >= settings.max_open_positions:
         return _reject("maximum_open_positions")
@@ -145,9 +141,7 @@ def evaluate_paper_risk(
             max_notional_usdt=max_notional,
         )
     status = (
-        PaperRiskStatus.APPROVAL_REQUIRED
-        if settings.manual_approval
-        else PaperRiskStatus.ELIGIBLE
+        PaperRiskStatus.APPROVAL_REQUIRED if settings.manual_approval else PaperRiskStatus.ELIGIBLE
     )
     return PaperRiskDecision(
         status=status,
