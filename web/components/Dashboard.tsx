@@ -27,6 +27,13 @@ const DEFAULT: Risk = {
   max_leverage: 1, stop_loss_required: true,
   manual_approval: true, allowed_symbols: ["BTCUSDT", "ETHUSDT"]
 };
+function localApiAddress(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== "http:" || !["localhost", "127.0.0.1"].includes(url.hostname) || url.username || url.password) {
+    throw new Error("API adresi yalnızca yerel localhost veya 127.0.0.1 olabilir.");
+  }
+  return url.origin;
+}
 const nav = [
   {key: "dashboard", title: "Genel Bakış", Icon: BarChart3},
   {key: "bot", title: "Bot Yönetimi", Icon: Bot},
@@ -75,7 +82,7 @@ export default function Dashboard() {
     if (!secret.trim()){setNotice("Yerel ADMIN_TOKEN girilmedi.");return;}
     setBusy(true);setNotice("");
     try {
-      const response=await fetch(address.replace(/\/+$/,"")+"/api/v1/settings",{
+      const response=await fetch(localApiAddress(address)+"/api/v1/settings",{
         headers:{"X-Admin-Token":secret},cache:"no-store"
       });
       if(!response.ok)throw new Error("Bağlantı reddedildi: HTTP "+response.status);
@@ -91,7 +98,7 @@ export default function Dashboard() {
     if(!connected){setDialog(true);return;}
     setBusy(true);setNotice("");
     try{
-      const response=await fetch(address.replace(/\/+$/,"")+"/api/v1/settings",{
+      const response=await fetch(localApiAddress(address)+"/api/v1/settings",{
         method:"PUT",
         headers:{"Content-Type":"application/json","X-Admin-Token":secret},
         body:JSON.stringify({expected_version:version,settings:risk})
