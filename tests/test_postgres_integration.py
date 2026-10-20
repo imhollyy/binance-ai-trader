@@ -6,6 +6,7 @@ import os
 from collections.abc import Iterator
 from decimal import Decimal
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
@@ -14,7 +15,8 @@ from sqlalchemy.orm import Session
 
 from binance_ai_trader.api import create_app
 from binance_ai_trader.api_config import ApiConfig
-from binance_ai_trader.market_data import Candle
+from binance_ai_trader.market_data import Candle, MarketRateLimited, PublicSpotMarketClient
+from binance_ai_trader.market_ingest import ingest_once
 from binance_ai_trader.market_store import missing_stored_candles, save_closed_candles
 from binance_ai_trader.models import AuditRow, SpotCandleRow
 
@@ -172,4 +174,60 @@ def test_candle_store_rejects_partial_candles(postgres_engine: Engine) -> None:
     with Session(postgres_engine) as session:
         with pytest.raises(ValueError, match="fully closed"):
             save_closed_candles(session, [incomplete], now_ms=170_000)
+        assert session.query(SpotCandleRow).count() == 0
+
+
+def test_one_shot_public_ingestion_is_idempotent_and_reports_missing(
+    postgres_engine: Engine,
+) -> None:
+    times = [0, 120_000]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.host == "data-api.binance.vision"
+        assert request.url.path == "/api/v3/klines"
+        assert "X-MBX-APIKEY" not in request.headers
+        rows = [
+            [
+                ms, "100", "110", "90", "105.000000000000000001", "5",
+                ms + 59_999, "0", 1, "0", "0", "0",
+            ]
+            for ms in times
+        ]
+        return httpx.Response(200, json=rows)
+
+    client = PublicSpotMarketClient(
+        transport=httpx.MockTransport(handler), clock_ms=lambda: 240_000
+    )
+    first = ingest_once(
+        postgres_engine, client, symbol="BTCUSDT", interval="1m", limit=10, now_ms=240_000
+    )
+    second = ingest_once(
+        postgres_engine, client, symbol="BTCUSDT", interval="1m", limit=10, now_ms=240_000
+    )
+    assert first.received_closed == 2
+    assert first.inserted_new == 2
+    assert second.inserted_new == 0
+    assert first.missing_open_times_ms == (60_000,)
+    assert second.missing_open_times_ms == (60_000,)
+    with Session(postgres_engine) as session:
+        assert session.query(SpotCandleRow).count() == 2
+
+
+def test_banned_public_endpoint_never_writes_to_postgres(postgres_engine: Engine) -> None:
+    count = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal count
+        count += 1
+        return httpx.Response(429, headers={"Retry-After": "60"})
+
+    client = PublicSpotMarketClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(MarketRateLimited) as caught:
+        ingest_once(
+            postgres_engine, client, symbol="BTCUSDT", interval="1m", now_ms=240_000
+        )
+    assert caught.value.retry_after_seconds == 60
+    assert count == 1
+    with Session(postgres_engine) as session:
         assert session.query(SpotCandleRow).count() == 0

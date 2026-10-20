@@ -78,3 +78,17 @@ PostgreSQL CI checks precision, duplicate imports, persistence across
 database connection restart, and missing intervals. No periodic market
 ingestion worker, WebSocket stream, trading engine or authenticated exchange
 API is part of this module.
+
+## BT-003C — bounded one-shot ingestion
+
+`market_ingest.ingest_once` connects the public Spot REST client to the
+PostgreSQL candle store. It fetches closed historical candles first, then
+atomically imports them and reports missing aligned open times. Re-running
+the import is idempotent. In the event of HTTP 418/429 or malformed public
+responses, the import fails without database changes, and the caller must
+respect the exchange's retry guidance.
+
+This is a **callable one-shot function only**. No scheduler, no automatic
+retries, no trade execution, no private Binance key, and no externally exposed
+deployment has been added. A separate reviewed package is needed before
+running it periodically.
