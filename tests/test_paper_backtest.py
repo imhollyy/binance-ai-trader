@@ -24,8 +24,12 @@ D = Decimal
 def settings(**changes: object) -> RiskSettings:
     return RiskSettings.model_validate(
         {
-            "mode": "paper", "market_type": "spot", "spot_capital_usdt": 1000,
-            "bot_enabled": True, "manual_approval": False, **changes,
+            "mode": "paper",
+            "market_type": "spot",
+            "spot_capital_usdt": 1000,
+            "bot_enabled": True,
+            "manual_approval": False,
+            **changes,
         }
     )
 
@@ -34,9 +38,14 @@ def candles(count: int = 60, interval: str = "1m") -> list[Candle]:
     step = {"1m": 60_000, "5m": 300_000, "15m": 900_000}[interval]
     return [
         Candle(
-            symbol="BTCUSDT", interval=interval,
-            open_time_ms=index * step, close_time_ms=(index + 1) * step - 1,
-            open=D("100"), high=D("112"), low=D("40"), close=D("105"),
+            symbol="BTCUSDT",
+            interval=interval,
+            open_time_ms=index * step,
+            close_time_ms=(index + 1) * step - 1,
+            open=D("100"),
+            high=D("112"),
+            low=D("40"),
+            close=D("105"),
             volume=D("2.000000000000000001"),
         )
         for index in range(count)
@@ -49,8 +58,10 @@ def clock(history: list[Candle]) -> int:
 
 def buy(history: list[Candle], index: int = 49, quantity: str = "1") -> BacktestDecision:
     return BacktestDecision(
-        observed_close_time_ms=history[index].close_time_ms, action="buy",
-        quantity=D(quantity), stop_price=D("99"),
+        observed_close_time_ms=history[index].close_time_ms,
+        action="buy",
+        quantity=D(quantity),
+        stop_price=D("99"),
     )
 
 
@@ -62,8 +73,13 @@ def run(
     history: Sequence[Candle], decisions: Sequence[BacktestDecision], **kwargs: object
 ) -> PaperBacktestResult:
     return run_paper_spot_backtest(
-        history, symbol="BTCUSDT", interval=history[0].interval,
-        as_of_ms=clock(history), settings=settings(), decisions=decisions, **kwargs,
+        history,
+        symbol="BTCUSDT",
+        interval=history[0].interval,
+        as_of_ms=clock(history),
+        settings=settings(),
+        decisions=decisions,
+        **kwargs,
     )
 
 
@@ -138,27 +154,42 @@ def test_rejects_empty_short_open_duplicate_misaligned_and_invalid_feed(
 ) -> None:
     with pytest.raises(PaperBacktestRejected, match="feed_not_ready"):
         run_paper_spot_backtest(
-            bad_data, symbol="BTCUSDT", interval="1m",
-            as_of_ms=50 * 60_000, settings=settings(), decisions=[],
+            bad_data,
+            symbol="BTCUSDT",
+            interval="1m",
+            as_of_ms=50 * 60_000,
+            settings=settings(),
+            decisions=[],
         )
 
 
 def test_gap_stale_and_future_unclosed_candles_fail_closed() -> None:
     data = candles()
     gap = data[:]
-    gap[50] = replace(gap[50], open_time_ms=gap[50].open_time_ms + 60_000,
-                      close_time_ms=gap[50].close_time_ms + 60_000)
+    gap[50] = replace(
+        gap[50],
+        open_time_ms=gap[50].open_time_ms + 60_000,
+        close_time_ms=gap[50].close_time_ms + 60_000,
+    )
     with pytest.raises(PaperBacktestRejected, match="feed_not_ready"):
         run(gap, [])
     with pytest.raises(PaperBacktestRejected, match="feed_not_ready:stale"):
         run_paper_spot_backtest(
-            data, symbol="BTCUSDT", interval="1m", as_of_ms=clock(data) + 600_000,
-            settings=settings(), decisions=[],
+            data,
+            symbol="BTCUSDT",
+            interval="1m",
+            as_of_ms=clock(data) + 600_000,
+            settings=settings(),
+            decisions=[],
         )
     with pytest.raises(PaperBacktestRejected, match="feed_not_ready:invalid"):
         run_paper_spot_backtest(
-            data, symbol="BTCUSDT", interval="1m", as_of_ms=clock(data) - 1,
-            settings=settings(), decisions=[],
+            data,
+            symbol="BTCUSDT",
+            interval="1m",
+            as_of_ms=clock(data) - 1,
+            settings=settings(),
+            decisions=[],
         )
 
 
@@ -167,8 +198,12 @@ def test_upstream_rate_limit_never_becomes_a_backtest_signal(status: int) -> Non
     data = candles()
     with pytest.raises(PaperBacktestRejected, match="market_source_unavailable"):
         run_paper_spot_backtest(
-            data, symbol="BTCUSDT", interval="1m", as_of_ms=clock(data),
-            settings=settings(), decisions=[buy(data)],
+            data,
+            symbol="BTCUSDT",
+            interval="1m",
+            as_of_ms=clock(data),
+            settings=settings(),
+            decisions=[buy(data)],
             source_error=MarketRateLimited(status, retry_after_seconds=15),
         )
 
@@ -180,8 +215,11 @@ def test_no_same_bar_or_unobserved_late_signals_and_no_duplicate_schedule() -> N
         [buy(data, 59)],  # signal at last close cannot fill
         [buy(data), buy(data)],  # duplicate close
         [sell(data), buy(data)],  # reversed schedule
-        [BacktestDecision(observed_close_time_ms=12, action="buy", quantity=D("1"),
-                          stop_price=D("99"))],
+        [
+            BacktestDecision(
+                observed_close_time_ms=12, action="buy", quantity=D("1"), stop_price=D("99")
+            )
+        ],
     ]
     for plan in invalid:
         with pytest.raises(PaperBacktestRejected):
@@ -200,13 +238,21 @@ def test_manual_approval_is_never_silently_bypassed() -> None:
     data = candles()
     with pytest.raises(PaperBacktestRejected, match="manual_approval_required"):
         run_paper_spot_backtest(
-            data, symbol="BTCUSDT", interval="1m", as_of_ms=clock(data),
-            settings=settings(manual_approval=True), decisions=[buy(data)],
+            data,
+            symbol="BTCUSDT",
+            interval="1m",
+            as_of_ms=clock(data),
+            settings=settings(manual_approval=True),
+            decisions=[buy(data)],
         )
     explicit = replace(buy(data), explicit_approval=True)
     result = run_paper_spot_backtest(
-        data, symbol="BTCUSDT", interval="1m", as_of_ms=clock(data),
-        settings=settings(manual_approval=True), decisions=[explicit],
+        data,
+        symbol="BTCUSDT",
+        interval="1m",
+        as_of_ms=clock(data),
+        settings=settings(manual_approval=True),
+        decisions=[explicit],
     )
     assert result.open_positions == 1
 
@@ -228,8 +274,12 @@ def test_cost_and_risk_limits_are_checked_before_opening() -> None:
             run(data, [], costs=costs)
     with pytest.raises(PaperBacktestRejected, match="paper_bot_disabled"):
         run_paper_spot_backtest(
-            data, symbol="BTCUSDT", interval="1m", as_of_ms=clock(data),
-            settings=settings(bot_enabled=False), decisions=[buy(data)],
+            data,
+            symbol="BTCUSDT",
+            interval="1m",
+            as_of_ms=clock(data),
+            settings=settings(bot_enabled=False),
+            decisions=[buy(data)],
         )
 
 
@@ -257,9 +307,10 @@ def test_futures_and_invalid_warmup_never_use_spot_backtest() -> None:
             run(data, [], warmup_candles=warmup)
     with pytest.raises(PaperBacktestRejected, match="spot_only"):
         run_paper_spot_backtest(
-            data, symbol="BTCUSDT", interval="1m", as_of_ms=clock(data),
-            settings=RiskSettings(
-                market_type="futures", futures_capital_usdt=100, max_leverage=2
-            ),
+            data,
+            symbol="BTCUSDT",
+            interval="1m",
+            as_of_ms=clock(data),
+            settings=RiskSettings(market_type="futures", futures_capital_usdt=100, max_leverage=2),
             decisions=[],
         )
