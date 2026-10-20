@@ -5,11 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from hmac import compare_digest
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import Engine, create_engine, text, update
+from sqlalchemy import Engine, create_engine, select, text, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -17,6 +17,18 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from binance_ai_trader.api_config import ApiConfig
 from binance_ai_trader.models import AuditRow, TradingSettingsRow
 from binance_ai_trader.risk_schemas import RiskSettings, SettingsSnapshot, SettingsUpdate
+
+
+class AuditEvent(BaseModel):
+    """Safe configuration audit metadata; does not expose secrets or full payloads."""
+
+    version: int
+    action: str
+    created_at: datetime
+
+
+class AuditLog(BaseModel):
+    events: list[AuditEvent]
 
 
 class RuntimeStatus(BaseModel):
@@ -96,6 +108,26 @@ def create_app(
             return SettingsSnapshot(
                 version=record.version, settings=RiskSettings.model_validate(record.data)
             )
+
+    @app.get("/api/v1/audit", dependencies=[Depends(require_admin)])
+    def audit_events(limit: int = Query(default=30, ge=1, le=100)) -> AuditLog:
+        """Read the latest configuration changes without returning risk payloads."""
+
+        if db_engine is None:
+            raise HTTPException(status_code=503, detail="Database not configured")
+        try:
+            with Session(db_engine) as session:
+                entries = session.scalars(
+                    select(AuditRow).order_by(AuditRow.version.desc()).limit(limit)
+                ).all()
+                return AuditLog(
+                    events=[
+                        AuditEvent(version=row.version, action=row.action, created_at=row.created_at)
+                        for row in entries
+                    ]
+                )
+        except SQLAlchemyError as exc:
+            raise HTTPException(status_code=503, detail="Database unavailable") from exc
 
     @app.put("/api/v1/settings", dependencies=[Depends(require_admin)])
     def put_settings(payload: SettingsUpdate) -> SettingsSnapshot:
