@@ -9,8 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from binance_ai_trader.api import create_app
 from binance_ai_trader.api_config import ApiConfig
-from binance_ai_trader.models import AuditRow, Base
-from sqlalchemy.orm import Session
+from binance_ai_trader.models import Base
 
 TOKEN = "this-is-a-dev-test-token-of-40-characters"
 
@@ -90,12 +89,16 @@ def test_unsafe_settings_rejected(client: TestClient, field: str, value: object)
     h = {"X-Admin-Token": TOKEN}
     settings = client.get("/api/v1/settings", headers=h).json()["settings"]
     settings[field] = value
-    resp = client.put("/api/v1/settings", headers=h, json={"expected_version": 0, "settings": settings})
+    resp = client.put(
+        "/api/v1/settings", headers=h, json={"expected_version": 0, "settings": settings}
+    )
     assert resp.status_code == 422
 
 
 def test_audit_written(client: TestClient) -> None:
     h = {"X-Admin-Token": TOKEN}
     settings = client.get("/api/v1/settings", headers=h).json()["settings"]
-    resp = client.put("/api/v1/settings", headers=h, json={"expected_version": 0, "settings": settings})
+    resp = client.put(
+        "/api/v1/settings", headers=h, json={"expected_version": 0, "settings": settings}
+    )
     assert resp.status_code == 200
