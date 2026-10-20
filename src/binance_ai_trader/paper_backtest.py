@@ -263,6 +263,11 @@ def run_paper_spot_backtest(
             )
         )
 
+    # A remaining open position also cannot be silently carried into
+    # a later UTC day with no reliable daily mark-to-market valuation.
+    if book.positions and history[-1].close_time_ms // DAY_MS > current_day:
+        raise PaperBacktestRejected("overnight_mark_to_market_not_supported")
+
     return PaperBacktestResult(
         symbol=symbol,
         interval=interval,
