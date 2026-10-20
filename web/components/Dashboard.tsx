@@ -19,6 +19,7 @@ type Risk = {
   manual_approval: boolean; allowed_symbols: string[];
 };
 type Snapshot = { version: number; settings: Risk };
+type AuditEvent = { version: number; action: string; created_at: string };
 const DEFAULT: Risk = {
   mode: "paper", market_type: "spot", bot_enabled: false,
   spot_capital_usdt: 1000, futures_capital_usdt: 0,
@@ -71,6 +72,8 @@ export default function Dashboard() {
   const [risk,setRisk] = useState<Risk>(DEFAULT);
   const [notice,setNotice] = useState("");
   const [busy,setBusy] = useState(false);
+  const [auditBusy,setAuditBusy] = useState(false);
+  const [auditEvents,setAuditEvents] = useState<AuditEvent[]>([]);
 
   function change<K extends keyof Risk>(key:K, value:Risk[K]) {
     setRisk(current => ({...current,[key]:value}));
@@ -93,6 +96,21 @@ export default function Dashboard() {
       setConnected(false);
       setNotice(error instanceof Error?error.message:"API bağlantısı kurulamadı.");
     }finally{setBusy(false);}
+  }
+  async function loadAudit(){
+    if(!connected)return;
+    setAuditBusy(true);setNotice("");
+    try{
+      const response=await fetch(localApiAddress(address)+"/api/v1/audit?limit=30",{
+        headers:{"X-Admin-Token":secret},cache:"no-store"
+      });
+      if(!response.ok)throw new Error("Olay geçmişi okunamadı: HTTP "+response.status);
+      const data:{events:AuditEvent[]}=await response.json();
+      setAuditEvents(data.events);
+    }catch(error){
+      setAuditEvents([]);
+      setNotice(error instanceof Error?error.message:"Olay geçmişi alınamadı.");
+    }finally{setAuditBusy(false);}
   }
   async function save(){
     if(!connected){setDialog(true);return;}
@@ -126,7 +144,7 @@ export default function Dashboard() {
       <div className="nav-label">YÖNETİM</div>
       <nav aria-label="Ana menü">{nav.map(item=>
         <button key={item.key} className={"nav-item "+(section===item.key?"active":"")}
-          onClick={()=>{setSection(item.key);setDrawer(false);setNotice("");}}>
+          onClick={()=>{setSection(item.key);setDrawer(false);setNotice("");if(item.key==="logs"){void loadAudit();}}}>
           <item.Icon size={18}/><span>{item.title}</span><ChevronRight size={14}/></button>
       )}</nav>
       <div className="sidebar-footer"><LockKeyhole size={16}/> PAPER ONLY<br/> Canlı emir özelliği yok.</div>
@@ -198,7 +216,28 @@ export default function Dashboard() {
           </div>
           <Row label="Stop-loss zorunlu" desc="Güvenlik gereği kapatılamaz."><Switch label="Stop-loss zorunlu" value={true} onChange={()=>{}} disabled/></Row>
         </section>}
-        {(section==="strategies"||section==="positions"||section==="logs")&&<section className="surface empty-page">
+        {section==="logs"&&<section className="surface form">
+          <div className="section-title"><div><h2>Kaydedilmiş Ayar Değişiklikleri</h2>
+            <p>Veritabanındaki işlem geçmişi; gerçek piyasa işlemi değildir.</p></div>
+            <button className="button outline" disabled={!connected||auditBusy}
+              onClick={()=>{void loadAudit();}}>{auditBusy?"Yükleniyor...":"Geçmişi Yenile"}</button>
+          </div>
+          {!connected?<div className="empty audit-empty"><FileClock size={30}/>
+            <strong>Yerel API bağlantısı gerekiyor</strong>
+            <span>Olay kayıtları yüklenmedi. Sahte veri gösterilmiyor.</span></div>:
+           auditEvents.length===0?<div className="empty audit-empty"><FileClock size={30}/>
+            <strong>Gösterilecek kayıt bulunmuyor</strong>
+            <span>Henüz ayar değişikliği yok veya yeni bir kayıt alınamadı.</span></div>:
+           <div className="audit-list" aria-label="Ayar değişiklik geçmişi">
+              {auditEvents.map(entry=><div className="audit-entry" key={entry.version}>
+                <span className="audit-symbol"><FileClock size={17}/></span>
+                <div><strong>Ayarlar güncellendi</strong>
+                  <small>Sürüm {entry.version} · {new Date(entry.created_at).toLocaleString("tr-TR")}</small></div>
+                <span className="audit-status">Kaydedildi</span>
+              </div>)}
+            </div>}
+        </section>}
+        {(section==="strategies"||section==="positions")&&<section className="surface empty-page">
           <FileClock size={34}/><h2>Bu modül henüz geliştirme aşamasında</h2>
           <p>İşlem ve performans verileri uydurulmaz. Sonraki paketlerde açılacak.</p>
           <button className="button outline" onClick={()=>setSection("dashboard")}>Genel Bakışa Dön</button>
