@@ -107,9 +107,7 @@ def create_app(
                 with session.begin():
                     data = payload.settings.model_dump(mode="json")
                     if payload.expected_version == 0:
-                        session.add(
-                            TradingSettingsRow(id=1, version=1, data=data, modified_at=now)
-                        )
+                        session.add(TradingSettingsRow(id=1, version=1, data=data, modified_at=now))
                     else:
                         result = session.execute(
                             update(TradingSettingsRow)
