@@ -93,7 +93,9 @@ def register_paper_spot_read_route(
                 # All counts, rows and account values come from one committed
                 # PostgreSQL snapshot, not inconsistent independent requests.
                 if session.get_bind().dialect.name == "postgresql":
-                    session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+                    session.execute(
+                        text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+                    )
 
                 account = session.get(PaperSpotAccountRow, 1)
                 if account is None:
