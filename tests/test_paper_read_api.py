@@ -38,8 +38,9 @@ def test_paper_spot_read_auth_origin_and_empty_state(
     assert client.get(uri).status_code == 401
     assert client.get(uri, headers={"X-Admin-Token": "wrong"}).status_code == 401
     assert (
-        client.get(uri, headers={"X-Admin-Token": TOKEN, "Origin": "https://evil.example"})
-        .status_code
+        client.get(
+            uri, headers={"X-Admin-Token": TOKEN, "Origin": "https://evil.example"}
+        ).status_code
         == 403
     )
     host_response = client.get(uri, headers={"X-Admin-Token": TOKEN, "Host": "evil.example"})
@@ -91,11 +92,7 @@ def test_paper_account_values_are_strings_not_live_equity(
 
 
 def test_paper_read_requires_database_and_configured_token() -> None:
-    with TestClient(
-        create_app(config=ApiConfig(database_url=None, admin_token=TOKEN))
-    ) as client:
+    with TestClient(create_app(config=ApiConfig(database_url=None, admin_token=TOKEN))) as client:
         assert client.get("/api/v1/paper/spot", headers={"X-Admin-Token": TOKEN}).status_code == 503
-    with TestClient(
-        create_app(config=ApiConfig(database_url=None, admin_token=None))
-    ) as client:
+    with TestClient(create_app(config=ApiConfig(database_url=None, admin_token=None))) as client:
         assert client.get("/api/v1/paper/spot").status_code == 503
