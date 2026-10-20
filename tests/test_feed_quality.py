@@ -30,9 +30,7 @@ def fixture(open_ms: int, interval: str = "1m") -> Candle:
 
 def test_ready_requires_sufficient_fresh_contiguous_closed_candles() -> None:
     candles = [fixture(t * 60_000) for t in range(50)]
-    result = evaluate_closed_spot_feed(
-        candles, symbol="BTCUSDT", interval="1m", now_ms=50 * 60_000
-    )
+    result = evaluate_closed_spot_feed(candles, symbol="BTCUSDT", interval="1m", now_ms=50 * 60_000)
     assert result.status is FeedStatus.READY
     assert result.usable_for_paper_signals is True
     assert result.missing_intervals == 0
@@ -40,9 +38,7 @@ def test_ready_requires_sufficient_fresh_contiguous_closed_candles() -> None:
 
 
 def test_empty_feed_is_not_ready() -> None:
-    result = evaluate_closed_spot_feed(
-        [], symbol="BTCUSDT", interval="1m", now_ms=180_000
-    )
+    result = evaluate_closed_spot_feed([], symbol="BTCUSDT", interval="1m", now_ms=180_000)
     assert result.status is FeedStatus.EMPTY
     assert result.usable_for_paper_signals is False
 
@@ -126,7 +122,10 @@ def test_each_supported_interval(interval: str) -> None:
 def test_rejects_unsafe_window_size(min_history: int) -> None:
     with pytest.raises(ValueError):
         evaluate_closed_spot_feed(
-            [], symbol="BTCUSDT", interval="1m", now_ms=120_000,
+            [],
+            symbol="BTCUSDT",
+            interval="1m",
+            now_ms=120_000,
             min_history=min_history,
         )
 
