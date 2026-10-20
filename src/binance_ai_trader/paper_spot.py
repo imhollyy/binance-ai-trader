@@ -126,7 +126,7 @@ def simulate_spot_buy(
     intent: SpotBuyIntent,
     *,
     explicit_approval: bool = False,
-    costs: PaperCosts = PaperCosts(),
+    costs: PaperCosts | None = None,
 ) -> PaperSpotBook:
     """Return a NEW immutable paper book or reject without any partial mutation."""
 
@@ -150,7 +150,7 @@ def simulate_spot_buy(
         raise PaperSpotRejected("invalid_price_or_quantity")
     if intent.stop_price >= intent.reference_price:
         raise PaperSpotRejected("stop_not_below_entry")
-    fee_rate, slip_rate = _costs(costs)
+    fee_rate, slip_rate = _costs(costs if costs is not None else PaperCosts())
 
     # Prevent trusting a stale open-position/reservation snapshot.
     reserved = sum((position.entry_notional_usdt for position in book.positions), Decimal(0))
@@ -211,13 +211,13 @@ def simulate_spot_sell(
     trade_id: str,
     reference_price: Decimal,
     *,
-    costs: PaperCosts = PaperCosts(),
+    costs: PaperCosts | None = None,
 ) -> PaperSpotBook:
     """Close an entire existing PAPER Spot long. No automatic stops or orders."""
 
     if not _positive(reference_price):
         raise PaperSpotRejected("invalid_exit_reference_price")
-    fee_rate, slip_rate = _costs(costs)
+    fee_rate, slip_rate = _costs(costs if costs is not None else PaperCosts())
     matching = [position for position in book.positions if position.trade_id == trade_id]
     if len(matching) != 1:
         raise PaperSpotRejected("paper_position_not_open")
