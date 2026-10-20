@@ -52,3 +52,22 @@ returns only previously imported **closed** public Spot candles. All OHLCV decim
 values are returned as JSON **strings** to avoid floating-point rounding.
 If no data were imported the `candles` list is empty. This is **not**
 a live ticker: no exchange request or scheduled worker is triggered by this endpoint.
+
+## Populate paper-only historical Spot market view (manual, local)
+
+After starting the local Docker Compose stack, run one bounded **public**
+market-data import. No Binance API key is needed:
+
+```bash
+docker compose exec api python -m binance_ai_trader.market_cli --symbol BTCUSDT --interval 1m --limit 100
+docker compose exec api python -m binance_ai_trader.market_cli --symbol ETHUSDT --interval 5m --limit 100
+```
+
+The output reports how many CLOSED candles were returned, how many were newly
+stored and the count of missing intervals. Run it again to verify idempotence.
+Your Piyasa Verileri page can then display stored prices through the local API.
+
+This command is **manual and one-shot**, not a trading bot or background
+scheduler. It never accesses balances, orders, Futures, exchange credentials
+or private endpoints. HTTP 418/429 stops without automatically retrying.
+Your development .env file must not be committed or shared.
