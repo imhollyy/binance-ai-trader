@@ -51,3 +51,17 @@ A separate authenticated live-order adapter is intentionally excluded from early
 - Default to stopping new actions on stale data, exchange uncertainty or limit breaches.
 
 The architecture is aspirational; none of these later components is claimed complete in BT-001.
+
+## BT-003A public Spot adapter
+
+`market_data.PublicSpotMarketClient` contacts only
+`https://data-api.binance.vision/api/v3/klines` with public HTTP GET,
+no account/API key or order endpoints. BTCUSDT and ETHUSDT, intervals
+1m, 5m, 15m and bounded limits only. Returned prices are precise
+`Decimal` values; malformed, unsorted or unfinished candles are not
+accepted as finished market history. HTTP 418/429 returns an explicit
+rate-limit exception and is **never retried automatically**.
+
+This first client is implemented and offline-tested but is not yet
+wired to a background worker, API or database. Later package BT-003B
+adds durable candle storage, gap recovery and bounded periodic ingestion.
