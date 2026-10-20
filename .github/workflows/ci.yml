@@ -27,6 +27,8 @@ jobs:
           cache-dependency-path: pyproject.toml
       - name: Install package and development tools
         run: python -m pip install -e ".[dev]"
+      - name: Temporary formatting diagnostics (no write)
+        run: python -m ruff format --diff src/binance_ai_trader/paper_execution.py tests/test_paper_execution_postgres.py
       - name: Ruff lint
         run: python -m ruff check .
       - name: Ruff format
