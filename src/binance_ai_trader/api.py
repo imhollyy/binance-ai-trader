@@ -122,7 +122,9 @@ def create_app(
                 ).all()
                 return AuditLog(
                     events=[
-                        AuditEvent(version=row.version, action=row.action, created_at=row.created_at)
+                        AuditEvent(
+                            version=row.version, action=row.action, created_at=row.created_at
+                        )
                         for row in entries
                     ]
                 )
@@ -140,6 +142,7 @@ def create_app(
                     data = payload.settings.model_dump(mode="json")
                     if payload.expected_version == 0:
                         session.add(TradingSettingsRow(id=1, version=1, data=data, modified_at=now))
+                        session.flush()  # Ensure the FK parent exists before inserting audit.
                     else:
                         result = session.connection().execute(
                             update(TradingSettingsRow)

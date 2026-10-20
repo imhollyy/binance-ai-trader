@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,7 +23,7 @@ pytestmark = pytest.mark.skipif(DB_URL is None, reason="Requires CI PostgreSQL s
 
 
 @pytest.fixture
-def postgres_engine() -> Engine:
+def postgres_engine() -> Iterator[Engine]:
     """Migrations are applied by CI, never create_all for the production schema."""
 
     assert DB_URL is not None
@@ -48,7 +49,9 @@ def test_postgres_api_restart_persists_settings_and_audit(postgres_engine: Engin
         )
         assert response.status_code == 200, response.text
         assert client.get("/health/ready").status_code == 200
-        assert client.get("/api/v1/audit", headers=HEADERS).json()["events"][0]["version"] == 1
+        assert (
+            client.get("/api/v1/audit", headers=HEADERS).json()["events"][0]["version"] == 1
+        )
 
     # New Engine + new app simulates an application/container restart.
     postgres_engine.dispose()
@@ -66,7 +69,10 @@ def test_postgres_api_restart_persists_settings_and_audit(postgres_engine: Engin
                 headers=HEADERS,
                 json={"expected_version": 0, "settings": settings},
             ).status_code == 409
-            assert client.get("/api/v1/audit", headers=HEADERS).json()["events"][0]["version"] == 1
+            assert (
+                client.get("/api/v1/audit", headers=HEADERS).json()["events"][0]["version"]
+                == 1
+            )
             updated = dict(settings)
             updated["spot_capital_usdt"] = 1500
             assert client.put(

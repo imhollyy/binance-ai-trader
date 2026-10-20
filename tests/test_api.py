@@ -4,13 +4,12 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
 from binance_ai_trader.api import create_app
 from binance_ai_trader.api_config import ApiConfig
-from binance_ai_trader.models import AuditRow, Base
+from binance_ai_trader.models import Base
 
 TOKEN = "this-is-a-dev-test-token-of-40-characters"
 
