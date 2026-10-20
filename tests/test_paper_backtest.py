@@ -52,7 +52,7 @@ def candles(count: int = 60, interval: str = "1m") -> list[Candle]:
     ]
 
 
-def clock(history: list[Candle]) -> int:
+def clock(history: Sequence[Candle]) -> int:
     return history[-1].close_time_ms + 1
 
 
@@ -70,7 +70,11 @@ def sell(history: list[Candle], index: int = 50) -> BacktestDecision:
 
 
 def run(
-    history: Sequence[Candle], decisions: Sequence[BacktestDecision], **kwargs: object
+    history: Sequence[Candle],
+    decisions: Sequence[BacktestDecision],
+    *,
+    costs: PaperCosts | None = None,
+    warmup_candles: int = 50,
 ) -> PaperBacktestResult:
     return run_paper_spot_backtest(
         history,
@@ -79,7 +83,8 @@ def run(
         as_of_ms=clock(history),
         settings=settings(),
         decisions=decisions,
-        **kwargs,
+        costs=costs if costs is not None else PaperCosts(),
+        warmup_candles=warmup_candles,
     )
 
 
