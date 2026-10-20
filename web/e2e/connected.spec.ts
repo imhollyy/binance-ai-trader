@@ -31,6 +31,12 @@ test("connected paper risk settings persist from mobile panel into PostgreSQL", 
 
   await page.getByRole("button", { name: "Menüyü aç" }).click();
   await page.getByRole("button", { name: "Piyasa Verileri" }).click();
+  const historyResponse = await page.request.get(
+    "http://127.0.0.1:8000/api/v1/market/candles?symbol=BTCUSDT&interval=1m&limit=30",
+    { headers: { "X-Admin-Token": adminToken } }
+  );
+  expect(historyResponse.status()).toBe(200);
+  expect((await historyResponse.json()).candles).toHaveLength(0);
   await page.getByRole("button", { name: "Geçmişi Göster" }).click();
   await expect(page.getByText("Henüz kayıtlı mum verisi yok")).toBeVisible();
 
