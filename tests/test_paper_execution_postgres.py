@@ -261,7 +261,6 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
     ):
         open_paper_spot(session, _intent("blocked-after-loss"), "buy-after-loss")
 
-
     # Read an actual persisted PostgreSQL ledger through the local API.
     # The GET must not mutate balances, journals or positions.
     with Session(engine) as session:
@@ -276,9 +275,7 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
     with TestClient(api) as client:
         headers = {"X-Admin-Token": "isolated-paper-api-test-token-123456"}
         assert client.get("/api/v1/paper/spot").status_code == 401
-        result = client.get(
-            "/api/v1/paper/spot?positions_limit=2&events_limit=2", headers=headers
-        )
+        result = client.get("/api/v1/paper/spot?positions_limit=2&events_limit=2", headers=headers)
         assert result.status_code == 200
         assert result.headers["cache-control"] == "no-store, private"
         body = result.json()
