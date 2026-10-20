@@ -1,14 +1,15 @@
 # Sprint 01 — tasks and acceptance gates
 
-## BT-001: Bootstrap — implemented on feature branch, pending review
+## BT-001: Bootstrap — completed and merged into `dev`
 
-- [x] Create private independent GitHub repository and dev/feature-branch workflow.
-- [x] Add Python 3.12 package, entry point and reproducible install instructions.
+- [x] Create independent GitHub repository; visibility subsequently changed to PUBLIC.
+- [x] Set up `dev` and feature-branch workflow.
+- [x] Add Python 3.12 package, entry point and install instructions.
 - [x] Add paper-only fail-closed configuration and unit tests.
 - [x] Add Ruff lint/format, Mypy strict, Pytest and GitHub Actions workflow.
 - [x] Add .gitignore, safe environment example, security policy and architecture notes.
-- [ ] Confirm CI succeeded on the PR or verify equivalent commands locally before merge.
-- [ ] Reviewer approves and merges the PR into dev.
+- [x] GitHub Actions passed Python 3.12 quality checks on PR #1.
+- [x] PR #1 squash-merged into `dev`; post-merge `dev` CI passed.
 
 ## BT-002: API + PostgreSQL + Docker — future package
 
@@ -31,9 +32,9 @@
 
 ## BT-005–BT-010 — future packages
 
-- Data retention / reconciliation, gap recovery, indicator checks (EMA/RSI/ATR),
-  read-only reporting API, resilience/security testing and operator documentation.
+Data retention / reconciliation, gap recovery, indicator checks (EMA/RSI/ATR),
+read-only reporting API, resilience/security testing and operator documentation.
 
 ## Merge rules
 
-Do not merge on failing/unverified tests. Never enable live trading as part of this sprint.
+Do not merge with failing or unverified tests. Never enable live trading as part of this sprint. The public repository must contain no account secrets, sensitive history or private trading IP.
