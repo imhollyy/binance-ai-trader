@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
+import PaperSpotLedger from "./PaperSpotLedger";
 
 type Section = "dashboard" | "market" | "bot" | "risk" | "strategies" | "positions" | "logs";
 type Market = "spot" | "futures";
@@ -389,7 +390,8 @@ export default function Dashboard() {
               </div>)}
             </div>}
         </section>}
-        {(section==="strategies"||section==="positions")&&<section className="surface empty-page">
+        {section==="positions"&&<PaperSpotLedger connected={connected} apiAddress={address} token={secret}/>}
+        {section==="strategies"&&<section className="surface empty-page">
           <FileClock size={34}/><h2>Bu modül henüz geliştirme aşamasında</h2>
           <p>İşlem ve performans verileri uydurulmaz. Sonraki paketlerde açılacak.</p>
           <button className="button outline" onClick={()=>setSection("dashboard")}>Genel Bakışa Dön</button>
