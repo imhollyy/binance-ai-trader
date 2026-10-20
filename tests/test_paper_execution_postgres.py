@@ -234,9 +234,7 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
         competing.wait(timeout=10)
         with Session(engine) as session:
             try:
-                return open_paper_spot(
-                    session, _intent(f"race-{index}"), f"buy-race-{index}"
-                )
+                return open_paper_spot(session, _intent(f"race-{index}"), f"buy-race-{index}")
             except PaperExecutionRejected as exc:
                 return str(exc)
 
@@ -252,12 +250,11 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
     # below the stop realizes a loss and must block the next new buy.
     winner = receipts[0]
     with Session(engine) as session:
-        loss = close_paper_spot(
-            session, winner.trade_id, D("50"), "sell-race-loss"
-        )
+        loss = close_paper_spot(session, winner.trade_id, D("50"), "sell-race-loss")
     assert loss.realized_pnl_delta_usdt < D("-40")
-    with Session(engine) as session, pytest.raises(
-        PaperExecutionRejected, match="daily_loss_limit"
+    with (
+        Session(engine) as session,
+        pytest.raises(PaperExecutionRejected, match="daily_loss_limit"),
     ):
         open_paper_spot(session, _intent("blocked-after-loss"), "buy-after-loss")
 
