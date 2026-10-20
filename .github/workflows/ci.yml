@@ -71,5 +71,5 @@ jobs:
         run: python -m alembic upgrade head
       - name: Re-run migration idempotently
         run: python -m alembic upgrade head
-      - name: PostgreSQL persistence and audit integration
-        run: python -m pytest -q tests/test_postgres_integration.py
+      - name: PostgreSQL persistence and paper ledger integration
+        run: python -m pytest -q tests/test_postgres_integration.py tests/test_paper_ledger_postgres.py
