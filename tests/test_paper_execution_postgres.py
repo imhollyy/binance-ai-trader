@@ -25,6 +25,7 @@ from binance_ai_trader.models import (
 )
 from binance_ai_trader.paper_execution import (
     PaperExecutionRejected,
+    PaperTradeReceipt,
     close_paper_spot,
     open_paper_spot,
 )
@@ -89,7 +90,7 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
 
     barrier = Barrier(2)
 
-    def concurrent_buy(_: int) -> object:
+    def concurrent_buy(_: int) -> PaperTradeReceipt:
         barrier.wait(timeout=10)
         with Session(engine) as session:
             return open_paper_spot(session, _intent("first"), "buy-first")
@@ -152,6 +153,7 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
 
     # A new SQLAlchemy engine (equivalent to an API process restart) sees the same
     # ledger receipt and settled cash, rather than silently resetting the account.
+    assert URL is not None
     restarted = create_engine(URL, pool_pre_ping=True)
     try:
         with Session(restarted) as session:
@@ -186,7 +188,9 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
         event.remove(session, "before_flush", fail_journal_write)
     assert _counts(engine) == (1, 3, 1)
     with Session(engine) as session:
-        assert session.get(PaperSpotAccountRow, 1).cash_usdt == closed.cash_after_usdt  # type: ignore[union-attr]
+        saved = session.get(PaperSpotAccountRow, 1)
+        assert saved is not None
+        assert saved.cash_usdt == closed.cash_after_usdt
 
     # A legitimate new buy works after rollback; NaN and excessive numeric
     # precision are rejected without touching balances or the journal.
