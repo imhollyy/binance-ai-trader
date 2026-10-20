@@ -65,3 +65,16 @@ rate-limit exception and is **never retried automatically**.
 This first client is implemented and offline-tested but is not yet
 wired to a background worker, API or database. Later package BT-003B
 adds durable candle storage, gap recovery and bounded periodic ingestion.
+
+## BT-003B candle persistence (implemented)
+
+`SpotCandleRow` uses PostgreSQL `NUMERIC(38,18)`, Unix UTC
+millisecond timestamps and a unique constraint on
+`(symbol, interval, open_time_ms)`. The SQL `ON CONFLICT DO NOTHING`
+import operation is repeat-safe and rejects invalid/incomplete batches.
+A bounded gap scanner identifies missing opening timestamps.
+
+PostgreSQL CI checks precision, duplicate imports, persistence across
+database connection restart, and missing intervals. No periodic market
+ingestion worker, WebSocket stream, trading engine or authenticated exchange
+API is part of this module.
