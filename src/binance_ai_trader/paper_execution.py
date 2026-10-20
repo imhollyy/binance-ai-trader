@@ -237,9 +237,7 @@ def _existing(
     return _receipt(matches[0], trade_id)
 
 
-def _risk_state(
-    account: PaperSpotAccountRow, events: list[PaperSpotJournalRow]
-) -> PaperRiskState:
+def _risk_state(account: PaperSpotAccountRow, events: list[PaperSpotJournalRow]) -> PaperRiskState:
     """Realized-only equity is safe exclusively while there are no open positions."""
     now = datetime.now(UTC)
     cumulative = Decimal(0)
@@ -281,11 +279,15 @@ def open_paper_spot(
         quantity = _money(intent.quantity)
         stop = _money(intent.stop_price)
         digest = _event_id(
-            "spot_buy", key,
+            "spot_buy",
+            key,
             {
-                "trade": intent.trade_id, "symbol": intent.symbol,
-                "price": _number(price), "quantity": _number(quantity),
-                "stop": _number(stop), "fee_bps": assumptions.fee_bps,
+                "trade": intent.trade_id,
+                "symbol": intent.symbol,
+                "price": _number(price),
+                "quantity": _number(quantity),
+                "stop": _number(stop),
+                "fee_bps": assumptions.fee_bps,
                 "slippage_bps": assumptions.slippage_bps,
             },
         )
@@ -307,16 +309,22 @@ def open_paper_spot(
             )
             try:
                 opened = simulate_spot_buy(
-                    book, settings, state,
+                    book,
+                    settings,
+                    state,
                     SpotBuyIntent(intent.trade_id, intent.symbol, price, quantity, stop),
-                    explicit_approval=explicit_approval, costs=assumptions,
+                    explicit_approval=explicit_approval,
+                    costs=assumptions,
                 )
             except PaperSpotRejected as exc:
                 raise PaperExecutionRejected(str(exc)) from exc
             position = opened.positions[-1]
             record = PaperSpotPositionRow(
-                account_id=1, trade_id=position.trade_id, idempotency_key=key,
-                symbol=position.symbol, status="open",
+                account_id=1,
+                trade_id=position.trade_id,
+                idempotency_key=key,
+                symbol=position.symbol,
+                status="open",
                 quantity=_money(position.quantity),
                 entry_fill_price=_money(position.entry_fill_price),
                 entry_notional_usdt=_money(position.entry_notional_usdt),
@@ -330,10 +338,14 @@ def open_paper_spot(
             session.add(record)
             session.flush()
             journal = PaperSpotJournalRow(
-                account_id=1, position_id=record.id,
-                event_id=digest, idempotency_key=key, event_type="spot_buy",
+                account_id=1,
+                position_id=record.id,
+                event_id=digest,
+                idempotency_key=key,
+                event_type="spot_buy",
                 cash_delta_usdt=_money(cash_after - account.cash_usdt),
-                balance_after_usdt=cash_after, fee_usdt=fee,
+                balance_after_usdt=cash_after,
+                fee_usdt=fee,
                 quantity_delta=_money(position.quantity),
             )
             session.add(journal)
@@ -358,10 +370,13 @@ def close_paper_spot(
     with localcontext(Context(prec=64)):
         price = _money(reference_price)
         digest = _event_id(
-            "spot_sell", key,
+            "spot_sell",
+            key,
             {
-                "trade": trade_id, "price": _number(price),
-                "fee_bps": assumptions.fee_bps, "slippage_bps": assumptions.slippage_bps,
+                "trade": trade_id,
+                "price": _number(price),
+                "fee_bps": assumptions.fee_bps,
+                "slippage_bps": assumptions.slippage_bps,
             },
         )
         with session.begin():
@@ -382,7 +397,8 @@ def close_paper_spot(
                 cash_usdt=account.cash_usdt,
                 positions=(
                     PaperSpotPosition(
-                        trade_id=stored.trade_id, symbol=stored.symbol,
+                        trade_id=stored.trade_id,
+                        symbol=stored.symbol,
                         quantity=stored.quantity,
                         entry_fill_price=stored.entry_fill_price,
                         entry_notional_usdt=stored.entry_notional_usdt,
@@ -411,10 +427,14 @@ def close_paper_spot(
             stored.realized_pnl_usdt = pnl
             stored.closed_at = datetime.now(UTC)
             journal = PaperSpotJournalRow(
-                account_id=1, position_id=stored.id,
-                event_id=digest, idempotency_key=key, event_type="spot_sell",
+                account_id=1,
+                position_id=stored.id,
+                event_id=digest,
+                idempotency_key=key,
+                event_type="spot_sell",
                 cash_delta_usdt=_money(cash_after - account.cash_usdt),
-                balance_after_usdt=cash_after, fee_usdt=fee,
+                balance_after_usdt=cash_after,
+                fee_usdt=fee,
                 realized_pnl_delta_usdt=pnl,
                 quantity_delta=_money(-stored.quantity),
             )
