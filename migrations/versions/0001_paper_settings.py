@@ -26,7 +26,9 @@ def upgrade() -> None:
     op.create_table(
         "settings_audit",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("settings_id", sa.Integer(), sa.ForeignKey("trading_settings.id"), nullable=False),
+        sa.Column(
+            "settings_id", sa.Integer(), sa.ForeignKey("trading_settings.id"), nullable=False
+        ),
         sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("action", sa.String(length=40), nullable=False),
         sa.Column("data", sa.JSON(), nullable=False),
