@@ -109,7 +109,7 @@ def create_app(
                     if payload.expected_version == 0:
                         session.add(TradingSettingsRow(id=1, version=1, data=data, modified_at=now))
                     else:
-                        result = session.execute(
+                        result = session.connection().execute(
                             update(TradingSettingsRow)
                             .where(
                                 TradingSettingsRow.id == 1,
