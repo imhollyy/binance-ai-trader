@@ -133,9 +133,7 @@ class PublicSpotMarketClient:
             raise ValueError("Unsupported candle interval")
         if type(limit) is not int or not 1 <= limit <= 1000:
             raise ValueError("limit must be an integer between 1 and 1000")
-        if start_time_ms is not None and (
-            type(start_time_ms) is not int or start_time_ms < 0
-        ):
+        if start_time_ms is not None and (type(start_time_ms) is not int or start_time_ms < 0):
             raise ValueError("start_time_ms must be a nonnegative Unix millisecond integer")
 
         params: dict[str, str | int] = {"symbol": symbol, "interval": interval, "limit": limit}

@@ -19,8 +19,18 @@ NOW_MS = 1_800_000_180_000
 
 def kline(open_ms: int, *, close: str = "106.25") -> list[object]:
     return [
-        open_ms, "100", "110", "90", close, "12.5000", open_ms + 59_999,
-        "0", 1, "0", "0", "0",
+        open_ms,
+        "100",
+        "110",
+        "90",
+        close,
+        "12.5000",
+        open_ms + 59_999,
+        "0",
+        1,
+        "0",
+        "0",
+        "0",
     ]
 
 
@@ -51,9 +61,7 @@ def test_parses_closed_candle_with_decimal_precision() -> None:
 
 
 def test_excludes_unfinished_last_candle() -> None:
-    client = create_client([
-        kline(1_799_999_940_000), kline(1_800_000_180_000)
-    ])
+    client = create_client([kline(1_799_999_940_000), kline(1_800_000_180_000)])
     candles = client.fetch_closed_klines(symbol="ETHUSDT", interval="1m")
     assert len(candles) == 1
 
@@ -74,7 +82,9 @@ def test_rejects_unapproved_intervals(interval: str) -> None:
 def test_rejects_bad_limits(limit: object) -> None:
     with pytest.raises(ValueError, match="limit"):
         create_client([]).fetch_closed_klines(
-            symbol="BTCUSDT", interval="1m", limit=limit  # type: ignore[arg-type]
+            symbol="BTCUSDT",
+            interval="1m",
+            limit=limit,  # type: ignore[arg-type]
         )
 
 
@@ -104,9 +114,7 @@ def test_rate_limit_429_is_not_retried() -> None:
         count += 1
         return httpx.Response(429, json={}, headers={"Retry-After": "45"})
 
-    client = PublicSpotMarketClient(
-        transport=httpx.MockTransport(handler), clock_ms=lambda: NOW_MS
-    )
+    client = PublicSpotMarketClient(transport=httpx.MockTransport(handler), clock_ms=lambda: NOW_MS)
     with pytest.raises(MarketRateLimited) as caught:
         client.fetch_closed_klines(symbol="BTCUSDT", interval="1m")
     assert caught.value.status_code == 429
