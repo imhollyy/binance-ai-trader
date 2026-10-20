@@ -17,3 +17,11 @@ Do NOT expose the API publicly; its temporary dev token is not a production logi
 Validation: npm run typecheck; npm run build.
 
 Mobile-browser smoke tests: npm run test:e2e (requires npx playwright install chromium).
+
+## Stored Spot market history
+
+The **Piyasa Verileri** menu reads closed historical candles already stored in
+PostgreSQL through the authenticated local API. The symbol and interval filters
+are BTCUSDT/ETHUSDT and 1m/5m/15m. An empty database displays a clear
+empty state; the dashboard does not claim live data or generate fake prices.
+The market screen never sends Binance orders or authenticates to Binance.

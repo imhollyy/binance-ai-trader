@@ -8,7 +8,7 @@ import {
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-type Section = "dashboard" | "bot" | "risk" | "strategies" | "positions" | "logs";
+type Section = "dashboard" | "market" | "bot" | "risk" | "strategies" | "positions" | "logs";
 type Market = "spot" | "futures";
 type Risk = {
   mode: "paper"; market_type: Market; bot_enabled: boolean;
@@ -19,6 +19,16 @@ type Risk = {
   manual_approval: boolean; allowed_symbols: string[];
 };
 type Snapshot = { version: number; settings: Risk };
+type SpotSymbol = "BTCUSDT" | "ETHUSDT";
+type SpotInterval = "1m" | "5m" | "15m";
+type StoredSpotCandle = {
+  open_time_ms: number; close_time_ms: number; open: string; high: string;
+  low: string; close: string; volume: string;
+};
+type StoredCandleHistory = {
+  source: "stored_public_spot"; symbol: SpotSymbol; interval: SpotInterval;
+  candles: StoredSpotCandle[];
+};
 type AuditEvent = { version: number; action: string; created_at: string };
 const DEFAULT: Risk = {
   mode: "paper", market_type: "spot", bot_enabled: false,
@@ -37,6 +47,7 @@ function localApiAddress(value: string): string {
 }
 const nav = [
   {key: "dashboard", title: "Genel Bakış", Icon: BarChart3},
+  {key: "market", title: "Piyasa Verileri", Icon: Activity},
   {key: "bot", title: "Bot Yönetimi", Icon: Bot},
   {key: "risk", title: "Risk Yönetimi", Icon: ShieldCheck},
   {key: "strategies", title: "Stratejiler", Icon: Layers3},
@@ -74,6 +85,10 @@ export default function Dashboard() {
   const [busy,setBusy] = useState(false);
   const [auditBusy,setAuditBusy] = useState(false);
   const [auditEvents,setAuditEvents] = useState<AuditEvent[]>([]);
+  const [spotSymbol,setSpotSymbol] = useState<SpotSymbol>("BTCUSDT");
+  const [spotInterval,setSpotInterval] = useState<SpotInterval>("1m");
+  const [storedCandles,setStoredCandles] = useState<StoredSpotCandle[]>([]);
+  const [marketLoad,setMarketLoad] = useState<"idle"|"loading"|"ready"|"error">("idle");
 
   function change<K extends keyof Risk>(key:K, value:Risk[K]) {
     setRisk(current => ({...current,[key]:value}));
@@ -112,6 +127,30 @@ export default function Dashboard() {
       setNotice(error instanceof Error?error.message:"Olay geçmişi alınamadı.");
     }finally{setAuditBusy(false);}
   }
+  async function loadStoredSpot(
+    symbol: SpotSymbol = spotSymbol,
+    interval: SpotInterval = spotInterval
+  ){
+    if(!connected){setStoredCandles([]);setMarketLoad("idle");return;}
+    setMarketLoad("loading");setNotice("");
+    try{
+      const query=new URLSearchParams({symbol,interval,limit:"30"});
+      const response=await fetch(
+        localApiAddress(address)+"/api/v1/market/candles?"+query.toString(),
+        {headers:{"X-Admin-Token":secret},cache:"no-store"}
+      );
+      if(!response.ok)throw new Error("Kayıtlı veriler okunamadı (HTTP "+response.status+").");
+      const payload:StoredCandleHistory=await response.json();
+      if(payload.source!=="stored_public_spot" || !Array.isArray(payload.candles)){
+        throw new Error("Beklenmeyen piyasa veri biçimi.");
+      }
+      setStoredCandles(payload.candles);
+      setMarketLoad("ready");
+    }catch(error){
+      setStoredCandles([]);setMarketLoad("error");
+      setNotice(error instanceof Error?error.message:"Piyasa verisi okunamadı.");
+    }
+  }
   async function save(){
     if(!connected){setDialog(true);return;}
     setBusy(true);setNotice("");
@@ -144,7 +183,7 @@ export default function Dashboard() {
       <div className="nav-label">YÖNETİM</div>
       <nav aria-label="Ana menü">{nav.map(item=>
         <button key={item.key} className={"nav-item "+(section===item.key?"active":"")}
-          onClick={()=>{setSection(item.key);setDrawer(false);setNotice("");if(item.key==="logs"){void loadAudit();}}}>
+          onClick={()=>{setSection(item.key);setDrawer(false);setNotice("");if(item.key==="logs"){void loadAudit();}if(item.key==="market"){void loadStoredSpot();}}}>
           <item.Icon size={18}/><span>{item.title}</span><ChevronRight size={14}/></button>
       )}</nav>
       <div className="sidebar-footer"><LockKeyhole size={16}/> PAPER ONLY<br/> Canlı emir özelliği yok.</div>
@@ -186,6 +225,81 @@ export default function Dashboard() {
             </div><button className="button outline" onClick={()=>setSection("risk")}>Riskleri Gör <ChevronRight size={16}/></button></section>
           </div>
         </>}
+        {section==="market"&&<section className="surface market-surface">
+          <div className="section-title market-title">
+            <div><h2>Kayıtlı Spot Piyasa Geçmişi</h2>
+              <p>Binance'in herkese açık verilerinden saklanan son kapanmış mumlar.
+                Anlık fiyat veya işlem sinyali değildir.</p></div>
+            <button className="button outline" onClick={()=>{void loadStoredSpot();}}
+              disabled={!connected||marketLoad==="loading"}>
+              {marketLoad==="loading"?"Yükleniyor...":"Verileri Yenile"}</button>
+          </div>
+          <div className="market-filters">
+            <label>Parite
+              <select aria-label="Spot paritesi" value={spotSymbol}
+                onChange={e=>{
+                  setSpotSymbol(e.target.value as SpotSymbol);
+                  setStoredCandles([]);setMarketLoad("idle");
+                }}>
+                <option value="BTCUSDT">BTC / USDT</option>
+                <option value="ETHUSDT">ETH / USDT</option>
+              </select>
+            </label>
+            <label>Zaman Aralığı
+              <select aria-label="Mum zaman aralığı" value={spotInterval}
+                onChange={e=>{
+                  setSpotInterval(e.target.value as SpotInterval);
+                  setStoredCandles([]);setMarketLoad("idle");
+                }}>
+                <option value="1m">1 dakika</option>
+                <option value="5m">5 dakika</option>
+                <option value="15m">15 dakika</option>
+              </select>
+            </label>
+            <button className="button primary" disabled={!connected||marketLoad==="loading"}
+              onClick={()=>{void loadStoredSpot();}}>Geçmişi Göster</button>
+          </div>
+          <div className="market-disclaimer">
+            <ShieldCheck size={16}/> Sadece PostgreSQL'e kaydedilen kapanmış mumlar.
+            Yeni veri otomatik indirilmez; kayıtlar gecikmiş olabilir.
+          </div>
+          {!connected?<div className="empty market-empty"><LockKeyhole size={30}/>
+            <strong>Yerel API bağlantısı gerekiyor</strong>
+            <span>Piyasa geçmişi yüklenmedi. Örnek veya uydurma fiyat gösterilmiyor.</span>
+          </div>:marketLoad==="loading"?<div className="empty market-empty">
+            <strong>Kayıtlı veriler okunuyor...</strong>
+          </div>:marketLoad==="ready"&&storedCandles.length===0?
+            <div className="empty market-empty"><BarChart3 size={30}/>
+              <strong>Henüz kayıtlı mum verisi yok</strong>
+              <span>Veri içe alımı çalıştırılmadıkça burada piyasa fiyatı görünmez.</span>
+            </div>:marketLoad==="ready"?
+            <div className="market-history">
+              <div className="market-summary">
+                <div><span>Son kayıtlı kapanış</span>
+                  <strong>{storedCandles[0].close} USDT</strong>
+                  <small>Güncel piyasa fiyatı değildir.</small></div>
+                <div><span>Son kayıt zamanı</span>
+                  <strong className="market-time">{new Date(storedCandles[0].close_time_ms).toLocaleString("tr-TR",{timeZone:"UTC"})} UTC</strong>
+                  <small>{storedCandles.length} kayıt gösteriliyor</small></div>
+              </div>
+              <div className="market-record-list" aria-label="Kayıtlı mum geçmişi">
+                {storedCandles.map(row=><article className="market-record" key={row.open_time_ms}>
+                  <div className="record-top">
+                    <strong>{new Date(row.close_time_ms).toLocaleString("tr-TR",{timeZone:"UTC"})} UTC</strong>
+                    <span>{spotSymbol} · {spotInterval}</span></div>
+                  <div className="record-values">
+                    <div><small>Açılış</small><strong>{row.open}</strong></div>
+                    <div><small>Kapanış</small><strong>{row.close}</strong></div>
+                    <div><small>En yüksek</small><strong>{row.high}</strong></div>
+                    <div><small>En düşük</small><strong>{row.low}</strong></div>
+                    <div><small>Hacim</small><strong>{row.volume}</strong></div>
+                  </div></article>)}
+              </div>
+            </div>:<div className="empty market-empty"><BarChart3 size={30}/>
+              <strong>Henüz piyasa geçmişi yüklenmedi</strong>
+              <span>Bağlantı kurup pariteyi seçtikten sonra Geçmişi Göster'e dokun.</span>
+            </div>}
+        </section>}
         {section==="bot"&&<section className="surface form">
           <div className="section-title"><div><h2>Bot Yapılandırması</h2><p>Bu ayarlar tek başına işlem başlatmaz.</p></div>{saveButton}</div>
           <h3>Hedef Piyasa</h3><div className="segmented" role="group" aria-label="Piyasa tercihi">

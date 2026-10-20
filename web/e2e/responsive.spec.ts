@@ -33,3 +33,19 @@ test("audit panel requires connected API and shows no fabricated events", async 
   await expect(page.getByText("Yerel API bağlantısı gerekiyor")).toBeVisible();
   await expect(page.getByRole("button", { name: "Geçmişi Yenile" })).toBeDisabled();
 });
+
+test("mobile historical market page never invents live prices", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Menüyü aç" }).click();
+  await page.getByRole("button", { name: "Piyasa Verileri" }).click();
+  await expect(page.getByRole("heading", { name: "Piyasa Verileri", level: 1 })).toBeVisible();
+  await expect(page.getByText("Yerel API bağlantısı gerekiyor")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Geçmişi Göster" })).toBeDisabled();
+  await page.getByRole("combobox", { name: "Spot paritesi" }).selectOption("ETHUSDT");
+  const layout = await page.evaluate(() => ({
+    content: document.documentElement.scrollWidth,
+    viewport: document.documentElement.clientWidth,
+  }));
+  expect(layout.content).toBeLessThanOrEqual(layout.viewport + 1);
+});
