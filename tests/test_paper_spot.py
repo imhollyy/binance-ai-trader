@@ -83,9 +83,7 @@ def test_approval_is_not_automatic() -> None:
     initial = new_paper_spot_book(settings)
     with pytest.raises(PaperSpotRejected, match="manual_approval_required"):
         simulate_spot_buy(initial, settings, risk_state(), intent())
-    approved = simulate_spot_buy(
-        initial, settings, risk_state(), intent(), explicit_approval=True
-    )
+    approved = simulate_spot_buy(initial, settings, risk_state(), intent(), explicit_approval=True)
     assert len(approved.positions) == 1
 
 
@@ -94,9 +92,7 @@ def test_duplicate_open_and_close_are_rejected() -> None:
     initial = new_paper_spot_book(settings)
     opened = simulate_spot_buy(initial, settings, risk_state(), intent())
     with pytest.raises(PaperSpotRejected, match="duplicate_paper_trade_id"):
-        simulate_spot_buy(
-            opened, settings, risk_state(reserved="100.0500", positions=1), intent()
-        )
+        simulate_spot_buy(opened, settings, risk_state(reserved="100.0500", positions=1), intent())
     closed = simulate_spot_sell(opened, "trade_1", D("110"))
     with pytest.raises(PaperSpotRejected, match="paper_position_not_open"):
         simulate_spot_sell(closed, "trade_1", D("110"))
@@ -106,9 +102,7 @@ def test_duplicate_open_and_close_are_rejected() -> None:
 
 def test_stale_risk_snapshot_rejected() -> None:
     settings = config()
-    opened = simulate_spot_buy(
-        new_paper_spot_book(settings), settings, risk_state(), intent()
-    )
+    opened = simulate_spot_buy(new_paper_spot_book(settings), settings, risk_state(), intent())
     with pytest.raises(PaperSpotRejected, match="risk_snapshot_mismatch"):
         simulate_spot_buy(opened, settings, risk_state(), intent("trade_2"))
 
@@ -168,9 +162,7 @@ def test_unapproved_symbol_rejected() -> None:
         simulate_spot_buy(new_paper_spot_book(settings), settings, risk_state(), intent())
 
 
-@pytest.mark.parametrize(
-    "costs", [PaperCosts(fee_bps=-1), PaperCosts(slippage_bps=101)]
-)
+@pytest.mark.parametrize("costs", [PaperCosts(fee_bps=-1), PaperCosts(slippage_bps=101)])
 def test_invalid_cost_assumptions_rejected(costs: PaperCosts) -> None:
     settings = config()
     with pytest.raises(PaperSpotRejected, match="invalid_simulation_costs"):
@@ -181,9 +173,7 @@ def test_invalid_cost_assumptions_rejected(costs: PaperCosts) -> None:
 
 def test_negative_or_nan_exit_price_rejected_without_mutation() -> None:
     settings = config()
-    book = simulate_spot_buy(
-        new_paper_spot_book(settings), settings, risk_state(), intent()
-    )
+    book = simulate_spot_buy(new_paper_spot_book(settings), settings, risk_state(), intent())
     for value in (D("-2"), D("NaN"), D("Infinity")):
         with pytest.raises(PaperSpotRejected, match="invalid_exit_reference_price"):
             simulate_spot_sell(book, "trade_1", value)
