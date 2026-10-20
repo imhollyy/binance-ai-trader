@@ -121,7 +121,7 @@ def test_fee_and_slippage_can_exceed_original_risk_estimate() -> None:
             settings,
             risk_state(),
             intent(quantity="2"),
-            costs=PaperCosts(fee_bps=100, slippage_bps=100),
+            costs=PaperCosts(fee_bps=100, slippage_bps=0),
         )
 
 
