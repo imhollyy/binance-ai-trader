@@ -154,7 +154,7 @@ export default function Dashboard() {
         <div className="toolbar-left"><button className="hamburger" onClick={()=>setDrawer(true)} aria-label="Menüyü aç">
           <Menu size={23}/></button><span>TradePilot</span><ChevronRight size={14}/><strong>{activeTitle}</strong></div>
         <div className="toolbar-right"><span className="pill">● PAPER MODE</span>
-          <button className="connect-button" onClick={()=>setDialog(true)}><Settings2 size={17}/>
+          <button className="connect-button" aria-label={connected?"Yerel API Bağlı":"API Bağlan"} onClick={()=>setDialog(true)}><Settings2 size={17}/>
           <span>{connected?"Yerel API Bağlı":"API Bağlan"}</span></button></div>
       </header>
       <div className="content">
