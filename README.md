@@ -87,6 +87,32 @@ paper-only configuration and read-only market-data interface. Database tests
 require a disposable PostgreSQL instance and the explicit
 `PAPER_LEDGER_TEST_ISOLATED=1` guard; never point them at a personal database.
 
+## Internal atomic PAPER Spot lifecycle (BT-004D2)
+
+The internal Python-only `paper_execution.open_paper_spot` and
+`close_paper_spot` functions operate on the already-bootstrapped PostgreSQL
+virtual ledger. They use a single locked transaction for cash, open/closed
+position, fees, realized PnL and immutable journal events. Replay of the same
+idempotency key and request returns the original event receipt; a conflicting
+payload is rejected. The stored ledger is reconciled before each mutation.
+
+**Conservative safety restriction:** New opening is denied if any position is
+already open. With no trusted current mark-to-market feed, calculating
+portfolio equity from cash would fabricate a risk signal. For a flat book,
+day-start and peak equity use only recorded realized sale PnL (UTC day).
+A simulated stop is only an estimate and does not guarantee a fill price.
+
+These functions are **not wired to an HTTP trading route, strategy, worker,
+scheduler, Binance private API or real execution**. A caller must explicitly
+bootstrap the virtual account using `ensure_paper_spot_account` first.
+Closing an open paper position may remain allowed with the bot disabled,
+but explicit manual approval is still required if enabled in settings.
+
+The CI transaction tests use a **separate disposable** database named
+`trader_exec_test`, on loopback only. Never target personal PostgreSQL data
+or export credentials into issue/PR logs. Public deployment and live trading
+are out of scope.
+
 ## PC başında hızlı başlangıç
 
 Türkçe, Windows PowerShell/macOS/Linux adımlarını içeren
