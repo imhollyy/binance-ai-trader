@@ -14,9 +14,10 @@ def test_gap_scan_reports_only_absent_utc_opens() -> None:
 
 
 def test_gap_scan_is_empty_when_all_intervals_present() -> None:
-    assert find_missing_open_times(
-        [0, 300_000, 600_000], start_ms=0, end_ms=600_000, interval="5m"
-    ) == []
+    assert (
+        find_missing_open_times([0, 300_000, 600_000], start_ms=0, end_ms=600_000, interval="5m")
+        == []
+    )
 
 
 @pytest.mark.parametrize(
@@ -36,6 +37,4 @@ def test_unbounded_or_unaligned_scan_rejected(start: int, end: int, interval: st
 
 def test_unexpected_observed_opens_rejected() -> None:
     with pytest.raises(ValueError):
-        find_missing_open_times(
-            [30_000], start_ms=0, end_ms=120_000, interval="1m"
-        )
+        find_missing_open_times([30_000], start_ms=0, end_ms=120_000, interval="1m")

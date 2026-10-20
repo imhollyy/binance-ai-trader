@@ -29,18 +29,14 @@ def upgrade() -> None:
         sa.Column("close", sa.Numeric(precision=38, scale=18), nullable=False),
         sa.Column("volume", sa.Numeric(precision=38, scale=18), nullable=False),
         sa.UniqueConstraint(
-            "symbol", "interval", "open_time_ms",
+            "symbol",
+            "interval",
+            "open_time_ms",
             name="uq_spot_candles_symbol_interval_open",
         ),
-        sa.CheckConstraint(
-            "volume >= 0", name="ck_spot_candles_nonnegative_volume"
-        ),
-        sa.CheckConstraint(
-            "high >= low", name="ck_spot_candles_price_bounds"
-        ),
-        sa.CheckConstraint(
-            "open > 0 AND close > 0", name="ck_spot_candles_positive_prices"
-        ),
+        sa.CheckConstraint("volume >= 0", name="ck_spot_candles_nonnegative_volume"),
+        sa.CheckConstraint("high >= low", name="ck_spot_candles_price_bounds"),
+        sa.CheckConstraint("open > 0 AND close > 0", name="ck_spot_candles_positive_prices"),
     )
 
 
