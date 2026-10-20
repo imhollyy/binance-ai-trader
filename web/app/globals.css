@@ -31,3 +31,14 @@
 .market-filters>.button{width:100%}.record-values{grid-template-columns:repeat(2,minmax(0,1fr))}
 .record-top{align-items:flex-start;flex-direction:column;gap:6px}
 }
+
+/* Keyboard focus remains visible on every interactive control. */
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:3px solid #3264dc;outline-offset:3px}
+.sidebar button:focus-visible{outline-color:#b8caff}
+.num-box input:focus-visible,.secret input:focus-visible{outline:none}
+.num-box:focus-within,.secret:focus-within{outline:3px solid #3264dc;outline-offset:3px}
+.modal input:focus-visible{outline:3px solid #3264dc;outline-offset:3px}
+
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:0.01ms!important}
+}
