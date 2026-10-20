@@ -56,6 +56,7 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://trader_test:ci_only_password_not_a_secret@127.0.0.1:5432/trader_test
       TEST_POSTGRES_URL: postgresql+psycopg://trader_test:ci_only_password_not_a_secret@127.0.0.1:5432/trader_test
+      PAPER_LEDGER_TEST_ISOLATED: "1"
       TRADING_MODE: paper
     steps:
       - uses: actions/checkout@v4
@@ -70,5 +71,5 @@ jobs:
         run: python -m alembic upgrade head
       - name: Re-run migration idempotently
         run: python -m alembic upgrade head
-      - name: PostgreSQL persistence and audit integration
-        run: python -m pytest -q tests/test_postgres_integration.py
+      - name: PostgreSQL persistence and paper ledger integration
+        run: python -m pytest -q tests/test_postgres_integration.py tests/test_paper_ledger_postgres.py

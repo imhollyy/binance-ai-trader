@@ -72,6 +72,21 @@ scheduler. It never accesses balances, orders, Futures, exchange credentials
 or private endpoints. HTTP 418/429 stops without automatically retrying.
 Your development .env file must not be committed or shared.
 
+## Persistent PAPER Spot ledger foundation (BT-004D1)
+
+Alembic revision `0003_paper_spot_ledger` adds one local virtual Spot account,
+position records, and an append-only accounting journal in PostgreSQL. Monetary
+columns use `NUMERIC(38,18)`. Journal updates, deletes, and truncation are
+rejected by database triggers. `ensure_paper_spot_account` can create the account
+only from saved, validated PAPER Spot settings; calling it again leaves the cash
+and journal unchanged, and a changed Spot budget is rejected.
+
+This package does not open or close positions, expose trading endpoints, start
+workers, or contact private Binance APIs. The existing dashboard remains a
+paper-only configuration and read-only market-data interface. Database tests
+require a disposable PostgreSQL instance and the explicit
+`PAPER_LEDGER_TEST_ISOLATED=1` guard; never point them at a personal database.
+
 ## PC başında hızlı başlangıç
 
 Türkçe, Windows PowerShell/macOS/Linux adımlarını içeren
