@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 from decimal import Decimal
 
@@ -11,6 +12,7 @@ from binance_ai_trader.market_data import Candle, MarketRateLimited
 from binance_ai_trader.paper_backtest import (
     BacktestDecision,
     PaperBacktestRejected,
+    PaperBacktestResult,
     run_paper_spot_backtest,
 )
 from binance_ai_trader.paper_spot import PaperCosts
@@ -57,8 +59,8 @@ def sell(history: list[Candle], index: int = 50) -> BacktestDecision:
 
 
 def run(
-    history: list[Candle], decisions: list[BacktestDecision], **kwargs: object
-) -> object:
+    history: Sequence[Candle], decisions: Sequence[BacktestDecision], **kwargs: object
+) -> PaperBacktestResult:
     return run_paper_spot_backtest(
         history, symbol="BTCUSDT", interval=history[0].interval,
         as_of_ms=clock(history), settings=settings(), decisions=decisions, **kwargs,
@@ -74,7 +76,7 @@ def test_next_open_fill_and_costs_are_decimal_and_replay_is_deterministic() -> N
     data[51] = replace(data[51], open=D("110"), high=D("112"))
     plan = [buy(data), sell(data)]
     first = run(data, plan)
-    second = run(tuple(data), tuple(plan))  # type: ignore[arg-type]
+    second = run(tuple(data), tuple(plan))
     assert first == second
     assert len(first.fills) == 2
     entry, exit_event = first.fills
