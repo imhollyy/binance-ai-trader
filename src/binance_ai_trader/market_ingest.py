@@ -45,14 +45,13 @@ def ingest_once(
     if not candles:
         return IngestReport(symbol, interval, 0, 0, ())
 
-    with Session(engine) as session:
-        with session.begin():
-            inserted = save_closed_candles(session, candles, now_ms=clock_ms)
-            missing = missing_stored_candles(
-                session,
-                symbol=symbol,
-                interval=interval,
-                start_ms=candles[0].open_time_ms,
-                end_ms=candles[-1].open_time_ms,
-            )
+    with Session(engine) as session, session.begin():
+        inserted = save_closed_candles(session, candles, now_ms=clock_ms)
+        missing = missing_stored_candles(
+            session,
+            symbol=symbol,
+            interval=interval,
+            start_ms=candles[0].open_time_ms,
+            end_ms=candles[-1].open_time_ms,
+        )
     return IngestReport(symbol, interval, len(candles), inserted, tuple(missing))
