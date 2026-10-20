@@ -71,3 +71,8 @@ This command is **manual and one-shot**, not a trading bot or background
 scheduler. It never accesses balances, orders, Futures, exchange credentials
 or private endpoints. HTTP 418/429 stops without automatically retrying.
 Your development .env file must not be committed or shared.
+
+## PC başında hızlı başlangıç
+
+Türkçe, Windows PowerShell/macOS/Linux adımlarını içeren
+[yerel kurulum ve panel testi](docs/LOCAL_QUICKSTART.md) rehberini izle.
