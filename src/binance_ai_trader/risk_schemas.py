@@ -24,7 +24,9 @@ class RiskSettings(BaseModel):
     max_leverage: int = Field(default=1, ge=1, le=5)
     stop_loss_required: Literal[True] = True
     manual_approval: bool = True
-    allowed_symbols: list[str] = Field(default_factory=lambda: ["BTCUSDT", "ETHUSDT"], min_length=1, max_length=10)
+    allowed_symbols: list[str] = Field(
+        default_factory=lambda: ["BTCUSDT", "ETHUSDT"], min_length=1, max_length=10
+    )
 
     @field_validator("allowed_symbols")
     @classmethod
