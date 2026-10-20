@@ -1,0 +1,65 @@
+name: Full Stack Paper E2E
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - "web/**"
+      - "src/**"
+      - "migrations/**"
+      - "compose.yaml"
+      - "Dockerfile"
+      - ".github/workflows/fullstack-e2e.yml"
+  push:
+    branches: [main, dev]
+    paths:
+      - "web/**"
+      - "src/**"
+      - "migrations/**"
+      - "compose.yaml"
+      - "Dockerfile"
+      - ".github/workflows/fullstack-e2e.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fullstack-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  connected-panel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      POSTGRES_PASSWORD: ci_only_local_db_012345678901
+      ADMIN_TOKEN: ci_only_admin_token_01234567890123456789
+      E2E_ADMIN_TOKEN: ci_only_admin_token_01234567890123456789
+      E2E_CONNECTED: "1"
+      TRADING_MODE: paper
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install UI dependencies
+        working-directory: web
+        run: npm install --no-audit --no-fund
+      - name: Install Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Start isolated paper-only backend
+        run: docker compose up --build -d
+      - name: Wait for backend migrations and readiness
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS --max-time 2 http://127.0.0.1:8000/health/ready > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          echo "Paper API not ready"; exit 1
+      - name: Browser to API to PostgreSQL round-trip
+        working-directory: web
+        run: npm run test:e2e -- --grep "connected paper risk"
+      - name: Clean up disposable CI database
+        if: always()
+        run: docker compose down -v --remove-orphans
