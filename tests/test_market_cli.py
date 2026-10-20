@@ -33,9 +33,7 @@ def test_cli_rejects_nonpaper_execution(
 
 
 @pytest.mark.parametrize("limit", ["0", "1001", "-1"])
-def test_cli_rejects_unbounded_limit(
-    limit: str, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_rejects_unbounded_limit(limit: str, capsys: pytest.CaptureFixture[str]) -> None:
     assert market_cli.main(["--symbol", "BTCUSDT", "--interval", "1m", "--limit", limit]) == 2
     assert "Limit must" in capsys.readouterr().err
 
