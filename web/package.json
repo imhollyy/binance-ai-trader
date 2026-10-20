@@ -1,1 +1,24 @@
-{"name":"tradepilot-console","private":true,"version":"0.1.0","scripts":{"dev":"next dev -H 127.0.0.1","build":"next build","typecheck":"tsc --noEmit"},"dependencies":{"lucide-react":"^0.468.0","next":"^16.0.0","react":"^19.2.0","react-dom":"^19.2.0"},"devDependencies":{"@types/node":"^22.0.0","@types/react":"^19.0.0","@types/react-dom":"^19.0.0","typescript":"^5.8.0"}}
+{
+  "name": "tradepilot-console",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "next dev -H 127.0.0.1",
+    "build": "next build",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "next": "^16.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.8.0",
+    "@playwright/test": "^1.56.0"
+  }
+}

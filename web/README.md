@@ -15,3 +15,5 @@ There is no Binance private account API or trade execution. Values are simulated
 Do NOT expose the API publicly; its temporary dev token is not a production login. Mobile layout can be previewed with browser responsive mode. Real phone access requires a separately secured HTTPS deployment and identity/authentication hardening.
 
 Validation: npm run typecheck; npm run build.
+
+Mobile-browser smoke tests: npm run test:e2e (requires npx playwright install chromium).
