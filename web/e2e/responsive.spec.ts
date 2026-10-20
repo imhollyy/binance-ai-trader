@@ -14,7 +14,7 @@ for (const width of [360, 390, 768, 1280]) {
       await page.getByRole("button", { name: "Menüyü aç" }).click();
     }
     await page.getByRole("button", { name: "Risk Yönetimi" }).click();
-    await expect(page.getByRole("heading", { name: "Risk Yönetimi" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Risk Yönetimi", level: 1 })).toBeVisible();
     await expect(page.getByRole("button", { name: "Ayarları Kaydet" })).toBeDisabled();
     const riskSize = await page.evaluate(() => ({
       content: document.documentElement.scrollWidth,
