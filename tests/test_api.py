@@ -145,7 +145,10 @@ def test_stored_candles_requires_auth_and_valid_filters(client: TestClient) -> N
     result = client.get("/api/v1/market/candles", headers=h)
     assert result.status_code == 200
     assert result.json() == {
-        "source": "stored_public_spot", "symbol": "BTCUSDT", "interval": "1m", "candles": []
+        "source": "stored_public_spot",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "candles": [],
     }
     for query in ["symbol=DOGEUSDT", "interval=1h", "limit=0", "limit=101"]:
         assert client.get("/api/v1/market/candles?" + query, headers=h).status_code == 422
