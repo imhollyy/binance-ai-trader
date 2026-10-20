@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from binance_ai_trader.market_data import Candle, INTERVAL_MS, SUPPORTED_SYMBOLS
+from binance_ai_trader.market_data import INTERVAL_MS, SUPPORTED_SYMBOLS, Candle
 from binance_ai_trader.models import SpotCandleRow
 
 MAX_BACKFILL_WINDOW = 1500
@@ -96,11 +96,14 @@ def save_closed_candles(session: Session, candles: Sequence[Candle], *, now_ms: 
     if not rows:
         return 0
 
-    statement = insert(SpotCandleRow).values(rows).on_conflict_do_nothing(
-        constraint="uq_spot_candles_symbol_interval_open"
+    statement = (
+        insert(SpotCandleRow)
+        .values(rows)
+        .on_conflict_do_nothing(constraint="uq_spot_candles_symbol_interval_open")
+        .returning(SpotCandleRow.id)
     )
-    result = session.connection().execute(statement)
-    return result.rowcount
+    # psycopg reports rowcount=-1 for some multi-row inserts. RETURNING is exact.
+    return len(session.scalars(statement).all())
 
 
 def missing_stored_candles(

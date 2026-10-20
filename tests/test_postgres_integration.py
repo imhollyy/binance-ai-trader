@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,8 +14,6 @@ from sqlalchemy.orm import Session
 
 from binance_ai_trader.api import create_app
 from binance_ai_trader.api_config import ApiConfig
-from decimal import Decimal
-
 from binance_ai_trader.market_data import Candle
 from binance_ai_trader.market_store import missing_stored_candles, save_closed_candles
 from binance_ai_trader.models import AuditRow, SpotCandleRow
