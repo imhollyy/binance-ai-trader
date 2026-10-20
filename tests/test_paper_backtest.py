@@ -305,6 +305,12 @@ def test_different_utc_day_rejects_unmarked_overnight_position() -> None:
         run(data, [buy(data, index=94), sell(data, index=95)])
 
 
+def test_open_position_cannot_silently_survive_across_utc_midnight() -> None:
+    data = candles(100, "15m")
+    with pytest.raises(PaperBacktestRejected, match="overnight_mark_to_market"):
+        run(data, [buy(data, index=94)])
+
+
 def test_futures_and_invalid_warmup_never_use_spot_backtest() -> None:
     data = candles()
     for warmup in [0, 1, 49, 1001, True]:
