@@ -75,15 +75,23 @@ def test_settings_persist_and_stale_update_rejected(client: TestClient) -> None:
     assert created.status_code == 200
     assert created.json()["version"] == 1
     assert client.get("/api/v1/settings", headers=h).json()["settings"]["spot_capital_usdt"] == 250
-    assert client.put(
-        "/api/v1/settings", headers=h, json={"expected_version": 0, "settings": settings}
-    ).status_code == 409
+    assert (
+        client.put(
+            "/api/v1/settings", headers=h, json={"expected_version": 0, "settings": settings}
+        ).status_code
+        == 409
+    )
 
 
 @pytest.mark.parametrize(
     "field,value",
-    [("mode", "live"), ("risk_per_trade_pct", 20), ("daily_loss_limit_pct", 0),
-     ("stop_loss_required", False), ("max_leverage", 100)],
+    [
+        ("mode", "live"),
+        ("risk_per_trade_pct", 20),
+        ("daily_loss_limit_pct", 0),
+        ("stop_loss_required", False),
+        ("max_leverage", 100),
+    ],
 )
 def test_unsafe_settings_rejected(client: TestClient, field: str, value: object) -> None:
     h = {"X-Admin-Token": TOKEN}
