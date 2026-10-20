@@ -1,42 +1,46 @@
 # Binance AI Trader
 
-A **public, research-only** Python project for Binance Global market-data infrastructure and (later) paper trading. Source code and Git history are visible to everyone.
+Public, research-only Binance Global market data and paper-trading project.
 
-> **SAFE BY DEFAULT:** BT-001 cannot place orders, access an exchange account, use leverage, or trade with real funds. No Binance API keys or authenticated clients are used.
+> **No live orders or Binance private API access exist in BT-002.** All risk settings are for a future **paper-only** bot. Toggling the stored `bot_enabled` flag does not start a worker.
 
-## Current milestone: BT-001 — Project bootstrap (complete on `dev`)
+## Development
 
-- Python 3.12 application using a `src/` package layout
-- Configuration that **refuses any mode other than `paper`**
-- Offline unit tests, static type checks, formatting and lint checks
-- GitHub Actions CI with read-only permissions
-- Architecture, security and sprint documentation
+Python 3.12 is required. CI checks all tests, Ruff and Mypy.
 
-**Not yet implemented:** Binance REST/WebSocket collection, database, strategies, paper matching, dashboard, production hosting or live trading.
-
-## Quick start
-
-```bash
+```sh
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
-binance-ai-trader --status
 python -m pytest -q
 python -m ruff check .
 python -m ruff format --check .
 python -m mypy src tests
 ```
 
-On Windows PowerShell, activate with `.venv\Scripts\Activate.ps1`.
+## Local Docker API (BT-002)
 
-The CLI prints `mode=paper | live_trading=disabled`. A `TRADING_MODE=live` variable fails closed.
+```sh
+cp .env.example .env
+# Replace ADMIN_TOKEN and POSTGRES_PASSWORD with strong random local-only values.
+docker compose up --build -d
+curl http://127.0.0.1:8000/health/live
+curl http://127.0.0.1:8000/health/ready
+```
 
-## Public-repository security
+API docs: http://127.0.0.1:8000/docs . Settings endpoints under `/api/v1/settings` require `X-Admin-Token` header, matching your local `.env` value. The token is never stored in the repository. The API binds to localhost. This is a **development-only token**, NOT production user authentication; do not publicly expose this service.
 
-**Never commit API keys, credentials, private account balances, identifiable trade history, proprietary strategies or production secrets.** Public Actions logs, issues, pull requests and past commits are visible. Any future live-trading engine must undergo a separate security review and can reside in a private repository/service.
+Stop without deleting volume: `docker compose down`. Do **not** run `docker compose down -v` unless you intentionally want to erase the local database.
 
-## Development workflow
+## Safety
 
-`feat/*` -> PR into `dev` -> reviewed release PR into `main`. Merge only when CI passes, safety checks pass and changes are reviewed.
+- No exchange credentials, no transaction endpoints, no Futures trading engine.
+- Mode is always `paper`, with bounded risk settings, mandatory stop-loss and audit logging.
+- Browser origins are restricted to localhost dev and requests require a local admin token. Do not deploy this API to the internet; production requires proper authentication, CSRF measures, HTTPS, rate limiting and audited access control.
+- All money amounts in this milestone are **configuration budgets**, not actual balances or executions.
 
-See [architecture](docs/ARCHITECTURE.md), [security](SECURITY.md), and [sprint checklist](docs/SPRINT_01.md).
+## Workflow
+
+Feature PRs -> `dev` -> reviewed releases on `main`. Public history and logs must never include API keys, balances or proprietary strategies.
+
+See [architecture](docs/ARCHITECTURE.md), [security](SECURITY.md) and [Sprint 01](docs/SPRINT_01.md).
