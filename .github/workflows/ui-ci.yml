@@ -1,0 +1,31 @@
+name: Web UI CI
+on:
+  pull_request:
+    branches: [main, dev]
+    paths: ["web/**", ".github/workflows/ui-ci.yml"]
+  push:
+    branches: [main, dev, "feat/**"]
+    paths: ["web/**", ".github/workflows/ui-ci.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: web-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  web-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        working-directory: web
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        working-directory: web
+        run: npm run typecheck
+      - name: Build
+        working-directory: web
+        run: npm run build
