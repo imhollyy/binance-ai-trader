@@ -61,7 +61,9 @@ def client(
             start = START - 60 * 60_000
             rows = [kline(start + i * 60_000) for i in range(60)]
             if malformed_kline:
-                rows[25][6] = int(rows[25][6]) + 60_000
+                old_close = rows[25][6]
+                assert type(old_close) is int
+                rows[25][6] = old_close + 60_000
             return httpx.Response(200, json=rows)
         clock[0] += clock_overrun
         data = payload if payload is not None else {"symbol": "BTCUSDT", "price": "100.5"}
