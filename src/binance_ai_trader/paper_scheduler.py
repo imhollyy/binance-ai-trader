@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from threading import Event
 
+import httpx
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
@@ -148,6 +149,7 @@ def run_paper_scheduler(
     interval: str = "1m",
     stop_event: Event | None = None,
     max_ticks: int | None = None,
+    transport: httpx.BaseTransport | None = None,
     clock_ms: Callable[[], int] | None = None,
     wait: Callable[[float], bool] | None = None,
     report: Callable[[PaperWorkerReport], None] | None = None,
@@ -182,6 +184,7 @@ def run_paper_scheduler(
             symbol=symbol,
             interval=interval,
             clock_ms=clock,
+            transport=transport,
         ),
         max_ticks=max_ticks,
         report=report,
