@@ -97,13 +97,14 @@ def _block(
 
 
 def _stable_key(
-    symbol: str, interval: str, close_ms: int, params: SmaCrossParameters
+    symbol: str, interval: str, close_ms: int, params: SmaCrossParameters, action: str
 ) -> str:
     payload = {
         "symbol": symbol,
         "interval": interval,
         "close_ms": close_ms,
         "strategy_version": STRATEGY_VERSION,
+        "action": action,
         "fast": params.fast_window,
         "slow": params.slow_window,
         "quantity": format(params.quantity.normalize(), "f"),
@@ -332,7 +333,7 @@ def plan_paper_spot_signal_once(
                 SignalPlanStatus.CANDIDATE, "paper_diagnostic_only_next_open_unknown",
                 symbol, interval, clock, last.close_time_ms, len(history),
                 settings_version=settings_row.version, decision=decision,
-                idempotency_key=_stable_key(symbol, interval, last.close_time_ms, params),
+                idempotency_key=_stable_key(symbol, interval, last.close_time_ms, params, decision.action),
             )
     except (SQLAlchemyError, OverflowError, ValueError):
         return _block("database_unavailable_or_invalid", symbol, interval, clock)
