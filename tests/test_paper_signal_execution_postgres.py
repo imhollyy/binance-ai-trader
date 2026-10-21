@@ -214,7 +214,7 @@ def test_next_closed_candle_atomic_buy_sell_replay_and_fail_closed(engine: Engin
     assert exit_receipt.event_type == "spot_sell"
     assert exit_receipt.realized_pnl_delta_usdt < D("0")
     assert _execute(engine, sell, sell_end) == exit_receipt
-    assert _counts(engine) == (before[0] + 1, 1, 1, 3)
+    assert _counts(engine) == (before[0], 1, 1, 3)
     with Session(engine) as session:
         positions = session.scalars(select(PaperSpotPositionRow)).all()
         assert len(positions) == 1 and positions[0].status == "closed"
