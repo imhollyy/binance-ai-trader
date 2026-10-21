@@ -135,13 +135,20 @@ def smoke() -> None:
         assert dashboard["worker"]["process_verified_running"] is False
         print("Authenticated PAPER read-only dashboard: PASS")
 
+        code, settings_reply = request("/api/v1/settings", dest, cookie=cookie)
+        assert code == 200
+        current = json.loads(settings_reply)
+        put_payload = dest / "settings.json"
+        put_payload.write_text(
+            json.dumps({"expected_version": current["version"], "settings": current["settings"]})
+        )
         code, _ = request(
             "/api/v1/settings",
             dest,
             method="PUT",
             cookie=cookie,
             csrf=csrf,
-            body=body,
+            body=put_payload,
             extra_headers=("X-Paper-Settings-Approval: PAPER_SETTINGS_ONLY",),
         )
         assert code == 403
