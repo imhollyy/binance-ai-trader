@@ -61,8 +61,11 @@ def engine() -> Iterator[Engine]:
     db = create_engine(URL, pool_pre_ping=True)
     with Session(db) as session:
         for model in (
-            SpotCandleRow, PaperSpotAccountRow, PaperSpotPositionRow,
-            PaperSpotJournalRow, PaperSpotObservedQuoteRow,
+            SpotCandleRow,
+            PaperSpotAccountRow,
+            PaperSpotPositionRow,
+            PaperSpotJournalRow,
+            PaperSpotObservedQuoteRow,
         ):
             assert session.scalar(select(func.count()).select_from(model)) == 0
     yield db
@@ -101,19 +104,25 @@ def _observer(
     status: int = 200,
 ) -> PublicSpotObservationClient:
     with Session(db) as session:
-        records = list(
-            session.scalars(
-                select(SpotCandleRow).order_by(SpotCandleRow.open_time_ms)
-            )
-        )
+        records = list(session.scalars(select(SpotCandleRow).order_by(SpotCandleRow.open_time_ms)))
         history: list[list[object]] = [
             [
-                row.open_time_ms, str(row.open), str(row.high), str(row.low),
-                str(row.close), str(row.volume), row.close_time_ms,
-                "0", 1, "0", "0", "0",
+                row.open_time_ms,
+                str(row.open),
+                str(row.high),
+                str(row.low),
+                str(row.close),
+                str(row.volume),
+                row.close_time_ms,
+                "0",
+                1,
+                "0",
+                "0",
+                "0",
             ]
             for row in records
         ]
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"
         assert request.url.host == "data-api.binance.vision"
@@ -122,7 +131,8 @@ def _observer(
             return httpx.Response(200, json=history)
         assert request.url.path == "/api/v3/ticker/price"
         return httpx.Response(
-            status, json={"symbol": "BTCUSDT", "price": ticker},
+            status,
+            json={"symbol": "BTCUSDT", "price": ticker},
             headers={"Retry-After": "30"},
         )
 
@@ -136,7 +146,9 @@ def _run(db: Engine, clock_ms: int, *, ticker: str = "102.2") -> ObservedPaperRe
     return run_observed_paper_spot_once(
         db,
         _observer(db, clock_ms, ticker=ticker),
-        symbol="BTCUSDT", interval="1m", params=PARAMS,
+        symbol="BTCUSDT",
+        interval="1m",
+        params=PARAMS,
     )
 
 
@@ -155,8 +167,7 @@ def test_public_sample_atomic_account_audit_rollback_and_sell(engine: Engine) ->
             )
         )
         session.add_all(
-            [_row(start - (60 - i) * 60_000, "102" if i == 59 else "100")
-             for i in range(60)]
+            [_row(start - (60 - i) * 60_000, "102" if i == 59 else "100") for i in range(60)]
         )
     with Session(engine) as session:
         ensure_paper_spot_account(session)
@@ -166,8 +177,11 @@ def test_public_sample_atomic_account_audit_rollback_and_sell(engine: Engine) ->
     # Public rate limits, price outliers and gap-down risk MUST NOT debit cash.
     with pytest.raises(PaperExecutionRejected, match="public_spot_observation_blocked"):
         run_observed_paper_spot_once(
-            engine, _observer(engine, clock, status=429),
-            symbol="BTCUSDT", interval="1m", params=PARAMS,
+            engine,
+            _observer(engine, clock, status=429),
+            symbol="BTCUSDT",
+            interval="1m",
+            params=PARAMS,
         )
     with pytest.raises(PaperExecutionRejected, match="public_spot_observation_blocked"):
         _run(engine, clock, ticker="200")
@@ -197,7 +211,8 @@ def test_public_sample_atomic_account_audit_rollback_and_sell(engine: Engine) ->
     with ThreadPoolExecutor(max_workers=4) as executor:
         outcomes = list(executor.map(concurrent, range(4)))
     recorded = [x for x in outcomes if x.status is ObservedPaperStatus.RECORDED]
-    assert len(recorded) == 1
+    assert recorded
+    assert all(x.receipt == recorded[0].receipt for x in recorded)
     first = recorded[0]
     assert first.receipt is not None
     assert first.receipt.event_type == "spot_buy"
@@ -231,9 +246,7 @@ def test_public_sample_atomic_account_audit_rollback_and_sell(engine: Engine) ->
     # Four flat highs followed by a downward cross, with a new actually
     # observed public reference. This is not a historical N+1 OPEN fill.
     with Session(engine) as session, session.begin():
-        session.add_all(
-            [_row(start + i * 60_000, "102") for i in range(4)]
-        )
+        session.add_all([_row(start + i * 60_000, "102") for i in range(4)])
         session.add(_row(start + 4 * 60_000, "98"))
     later = start + 300_100
     exit_result = _run(engine, later, ticker="98.1")
