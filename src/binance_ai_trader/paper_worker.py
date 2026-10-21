@@ -150,7 +150,7 @@ def _cooldown(
             delay = max(delay, 900_000)
         if rate_limit.retry_after_seconds is not None:
             delay = max(delay, min(MAX_BACKOFF_MS, rate_limit.retry_after_seconds * 1000))
-    return min(MAX_BACKOFF_MS, max(delay + jitter, INTERVAL_MS[interval]))
+    return min(MAX_BACKOFF_MS, max(delay + jitter, int(INTERVAL_MS[interval])))
 
 
 def run_paper_worker_once(
