@@ -14,7 +14,9 @@ def test_quick_bootstrap_preserves_only_hashes_when_host_changes(tmp_path: Path)
     first = "https://first-synthetic.trycloudflare.com"
     second = "https://second-synthetic.trycloudflare.com"
     assert prepare(
-        first, env_file, viewer="synthetic-viewer-password-2026",
+        first,
+        env_file,
+        viewer="synthetic-viewer-password-2026",
         operator="synthetic-operator-password-2026",
     )
     text = env_file.read_text()
@@ -23,7 +25,8 @@ def test_quick_bootstrap_preserves_only_hashes_when_host_changes(tmp_path: Path)
     assert "STAGING_WEB_ORIGIN=" + first in text
     assert "PREVIEW_INGRESS_BIND=127.0.0.1:8765:80" in text
     original_secret_lines = [
-        line for line in text.splitlines()
+        line
+        for line in text.splitlines()
         if "PASSWORD_HASH=" in line or line.startswith("STAGING_POSTGRES_PASSWORD=")
     ]
     assert len(original_secret_lines) == 3
@@ -50,12 +53,15 @@ def test_quick_bootstrap_preserves_only_hashes_when_host_changes(tmp_path: Path)
     ],
 )
 def test_quick_bootstrap_rejects_unknown_hostname(
-    tmp_path: Path, origin: str,
+    tmp_path: Path,
+    origin: str,
 ) -> None:
     path = tmp_path / ".env.preview.quick"
     with pytest.raises(ValueError, match="exact HTTPS"):
         prepare(
-            origin, path, viewer="synthetic-viewer-password-2026",
+            origin,
+            path,
+            viewer="synthetic-viewer-password-2026",
             operator="synthetic-operator-password-2026",
         )
     assert not path.exists()
@@ -73,7 +79,8 @@ def test_quick_bootstrap_does_not_accept_same_password(tmp_path: Path) -> None:
     path = tmp_path / ".env.preview.quick"
     with pytest.raises(ValueError, match="distinct"):
         prepare(
-            "https://private.trycloudflare.com", path,
+            "https://private.trycloudflare.com",
+            path,
             viewer="synthetic-same-password-2026",
             operator="synthetic-same-password-2026",
         )
