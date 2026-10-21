@@ -10,7 +10,6 @@ import hashlib
 import hmac
 import secrets
 import time
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException, Request, Response
