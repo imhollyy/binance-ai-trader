@@ -72,7 +72,9 @@ def _read_snapshot(engine: Engine) -> tuple[object, ...]:
         settings = session.get(TradingSettingsRow, 1)
         account = session.get(PaperSpotAccountRow, 1)
         gate = session.get(StagingLoginGateRow, 1)
-        journal = session.scalars(select(PaperSpotJournalRow).order_by(PaperSpotJournalRow.id)).all()
+        journal = session.scalars(
+            select(PaperSpotJournalRow).order_by(PaperSpotJournalRow.id)
+        ).all()
         sessions = session.scalars(
             select(StagingSessionRow).order_by(StagingSessionRow.token_hash)
         ).all()
@@ -261,10 +263,19 @@ def test_restored_journal_is_still_append_only(
 @pytest.mark.parametrize(
     ("bad_url", "expected"),
     (
-        ("postgresql+psycopg://trader_test:fake@localhost:5432/trader_stage_restore_source_test", SOURCE_DB),
+        (
+            "postgresql+psycopg://trader_test:fake@localhost:5432/" + SOURCE_DB,
+            SOURCE_DB,
+        ),
         ("postgresql+psycopg://trader_test:fake@127.0.0.1:5432/trader_dev", SOURCE_DB),
-        ("postgresql+psycopg://trader_test:fake@127.0.0.1:5432/trader_stage_restore_source_test", TARGET_DB),
-        ("postgresql+psycopg://admin:fake@127.0.0.1:5432/trader_stage_restore_source_test", SOURCE_DB),
+        (
+            "postgresql+psycopg://trader_test:fake@127.0.0.1:5432/" + SOURCE_DB,
+            TARGET_DB,
+        ),
+        (
+            "postgresql+psycopg://admin:fake@127.0.0.1:5432/" + SOURCE_DB,
+            SOURCE_DB,
+        ),
     ),
 )
 def test_refuse_non_disposable_database_targets(bad_url: str, expected: str) -> None:
