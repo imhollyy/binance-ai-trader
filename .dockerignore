@@ -1,0 +1,21 @@
+# Never send local credential files or git history to either Docker build.
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.venv
+venv
+node_modules
+**/node_modules
+.next
+**/.next
+**/test-results
+**/playwright-report
