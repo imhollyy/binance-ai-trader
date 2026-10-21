@@ -86,13 +86,15 @@ def test_no_postgres_connection_is_not_a_silent_no_signal() -> None:
 
 def test_strategy_versioned_idempotency_stable_and_sensitive() -> None:
     p = SmaCrossParameters()
-    key = _stable_key("BTCUSDT", "1m", 120_000, p)
-    assert key == _stable_key("BTCUSDT", "1m", 120_000, p)
-    assert key != _stable_key("ETHUSDT", "1m", 120_000, p)
-    assert key != _stable_key("BTCUSDT", "1m", 180_000, p)
+    key = _stable_key("BTCUSDT", "1m", 120_000, p, "buy")
+    assert key == _stable_key("BTCUSDT", "1m", 120_000, p, "buy")
+    assert key != _stable_key("ETHUSDT", "1m", 120_000, p, "buy")
+    assert key != _stable_key("BTCUSDT", "1m", 180_000, p, "buy")
     assert key != _stable_key(
         "BTCUSDT", "1m", 120_000,
         SmaCrossParameters(quantity=D("2")),
+        "buy",
     )
+    assert key != _stable_key("BTCUSDT", "1m", 120_000, p, "sell")
     assert len(key) == 77
     assert all(c.isalnum() or c == "-" for c in key)
