@@ -129,6 +129,8 @@ def execute_paper_signal_once(
         raise PaperExecutionRejected("source_unverified_or_restricted")
 
     assert source_checked_at_ms is not None
+    assert plan.latest_close_time_ms is not None
+    signal_close = plan.latest_close_time_ms
     key, trade_id = _identity(plan)
     price: Decimal
     stop: Decimal | None = None
@@ -244,8 +246,8 @@ def execute_paper_signal_once(
         latest = history[-1]
         previous = history[-2]
         if (
-            latest.open_time_ms != plan.latest_close_time_ms + 1
-            or previous.close_time_ms != plan.latest_close_time_ms
+            latest.open_time_ms != signal_close + 1
+            or previous.close_time_ms != signal_close
             or latest.open != price
             or latest.close_time_ms >= clock
             or clock - latest.close_time_ms > step
