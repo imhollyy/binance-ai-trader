@@ -30,6 +30,7 @@ def test_default_worker_does_not_need_database_or_touch_network() -> None:
             is PaperWorkerStatus.ERROR
         )
         for value in (0, -1, True, "100"):
+
             def invalid_clock(item: object = value) -> int:
                 return cast(int, item)
 
