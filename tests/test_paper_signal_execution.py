@@ -68,6 +68,7 @@ def test_invalid_signals_cannot_start_any_trade() -> None:
                     params=PARAMS,
                     now_ms=180_001,
                 )
+        assert original.decision is not None
         for plan in [
             replace(original, idempotency_key="invented"),
             replace(original, latest_close_time_ms=120_000),
