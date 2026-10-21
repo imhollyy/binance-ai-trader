@@ -323,7 +323,6 @@ def test_client_forwarded_https_headers_cannot_upgrade_http_scheme(
         assert session.scalar(select(func.count()).select_from(StagingSessionRow)) == 0
 
 
-
 def test_staging_rotation_invalidates_existing_role_cookie(
     staging: tuple[TestClient, Engine],
 ) -> None:
@@ -341,25 +340,32 @@ def test_staging_rotation_invalidates_existing_role_cookie(
     rotated_secret = "synthetic-rotated-viewer-passphrase-2026"
     rotated = replace(
         config(),
-        viewer_password_hash=password_hash(
-            rotated_secret, salt=b"rotated-viewer-1"
-        ),
+        viewer_password_hash=password_hash(rotated_secret, salt=b"rotated-viewer-1"),
     )
     # A freshly configured API instance references the SAME persisted DB.
     with TestClient(create_app(config=rotated, engine=engine), base_url=BASE) as new_instance:
         viewer_cookie = {"Cookie": f"{COOKIE}={old_viewer}"}
         operator_cookie = {"Cookie": f"{COOKIE}={old_operator}"}
-        assert new_instance.get(
-            "/api/v1/auth/session", headers={**HEADERS, **viewer_cookie}
-        ).status_code == 401
-        assert new_instance.get(
-            "/api/v1/auth/session", headers={**HEADERS, **operator_cookie}
-        ).status_code == 200
-        assert new_instance.post(
-            "/api/v1/auth/login",
-            headers=HEADERS,
-            json={"username": "viewer", "password": rotated_secret},
-        ).status_code == 200
+        assert (
+            new_instance.get(
+                "/api/v1/auth/session", headers={**HEADERS, **viewer_cookie}
+            ).status_code
+            == 401
+        )
+        assert (
+            new_instance.get(
+                "/api/v1/auth/session", headers={**HEADERS, **operator_cookie}
+            ).status_code
+            == 200
+        )
+        assert (
+            new_instance.post(
+                "/api/v1/auth/login",
+                headers=HEADERS,
+                json={"username": "viewer", "password": rotated_secret},
+            ).status_code
+            == 200
+        )
         assert new_instance.get("/api/v1/auth/session", headers=HEADERS).status_code == 200
 
     # Invalidated rows remain as audit/revocation evidence rather than being
@@ -387,16 +393,12 @@ def test_staging_safe_log_and_no_store_on_success_denial_and_validation(
             headers=HEADERS,
             json={"username": "viewer", "password": password_marker},
         )
-        wrong_origin = client.get(
-            "/api/v1/status", headers={"Origin": "https://untrusted.example"}
-        )
+        wrong_origin = client.get("/api/v1/status", headers={"Origin": "https://untrusted.example"})
         unknown = client.get("/anything-" + query_marker + "?q=" + fake_cookie)
         csrf = login(client)
         signed_in = client.get("/api/v1/auth/session", headers=HEADERS)
 
-    assert (denied.status_code, validation.status_code, wrong_origin.status_code) == (
-        401, 422, 403
-    )
+    assert (denied.status_code, validation.status_code, wrong_origin.status_code) == (401, 422, 403)
     assert unknown.status_code == 404
     assert signed_in.status_code == 200
     assert len(csrf) == 64
