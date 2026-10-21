@@ -27,5 +27,29 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
 
+
+  paper-scheduler:
+    profiles: ["paper-scheduler"]
+    build: .
+    restart: "no"
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      TRADING_MODE: paper
+      DATABASE_URL: postgresql+psycopg://trader:${POSTGRES_PASSWORD}@database:5432/trader_dev
+      PAPER_SCHEDULER_OPT_IN: ${PAPER_SCHEDULER_OPT_IN:-}
+    command:
+      - python
+      - -m
+      - binance_ai_trader.paper_scheduler
+      - --enable-paper-scheduler
+      - --symbol
+      - ${PAPER_SCHEDULER_SYMBOL:-BTCUSDT}
+      - --interval
+      - ${PAPER_SCHEDULER_INTERVAL:-1m}
+    # Explicit profile + explicit environment opt-in + persisted PAPER settings.
+    # No ports, no admin token, no private Binance API and no automatic restart.
+
 volumes:
   paper_db:
