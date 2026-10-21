@@ -106,3 +106,51 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .paper-overview-metrics>div{padding:11px}
   .paper-overview-event-title{flex-direction:column;gap:5px}
 }
+
+/* BT-008B: true persisted-data charts, keyboard-visible responsive terminal. */
+.recorded-chart{margin:19px 0 24px;border:1px solid #dfe8f5;border-radius:14px;background:linear-gradient(160deg,#f8faff,#fff);padding:17px;min-width:0;color:#486ca8}
+.recorded-chart figcaption{display:flex;flex-direction:column;gap:5px;min-width:0}
+.recorded-chart figcaption strong{color:#253b60;font-size:13px;overflow-wrap:anywhere}
+.recorded-chart figcaption span,.recorded-chart small{color:#73849b;font-size:11px;line-height:1.6}
+.recorded-chart small{display:block;margin-top:13px}
+.recorded-chart-svg{display:block;width:100%;max-width:100%;height:auto;margin-top:14px;overflow:visible;color:#577ce9}
+.recorded-chart-ends{display:flex;justify-content:space-between;gap:15px}
+.recorded-chart-ends>div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.recorded-chart-ends>div:last-child{text-align:right}
+.recorded-chart-ends span{font-size:10px;color:#8595ad;overflow-wrap:anywhere}
+.recorded-chart-ends strong{color:#2b4161;font-size:13px;overflow-wrap:anywhere}
+.recorded-chart-empty{border:1px dashed #ccd8ea;border-radius:11px;background:#f7f9fe;margin:17px 0;padding:16px;font-size:12px;color:#7786a0;line-height:1.65}
+.realized-chart-rows{display:flex;flex-direction:column;gap:13px;margin-top:17px}
+.realized-chart-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);gap:10px;align-items:center}
+.realized-chart-label{color:#687d98;font-size:10px;line-height:1.5;overflow-wrap:anywhere}
+.realized-chart-axis{height:20px;position:relative;background:#edf1f7;border-radius:4px;overflow:hidden}
+.realized-chart-middle{position:absolute;left:calc(50% - 1px);top:0;bottom:0;width:2px;background:#a2b1c9}
+.realized-bar-negative{position:absolute;right:50%;top:5px;height:10px;border-radius:4px 0 0 4px;background:#d47b79}
+.realized-bar-positive{position:absolute;left:50%;top:5px;height:10px;border-radius:0 4px 4px 0;background:#4da992}
+.realized-chart-value{text-align:right;color:#304765;font-size:11px;overflow-wrap:anywhere}
+.paper-overview h3{color:#334a6d}
+.paper-overview-worker{background:linear-gradient(145deg,#f7faff,#fff)}
+.paper-overview-metrics strong{font-size:clamp(13px,1.15vw,17px)}
+.sidebar nav{overflow-y:auto;min-height:0;padding-bottom:12px}
+.nav-item{min-height:44px;transition:background-color .15s ease,border-color .15s ease}
+.connect-button,.hamburger,.mobile-close{min-width:44px;min-height:44px;justify-content:center}
+.toolbar-left,.toolbar-right{min-width:0}
+.warning,.paper-overview-disclaimer{overflow-wrap:anywhere}
+.market-record{min-width:0}
+@media(max-width:780px){
+ .sidebar{height:100dvh;overflow-y:auto;padding-bottom:max(16px,env(safe-area-inset-bottom))}
+ .identity{padding-bottom:24px}
+ .recorded-chart{padding:14px}
+ .recorded-chart-ends{flex-direction:column;gap:12px}
+ .recorded-chart-ends>div:last-child{text-align:left}
+ .realized-chart-row{grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:7px}
+ .realized-chart-value{grid-column:2;font-size:11px}
+ .paper-overview-metrics strong{font-size:15px}
+ .toolbar{gap:7px}
+}
+@media(max-width:390px){
+ .toolbar-left strong{max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .pill{white-space:nowrap}
+ .recorded-chart{padding:11px}
+ .paper-overview-worker{padding:12px}
+}
