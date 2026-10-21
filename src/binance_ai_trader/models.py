@@ -299,9 +299,7 @@ class PaperWorkerGuardRow(Base):
             "next_allowed_at_ms >= 0 AND last_attempt_at_ms >= 0",
             name="ck_paper_worker_clock",
         ),
-        CheckConstraint(
-            "consecutive_failures BETWEEN 0 AND 10", name="ck_paper_worker_failures"
-        ),
+        CheckConstraint("consecutive_failures BETWEEN 0 AND 10", name="ck_paper_worker_failures"),
         CheckConstraint(
             "last_status IN ('ready', 'no_signal', 'paper_recorded', "
             "'rate_limited', 'source_blocked', 'error')",
