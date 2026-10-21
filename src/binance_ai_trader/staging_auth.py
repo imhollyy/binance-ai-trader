@@ -46,9 +46,7 @@ def password_hash(password: str, *, salt: bytes | None = None) -> str:
     fresh = secrets.token_bytes(16) if salt is None else salt
     if len(fresh) != 16:
         raise ValueError("Invalid staging password salt")
-    raw = hashlib.scrypt(
-        password.encode("utf-8"), salt=fresh, n=PASSWORD_N, r=8, p=1, dklen=64
-    )
+    raw = hashlib.scrypt(password.encode("utf-8"), salt=fresh, n=PASSWORD_N, r=8, p=1, dklen=64)
     return f"scrypt_{PASSWORD_N}:{fresh.hex()}:{raw.hex()}"
 
 
@@ -69,8 +67,12 @@ def _verify_password(candidate: str, stored: str) -> bool:
         return False
     _, salt, correct = stored.split(":")
     raw = hashlib.scrypt(
-        candidate.encode("utf-8"), salt=bytes.fromhex(salt),
-        n=PASSWORD_N, r=8, p=1, dklen=64,
+        candidate.encode("utf-8"),
+        salt=bytes.fromhex(salt),
+        n=PASSWORD_N,
+        r=8,
+        p=1,
+        dklen=64,
     )
     return hmac.compare_digest(raw, bytes.fromhex(correct))
 
@@ -149,8 +151,7 @@ class StagingAccess:
     def require(self, request: Request, *, write: bool = False) -> None:
         row = self._current(request, require_csrf=write)
         if write and (
-            row.role != "operator"
-            or request.headers.get("x-paper-settings-approval") != APPROVAL
+            row.role != "operator" or request.headers.get("x-paper-settings-approval") != APPROVAL
         ):
             raise HTTPException(403, "Additional settings approval required")
 
@@ -205,8 +206,13 @@ class StagingAccess:
                 if outcome is None:
                     raise HTTPException(401, "Invalid credentials")
                 response.set_cookie(
-                    key=COOKIE, value=sid, max_age=SESSION_LIFETIME_MS // 1000,
-                    httponly=True, secure=True, samesite="strict", path="/",
+                    key=COOKIE,
+                    value=sid,
+                    max_age=SESSION_LIFETIME_MS // 1000,
+                    httponly=True,
+                    secure=True,
+                    samesite="strict",
+                    path="/",
                 )
                 response.headers["Cache-Control"] = "no-store, private"
                 return outcome
