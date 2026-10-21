@@ -30,9 +30,7 @@ def candidate() -> PaperSignalPlan:
         latest_close_time_ms=119_999,
         checked_candles=60,
         settings_version=1,
-        decision=BacktestDecision(
-            119_999, "buy", Decimal("1"), Decimal("99")
-        ),
+        decision=BacktestDecision(119_999, "buy", Decimal("1"), Decimal("99")),
         idempotency_key=_stable_key("BTCUSDT", "1m", 119_999, PARAMS, "buy"),
     )
 
@@ -95,8 +93,12 @@ def test_untrusted_source_is_never_authorized(state: SourceState | None) -> None
     try:
         with pytest.raises(PaperExecutionRejected):
             execute_paper_signal_once(
-                engine, candidate(), source_state=state,
-                source_checked_at_ms=180_001, params=PARAMS, now_ms=180_001,
+                engine,
+                candidate(),
+                source_state=state,
+                source_checked_at_ms=180_001,
+                params=PARAMS,
+                now_ms=180_001,
             )
     finally:
         engine.dispose()
