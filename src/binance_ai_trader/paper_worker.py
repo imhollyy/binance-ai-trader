@@ -144,7 +144,7 @@ def _cooldown(
 
     digest = hashlib.sha256(f"{symbol}:{interval}:{attempts}".encode("ascii")).digest()
     jitter = int.from_bytes(digest[:2], "big") % 15_001
-    delay = min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** min(attempts, 6))
+    delay: int = min(MAX_BACKOFF_MS, BASE_BACKOFF_MS << min(attempts, 6))
     if rate_limit is not None:
         if rate_limit.status_code == 418:
             delay = max(delay, 900_000)
