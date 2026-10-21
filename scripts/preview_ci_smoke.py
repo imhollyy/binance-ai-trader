@@ -144,11 +144,8 @@ def smoke() -> None:
                 except (ValueError, AttributeError):
                     detail = ""
                 # Only known constant security messages are safe to print.
-                cause = (
-                    detail
-                    if detail in ("HTTPS required", "Origin not permitted", "Local admin headers forbidden")
-                    else "unclassified"
-                )
+                safe_reasons = ("HTTPS required", "Origin not permitted", "Local admin headers forbidden")
+                cause = detail if detail in safe_reasons else "unclassified"
                 raise RuntimeError(f"Staging login HTTP {code}, safe reason: {cause}")
             if time.monotonic() >= deadline:
                 raise RuntimeError(f"Private preview API not ready, HTTP {code}")
