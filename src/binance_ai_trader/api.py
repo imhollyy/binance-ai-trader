@@ -17,6 +17,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from binance_ai_trader.api_config import ApiConfig
 from binance_ai_trader.models import AuditRow, SpotCandleRow, TradingSettingsRow
+from binance_ai_trader.paper_dashboard_api import register_paper_dashboard_route
 from binance_ai_trader.paper_read_api import register_paper_spot_read_route
 from binance_ai_trader.risk_schemas import RiskSettings, SettingsSnapshot, SettingsUpdate
 
@@ -242,6 +243,7 @@ def create_app(
         return SettingsSnapshot(version=payload.expected_version + 1, settings=payload.settings)
 
     register_paper_spot_read_route(app, require_admin, db_engine)
+    register_paper_dashboard_route(app, require_admin, db_engine)
     return app
 
 
