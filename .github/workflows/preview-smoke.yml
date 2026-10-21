@@ -1,0 +1,57 @@
+name: Private Preview Local HTTPS Smoke
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "compose.preview.yaml"
+      - "deploy/preview/**"
+      - "web/**"
+      - "src/**"
+      - "scripts/preview_ci_smoke.py"
+      - ".dockerignore"
+      - ".github/workflows/preview-smoke.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "compose.preview.yaml"
+      - "deploy/preview/**"
+      - "web/**"
+      - "src/**"
+      - "scripts/preview_ci_smoke.py"
+      - ".dockerignore"
+      - ".github/workflows/preview-smoke.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  disposable-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate synthetic preview-only configuration without printing credentials
+        run: python3 scripts/preview_ci_smoke.py generate .env.preview.ci
+      - name: Validate separate preview Compose
+        run: >-
+          docker compose -p tradepilot_preview_ci --env-file .env.preview.ci
+          -f compose.preview.yaml --profile preview config --quiet
+      - name: Build and start isolated private HTTPS preview locally
+        run: >-
+          docker compose -p tradepilot_preview_ci --env-file .env.preview.ci
+          -f compose.preview.yaml --profile preview up --build -d
+      - name: Real loopback HTTPS viewer session and PAPER dashboard smoke
+        run: python3 scripts/preview_ci_smoke.py smoke
+      - name: Dispose ONLY isolated preview CI volumes and test credentials
+        if: always()
+        run: |
+          if test -f .env.preview.ci; then
+            docker compose -p tradepilot_preview_ci --env-file .env.preview.ci \
+              -f compose.preview.yaml --profile preview down -v --remove-orphans
+          fi
+          rm -f .env.preview.ci
