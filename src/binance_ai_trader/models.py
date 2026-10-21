@@ -251,18 +251,15 @@ class PaperSpotObservedQuoteRow(Base):
     __tablename__ = "paper_spot_observed_quotes"
     __table_args__ = (
         UniqueConstraint("journal_id", name="uq_paper_spot_observed_quotes_journal"),
-        CheckConstraint(
-            "symbol IN ('BTCUSDT', 'ETHUSDT')", name="ck_paper_observed_symbol"
-        ),
-        CheckConstraint(
-            "interval IN ('1m', '5m', '15m')", name="ck_paper_observed_interval"
-        ),
+        CheckConstraint("symbol IN ('BTCUSDT', 'ETHUSDT')", name="ck_paper_observed_symbol"),
+        CheckConstraint("interval IN ('1m', '5m', '15m')", name="ck_paper_observed_interval"),
         CheckConstraint(
             "source = 'binance_public_spot_ticker_price'", name="ck_paper_observed_source"
         ),
         CheckConstraint(
             "signal_close_time_ms >= 0 AND requested_at_ms > signal_close_time_ms "
-            "AND received_at_ms >= requested_at_ms", name="ck_paper_observed_timestamps"
+            "AND received_at_ms >= requested_at_ms",
+            name="ck_paper_observed_timestamps"
         ),
         CheckConstraint(
             "reference_price > 0 AND reference_price <> 'NaN'::numeric",
