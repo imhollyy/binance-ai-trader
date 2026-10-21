@@ -180,7 +180,7 @@ def test_explicit_scheduler_two_ticks_429_restart_and_permission_revoke(db: Engi
     prev_http = len(paths)
     logs.clear()
     assert scheduler(enabled=True, ticks=1) is SchedulerStatus.LIMIT_REACHED
-    assert logs[-1].status is PaperWorkerStatus.READY
+    assert logs[-1].status == PaperWorkerStatus.READY
     assert len(paths) == prev_http
     assert _counts(db) == (61, 1, 2, 1, 1)
 
