@@ -118,7 +118,9 @@ class PublicSpotObservationClient:
         ):
             raise MarketDataInvalid("ticker_sample_crossed_candle_boundary")
         if reply.status_code in (418, 429):
-            raise MarketRateLimited(reply.status_code, _retry_after(reply.headers.get("Retry-After")))
+            raise MarketRateLimited(
+                reply.status_code, _retry_after(reply.headers.get("Retry-After"))
+            )
         if reply.status_code != 200:
             raise MarketDataUnavailable("Unexpected public ticker HTTP response")
         try:
