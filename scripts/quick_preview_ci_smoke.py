@@ -45,8 +45,22 @@ def send(
 
 
 def main() -> None:
-    code, html, _ = send("/")
-    assert code == 200 and b"TradePilot" in html
+    # "docker compose up -d" reports a started container before Caddy/Next
+    # have completed their own HTTP startup. Wait only for transient errors;
+    # unexpected host/route responses must still fail closed, never pass.
+    for _attempt in range(40):
+        try:
+            code, html, _ = send("/")
+        except (OSError, http.client.HTTPException):
+            time.sleep(1)
+            continue
+        if code == 200 and b"TradePilot" in html:
+            break
+        if code not in (502, 503, 504):
+            raise RuntimeError(f"Quick-origin web HTTP {code} or invalid content")
+        time.sleep(1)
+    else:
+        raise RuntimeError("Quick-origin web not ready after bounded startup retries")
     print("Local private quick-tunnel origin web: PASS")
 
     payload = json.dumps({"username": "viewer", "password": VIEWER}).encode()
