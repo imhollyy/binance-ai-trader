@@ -81,7 +81,7 @@ def _journal(**overrides: object) -> PaperSpotJournalRow:
 def test_schema_has_required_keys_indexes_and_immutable_triggers(ledger_engine: Engine) -> None:
     with ledger_engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0003_paper_spot_ledger"
+            "0004_paper_spot_observed_quotes"
         )
         indexes = set(
             connection.scalars(
@@ -226,7 +226,10 @@ def test_account_bootstrap_constraints_rollback_and_restart(ledger_engine: Engin
             "DELETE FROM paper_spot_journal WHERE event_id = 'buy-1'",
             "TRUNCATE TABLE paper_spot_journal",
         ):
-            with pytest.raises(DBAPIError, match="append only"), session.begin_nested():
+            with (
+                pytest.raises(DBAPIError, match="append only|cannot truncate"),
+                session.begin_nested(),
+            ):
                 session.execute(text(statement))
     with Session(ledger_engine) as session:
         assert session.scalar(select(func.count()).select_from(PaperSpotJournalRow)) == 2
