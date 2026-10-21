@@ -165,7 +165,9 @@ def test_operator_requires_origin_csrf_elevation_and_revokes_on_logout(
     baseline = client.get("/api/v1/settings", headers=HEADERS).json()
     payload = {"expected_version": 0, "settings": baseline["settings"]}
     privilege = {
-        **HEADERS, "X-CSRF-Token": csrf, "X-Paper-Settings-Approval": "PAPER_SETTINGS_ONLY",
+        **HEADERS,
+        "X-CSRF-Token": csrf,
+        "X-Paper-Settings-Approval": "PAPER_SETTINGS_ONLY",
     }
     for headers in (
         HEADERS,
