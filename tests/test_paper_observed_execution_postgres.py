@@ -17,6 +17,7 @@ import httpx
 import pytest
 from sqlalchemy import create_engine, event, func, select, text
 from sqlalchemy.engine import Engine, make_url
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from binance_ai_trader.models import (
@@ -219,7 +220,7 @@ def test_public_sample_atomic_account_audit_rollback_and_sell(engine: Engine) ->
         assert quote.source == "binance_public_spot_ticker_price"
 
     # Existing journal and quote audit both refuse mutation.
-    with Session(engine) as session, pytest.raises(Exception):
+    with Session(engine) as session, pytest.raises(DBAPIError, match="append only"):
         session.execute(
             text("UPDATE paper_spot_observed_quotes SET reference_price = 100 WHERE id = 1")
         )
