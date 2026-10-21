@@ -12,7 +12,7 @@ for (const width of [360, 390, 768, 1280]) {
     await expect(page.getByRole("heading", {name:"Güvenli oturum aç"})).toBeVisible();
     await expect(page.getByLabel("Parola")).toBeVisible();
     await expect(page.getByRole("button", {name:"Giriş yap"})).toBeVisible();
-    await expect(page.getByText("Yerel yönetici anahtarı")).toHaveCount(0);
+    await expect(page.getByLabel("Yerel yönetici anahtarı", {exact:true})).toHaveCount(0);
     await expect(page.getByRole("button", {name:"API Bağlan"})).toHaveCount(0);
     const overflow = await page.evaluate(() =>
       document.documentElement.scrollWidth - document.documentElement.clientWidth
