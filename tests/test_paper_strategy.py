@@ -11,6 +11,7 @@ from binance_ai_trader.market_data import Candle, MarketRateLimited
 from binance_ai_trader.paper_backtest import BacktestDecision, PaperBacktestRejected
 from binance_ai_trader.paper_spot import PaperCosts
 from binance_ai_trader.paper_strategy import (
+    CausalStrategyResult,
     ClosedCandleObservation,
     SmaCrossParameters,
     SmaCrossStrategy,
@@ -76,7 +77,7 @@ def run(
     settings: RiskSettings | None = None,
     strategy: SmaCrossStrategy | None = None,
     costs: PaperCosts | None = None,
-) -> object:
+) -> CausalStrategyResult:
     return run_causal_paper_spot_backtest(
         data,
         symbol="BTCUSDT",
@@ -315,6 +316,26 @@ def test_manual_approval_is_not_forged_and_loss_and_costs_are_realized() -> None
     assert costly.backtest.book.realized_pnl_usdt < base.backtest.book.realized_pnl_usdt
     with pytest.raises(PaperBacktestRejected, match="simulation_rejected"):
         run(data, strategy=strategy, settings=config(spot_capital_usdt=100))
+
+
+
+def test_adverse_gap_at_next_open_rejects_buy_instead_of_changing_stop() -> None:
+    data = trend()
+    strategy = SmaCrossStrategy(SmaCrossParameters(fast_window=3, slow_window=6))
+    plans = generate(data, strategy)
+    first_buy = next(decision for decision in plans if decision.action == "buy")
+    target = (first_buy.observed_close_time_ms + 1) // 60_000
+    changed = list(data)
+    changed[target] = replace(changed[target], open=D("100"), low=D("99"))
+    with pytest.raises(PaperBacktestRejected, match="stop_not_below_entry"):
+        run(changed, strategy=strategy)
+
+
+def test_repeated_signal_after_realized_loss_respects_daily_loss_limit() -> None:
+    data = trend()
+    strategy = SmaCrossStrategy(SmaCrossParameters(fast_window=3, slow_window=6))
+    with pytest.raises(PaperBacktestRejected, match="daily_loss_limit"):
+        run(data, settings=config(daily_loss_limit_pct=0.1), strategy=strategy)
 
 
 def test_strategy_cannot_claim_live_prices_equity_or_real_orders() -> None:
