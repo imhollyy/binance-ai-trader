@@ -45,14 +45,14 @@ function verifiedPaperSnapshot(view: Summary): Summary {
 // Only format trusted PAPER Decimal strings at the UI boundary.
 // BigInt avoids floating-point rounding and never changes stored precision.
 function formatPaperUsdt(raw: string): string {
-  const parts = /^(-?)(\\d+)(?:\\.(\\d+))?$/.exec(raw);
+  const parts = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw);
   if (!parts) return "—";
   const negative = parts[1] === "-";
   const integer = parts[2];
   const fraction = (parts[3] ?? "").padEnd(3, "0");
   const cents = BigInt(integer) * 100n +
     BigInt(fraction.slice(0, 2)) + (fraction[2] >= "5" ? 1n : 0n);
-  const whole = (cents / 100n).toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, ".");
+  const whole = (cents / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   const decimals = (cents % 100n).toString().padStart(2, "0");
   return (negative && cents !== 0n ? "-" : "") + whole + "," + decimals;
 }
