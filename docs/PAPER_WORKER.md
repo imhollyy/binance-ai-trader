@@ -24,7 +24,7 @@ from binance_ai_trader.paper_worker import run_paper_worker_once
 
 # Varsayılan, güvenli ve hiçbir I/O yapmayan çağrı:
 report = run_paper_worker_once(engine)
-assert report.status == 'disabled'
+assert report.status == "disabled"
 
 # Yalnız izole test ortamında, açık sanal onayla ve önceden
 # yapılandırılmış PAPER hesabı/izinlerle tek deneme:
