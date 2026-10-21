@@ -92,9 +92,13 @@ def main() -> None:
 
     # Exercise the same POST Origin, JSON content-type, cookie and CSRF
     # headers used by the real browser logout UI (no Cloudflare involved).
-    logout_headers = {"Host": HOST, "Origin": ORIGIN, "Cookie": cookie,
-                      "Content-Type": "application/json", "X-CSRF-Token": csrf}
-    import http.client
+    logout_headers = {
+        "Host": HOST,
+        "Origin": ORIGIN,
+        "Cookie": cookie,
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrf,
+    }
     conn = http.client.HTTPConnection("127.0.0.1", port=8765, timeout=6)
     try:
         conn.request("POST", "/api/v1/auth/logout", body=b"{}", headers=logout_headers)
