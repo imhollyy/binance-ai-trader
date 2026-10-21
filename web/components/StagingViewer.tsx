@@ -42,6 +42,22 @@ function verifiedPaperSnapshot(view: Summary): Summary {
   return view;
 }
 
+// Only format trusted PAPER Decimal strings at the UI boundary.
+// BigInt avoids floating-point rounding and never changes stored precision.
+function formatPaperUsdt(raw: string): string {
+  const parts = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw);
+  if (!parts) return "—";
+  const negative = parts[1] === "-";
+  const integer = parts[2];
+  const fraction = (parts[3] ?? "").padEnd(3, "0");
+  const hundred = BigInt(100);
+  const cents = BigInt(integer) * hundred +
+    BigInt(fraction.slice(0, 2)) + (fraction[2] >= "5" ? BigInt(1) : BigInt(0));
+  const whole = (cents / hundred).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  const decimals = (cents % hundred).toString().padStart(2, "0");
+  return (negative && cents !== BigInt(0) ? "-" : "") + whole + "," + decimals;
+}
+
 function timeUTC(value: number | null): string {
   return value === null ? "—" :
     new Date(value).toLocaleString("tr-TR", {timeZone:"UTC"}) + " UTC";
@@ -174,10 +190,10 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
         </div>
         {!snapshot ? <p>Kayıtlı PAPER özeti henüz yüklenmedi.</p> : <>
           {snapshot.initialized && snapshot.account ? <div className="staging-metrics">
-            <article><span>Başlangıç (sanal)</span><strong>{snapshot.account.initial_capital_usdt} USDT</strong></article>
-            <article><span>Kaydedilmiş nakit (sanal)</span><strong>{snapshot.account.cash_usdt} USDT</strong></article>
-            <article><span>Gerçekleşmiş PnL (sanal)</span><strong>{snapshot.account.realized_pnl_usdt} USDT</strong></article>
-            <article><span>Varsayımsal komisyon</span><strong>{snapshot.account.paid_fees_usdt} USDT</strong></article>
+            <article><span>Başlangıç (sanal)</span><strong>{formatPaperUsdt(snapshot.account.initial_capital_usdt)} USDT</strong></article>
+            <article><span>Kaydedilmiş nakit (sanal)</span><strong>{formatPaperUsdt(snapshot.account.cash_usdt)} USDT</strong></article>
+            <article><span>Gerçekleşmiş PnL (sanal)</span><strong>{formatPaperUsdt(snapshot.account.realized_pnl_usdt)} USDT</strong></article>
+            <article><span>Varsayımsal komisyon</span><strong>{formatPaperUsdt(snapshot.account.paid_fees_usdt)} USDT</strong></article>
           </div> : <p>Henüz PAPER hesap verisi bulunmuyor; tutar uydurulmaz.</p>}
           <div className="staging-status">
             <strong>Worker — Son bilinen durum</strong>
