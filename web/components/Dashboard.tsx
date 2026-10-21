@@ -8,6 +8,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import PaperSpotLedger from "./PaperSpotLedger";
+import PaperDashboardOverview from "./PaperDashboardOverview";
 
 type Section = "dashboard" | "market" | "bot" | "risk" | "strategies" | "positions" | "logs";
 type Market = "spot" | "futures";
@@ -243,24 +244,22 @@ export default function Dashboard() {
         {notice&&<div className="notice" role="status"><ShieldAlert size={17}/><span>{notice}</span>
           <button aria-label="Bildirimi kapat" onClick={()=>setNotice("")}><X size={16}/></button></div>}
         <div className="warning"><ShieldAlert size={19}/><div><strong>Gerçek alım-satım kapalı.</strong> Bu paneldeki
-          tutarlar sanal limitlerdir. Binance hesabı, emir yürütme veya aktif worker henüz bulunmuyor.</div></div>
+          tutarlar sanal limitlerdir. Binance hesabı veya emir yürütme yok; PAPER worker yalnız açık izinle başlatılabilir ve burada çalışan bir servis doğrulanmaz.</div></div>
         {section==="dashboard"&&<>
           <div className="stats">
             <article className="stat"><span>Sanal Spot Bütçesi</span><strong>{risk.spot_capital_usdt.toLocaleString("tr-TR")} USDT</strong><small>Tanımlı simülasyon limiti</small></article>
             <article className="stat"><span>Sanal Futures Bütçesi</span><strong>{risk.futures_capital_usdt.toLocaleString("tr-TR")} USDT</strong><small>Gerçek kaldıraç kullanılmaz</small></article>
             <article className="stat"><span>İşlem Başına Risk</span><strong>%{risk.risk_per_trade_pct.toLocaleString("tr-TR")}</strong><small>Risk kuralı</small></article>
-            <article className="stat"><span>Bot Durumu</span><strong>Çalışmıyor</strong><small>Worker henüz geliştirilmedi</small></article>
+            <article className="stat"><span>Bot Ayarı</span><strong>{risk.bot_enabled ? "Etkin istenmiş" : "Kapalı"}</strong><small>Çalışan worker doğrulanmadı</small></article>
           </div>
           <div className="dashboard-grid">
-            <section className="surface performance"><h2>Performans Özeti</h2>
-              <div className="empty"><BarChart3 size={32}/><strong>İşlem verisi henüz yok</strong>
-              <span>Paper motoru geliştirildikten sonra gerçek zamanlı simülasyon sonuçları gösterilecek.</span></div></section>
+            <PaperDashboardOverview connected={connected} apiAddress={address} token={secret}/> 
             <section className="surface"><h2>Güvenlik Kontrolleri</h2><div className="safety-list">
               <p><CheckCircle2 size={18}/> Canlı emir yürütme kapalı</p>
               <p><CheckCircle2 size={18}/> Stop-loss zorunlu</p>
               <p><CheckCircle2 size={18}/> Risk üst sınırları mevcut</p>
               <p><CirclePause size={18}/> Binance hesabı bağlı değil</p>
-              <p><CirclePause size={18}/> Worker aktif değil</p>
+              <p><CirclePause size={18}/> Worker çalışma durumu doğrulanmadı</p>
             </div><button className="button outline" onClick={()=>setSection("risk")}>Riskleri Gör <ChevronRight size={16}/></button></section>
           </div>
         </>}
@@ -345,7 +344,7 @@ export default function Dashboard() {
             <button aria-pressed={risk.market_type==="spot"} className={risk.market_type==="spot"?"selected":""} onClick={()=>market("spot")}>Spot</button>
             <button aria-pressed={risk.market_type==="futures"} className={risk.market_type==="futures"?"selected":""} onClick={()=>market("futures")}>Futures (Sanal)</button>
           </div>
-          <Row label="Botu etkinleştirme isteği" desc="Worker yok; sadece gelecekte uygulanmak üzere saklanır.">
+          <Row label="Botu etkinleştirme isteği" desc="Yalnız PAPER ayarını kaydeder; servis başlatmaz.">
             <Switch label="Bot etkinleşme tercihi" value={risk.bot_enabled} onChange={v=>change("bot_enabled",v)}/></Row>
           <Row label="Manuel onay tercihi" desc="Varsayılan açık.">
             <Switch label="Manuel işlem onayı" value={risk.manual_approval} onChange={v=>change("manual_approval",v)}/></Row>
