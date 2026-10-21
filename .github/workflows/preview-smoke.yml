@@ -55,6 +55,18 @@ jobs:
           -f compose.preview.yaml --profile preview up --build -d
       - name: Real loopback HTTPS viewer session and PAPER dashboard smoke
         run: python3 scripts/preview_ci_smoke.py smoke
+      - name: Create isolated 1000 USDT PAPER account using explicit local-only CLI
+        run: |
+          docker compose -p tradepilot_preview_ci --env-file .env.preview.ci \
+            -f compose.preview.yaml --profile preview exec -T preview-api \
+            python -m binance_ai_trader.preview_account_bootstrap \
+            --capital-usdt 1000 --confirm-paper-only
+          # A second call must reuse the same account and opening journal,
+          # never reset the cash or append another deposit.
+          docker compose -p tradepilot_preview_ci --env-file .env.preview.ci \
+            -f compose.preview.yaml --profile preview exec -T preview-api \
+            python -m binance_ai_trader.preview_account_bootstrap \
+            --capital-usdt 1000 --confirm-paper-only
       - name: Stop ephemeral HTTPS preview before testing Quick Tunnel-compatible ingress
         run: >-
           docker compose -p tradepilot_preview_ci --env-file .env.preview.ci
