@@ -30,13 +30,16 @@ def test_default_worker_does_not_need_database_or_touch_network() -> None:
             is PaperWorkerStatus.ERROR
         )
         for value in (0, -1, True, "100"):
+            def invalid_clock(item: object = value) -> int:
+                return cast(int, item)
+
             with pytest.raises(ValueError, match="invalid_worker_clock"):
-                run_paper_worker_once(engine, clock_ms=lambda item=value: cast(int, item))
+                run_paper_worker_once(engine, clock_ms=invalid_clock)
         with pytest.raises(ValueError, match="invalid_worker_enabled"):
             run_paper_worker_once(
                 engine,
-                enabled=1,
-                clock_ms=lambda: 100_000,  # type: ignore[arg-type]
+                enabled=cast(bool, 1),
+                clock_ms=lambda: 100_000,
             )
     finally:
         engine.dispose()
