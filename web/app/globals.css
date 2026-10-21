@@ -154,3 +154,31 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
  .recorded-chart{padding:11px}
  .paper-overview-worker{padding:12px}
 }
+
+/* BT-009A: separately built, read-only HTTPS closed-beta login surface. */
+.staging-shell{min-height:100dvh;padding:clamp(18px,5vw,64px);display:grid;place-items:center;background:radial-gradient(circle at top left,#182d58,#0d172a 65%);color:#223957}
+.staging-panel{width:min(100%,720px);background:#fff;border:1px solid #c9d9f1;border-radius:22px;padding:clamp(18px,4vw,36px);box-shadow:0 24px 90px #040c203f}
+.staging-identity{display:flex;gap:14px;align-items:center;margin-bottom:22px}
+.staging-identity>span{display:grid;place-items:center;background:#456ef0;color:white;border-radius:12px;width:48px;height:48px}
+.staging-identity h1{font-size:24px;letter-spacing:-.6px}
+.staging-identity p{font-size:12px;color:#778ca5;margin-top:4px}
+.staging-warning{display:flex;align-items:flex-start;gap:10px;background:#f5f9ff;border:1px solid #deebff;border-radius:12px;padding:14px;line-height:1.6;font-size:12px;color:#536c8a}
+.staging-warning svg{flex:none;color:#4c76b2}
+.staging-form{display:flex;flex-direction:column;gap:16px;margin-top:25px}
+.staging-form h2{font-size:17px}
+.staging-form label{display:flex;flex-direction:column;gap:8px;font-size:12px;color:#657b96}
+.staging-form select,.staging-form input{width:100%;min-height:46px;border:1px solid #bdcee4;background:#fff;border-radius:10px;padding:12px;color:#29435f}
+.staging-form button,.staging-actions button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:10px 16px;background:#385bd5;color:white;border:0;border-radius:9px}
+.staging-form button:hover,.staging-actions button:hover{background:#2945a4}
+.staging-details{margin-top:20px}
+.staging-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:19px}
+.staging-actions strong{flex:1;min-width:160px;font-size:12px}
+.staging-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.staging-metrics article{padding:14px;background:#f5f8fd;border-radius:11px;border:1px solid #e1ebf8;display:flex;flex-direction:column;gap:7px;min-width:0}
+.staging-metrics span{font-size:11px;color:#7285a1}
+.staging-metrics strong{font-size:16px;overflow-wrap:anywhere;color:#2a4269}
+.staging-status{margin-top:15px;background:#f8fbff;border-radius:11px;padding:15px;font-size:12px;line-height:1.7}
+.staging-status p{margin-top:6px;overflow-wrap:anywhere}
+.staging-error,.staging-notice{margin-top:15px;padding:12px;border-radius:10px;background:#fff4ee;color:#9e5229;font-size:12px;line-height:1.6}
+.staging-panel footer{border-top:1px solid #e8edf5;margin-top:24px;padding-top:15px;font-size:11px;color:#8a9aaf;line-height:1.7}
+@media(max-width:440px){.staging-metrics{grid-template-columns:1fr}.staging-panel{border-radius:14px}.staging-actions button{flex:1}}
