@@ -103,7 +103,7 @@ test("staging formats persisted Decimal USDT balances without exposing fractiona
   await expect(page.getByRole("heading",{name:"Son PAPER olayları"})).toBeVisible();
   await expect(page.getByText("Sanal hesap açıldı")).toBeVisible();
   await expect(page.getByText("Henüz sanal pozisyon kaydı yok.",{exact:false})).toBeVisible();
-  await expect(page.getByText("1.000,00 USDT")).toHaveCount(2);
+  await expect(page.locator(".staging-metrics strong").filter({hasText:"1.000,00 USDT"})).toHaveCount(2);
   await expect(page.getByText("-2,51 USDT")).toBeVisible();
   await expect(page.getByText("0,00 USDT", {exact:true})).toBeVisible();
   await expect(page.getByText(/1000\.000000000000000000/)).toHaveCount(0);
