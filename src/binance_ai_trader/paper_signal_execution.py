@@ -30,10 +30,10 @@ from binance_ai_trader.paper_execution import (
     open_paper_spot,
 )
 from binance_ai_trader.paper_signal_plan import (
+    STRATEGY_VERSION,
     PaperSignalPlan,
     SignalPlanStatus,
     SourceState,
-    STRATEGY_VERSION,
     _stable_key,
 )
 from binance_ai_trader.paper_spot import SpotBuyIntent
