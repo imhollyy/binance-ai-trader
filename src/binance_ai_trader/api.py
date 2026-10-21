@@ -76,7 +76,8 @@ def create_app(
     staging = settings.auth_mode == "staging"
     staging_access = StagingAccess(settings, db_engine) if staging else None
     app = FastAPI(
-        title="Binance AI Trader — Paper API", version="0.2.0",
+        title="Binance AI Trader — Paper API",
+        version="0.2.0",
         docs_url=None if staging else "/docs",
         redoc_url=None if staging else "/redoc",
         openapi_url=None if staging else "/openapi.json",
@@ -88,7 +89,8 @@ def create_app(
         allow_methods=["GET", "POST", "PUT"] if staging else ["GET", "PUT"],
         allow_headers=(
             ["Content-Type", "X-CSRF-Token", "X-Paper-Settings-Approval"]
-            if staging else ["X-Admin-Token", "Content-Type"]
+            if staging
+            else ["X-Admin-Token", "Content-Type"]
         ),
     )
     app.add_middleware(
