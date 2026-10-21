@@ -70,11 +70,11 @@ services:
     environment:
       PREVIEW_HOST: ${PREVIEW_HOST:?Exact HTTPS hostname required}
     volumes:
-      - ./deploy/preview/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${PREVIEW_CADDYFILE:-./deploy/preview/Caddyfile}:/etc/caddy/Caddyfile:ro
       - preview_caddy_data:/data
       - preview_caddy_config:/config
     ports:
-      - "127.0.0.1:443:443"
+      - "${PREVIEW_INGRESS_BIND:-127.0.0.1:443:443}"
     networks:
       preview_private:
         ipv4_address: 172.30.210.10
