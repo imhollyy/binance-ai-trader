@@ -168,6 +168,38 @@ real-edge row above **NOT RUN** until separately authorized staging testing.
 
 
 
+## Disposable PostgreSQL backup/restore validation (CI only)
+
+\`tests/test_staging_restore_postgres.py\` and the dedicated \`postgres-integration\`
+job create **two new empty, disposable PostgreSQL databases**,
+\`trader_stage_restore_source_test\` and
+\`trader_stage_restore_target_test\`, using a fake CI-only PostgreSQL role
+and password on \`127.0.0.1:5432\`. The source is migrated to
+\`0006_staging_sessions\` twice (idempotent). The target must have no
+tables. An explicit opt-in \`STAGING_RESTORE_TEST_ISOLATED=1\` and strict
+database-name/host/port/role guards prevent accidental targeting of
+an existing user or production database.
+
+The source is filled with **synthetic** RiskSettings, a PAPER Spot
+account + append-only \`initial-capital\` journal event, one valid
+viewer session, one revoked operator session (only SHA-256 token/CSRF
+hashes), and a persisted login-throttle state. PostgreSQL \`pg_dump\`
+writes a temporary custom-format archive with no role ownership/ACL;
+\`pg_restore\` runs in **one transaction** into the separate empty
+target. Schema revision, precise \`NUMERIC\` cash/journal fields,
+revocation/expiry, throttle state, triggers, exactly-once account
+bootstrap and rejection of journal UPDATE/DELETE/TRUNCATE are checked.
+The disposable archive is deleted after testing and is not uploaded
+to GitHub artifacts. No real session secrets, user data, accounts or
+trading credentials are involved.
+
+**Evidence classification:** \`DISPOSABLE_PG_RESTORE_CI\` after the
+specific CI job passes. This is NOT an encrypted managed production
+backup, backup retention, offsite recovery, user-data migration or
+production RPO/RTO proof. Staging database provider isolation and
+real-world restore/retention remain **NOT RUN** until explicit
+infrastructure approval.
+
 ## 5. Rollout, shutdown and incident plan (approval gated)
 
 **Before creating any provider resources** record a separate explicit
