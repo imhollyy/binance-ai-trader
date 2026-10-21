@@ -89,7 +89,11 @@ def _block(
     version: int | None = None,
 ) -> PaperSignalPlan:
     return PaperSignalPlan(
-        SignalPlanStatus.BLOCKED, reason, symbol, interval, clock_ms,
+        SignalPlanStatus.BLOCKED,
+        reason,
+        symbol,
+        interval,
+        clock_ms,
         latest_close_time_ms=last_close,
         checked_candles=checked,
         settings_version=version,
@@ -292,8 +296,15 @@ def plan_paper_spot_signal_once(
             )
             history = tuple(
                 Candle(
-                    row.symbol, row.interval, row.open_time_ms, row.close_time_ms,
-                    row.open, row.high, row.low, row.close, row.volume,
+                    row.symbol,
+                    row.interval,
+                    row.open_time_ms,
+                    row.close_time_ms,
+                    row.open,
+                    row.high,
+                    row.low,
+                    row.close,
+                    row.volume,
                 )
                 for row in reversed(stored)
             )
@@ -302,37 +313,65 @@ def plan_paper_spot_signal_once(
             )
             if quality.status is not FeedStatus.READY:
                 return _block(
-                    "feed_" + quality.status.value, symbol, interval, clock,
-                    last_close=quality.latest_close_time_ms, checked=len(history),
+                    "feed_" + quality.status.value,
+                    symbol,
+                    interval,
+                    clock,
+                    last_close=quality.latest_close_time_ms,
+                    checked=len(history),
                 )
             last = history[-1]
             if clock - last.close_time_ms > step or source_checked_at_ms <= last.close_time_ms:
                 return _block(
-                    "latest_close_not_currently_actionable", symbol, interval, clock,
-                    last_close=last.close_time_ms, checked=len(history),
+                    "latest_close_not_currently_actionable",
+                    symbol,
+                    interval,
+                    clock,
+                    last_close=last.close_time_ms,
+                    checked=len(history),
                 )
             decision = SmaCrossStrategy(params).on_closed_candle(
                 ClosedCandleObservation(history, position_open=bool(open_positions))
             )
             if decision is None:
                 return PaperSignalPlan(
-                    SignalPlanStatus.NO_SIGNAL, "no_sma_cross_on_latest_close",
-                    symbol, interval, clock, last.close_time_ms, len(history),
+                    SignalPlanStatus.NO_SIGNAL,
+                    "no_sma_cross_on_latest_close",
+                    symbol,
+                    interval,
+                    clock,
+                    last.close_time_ms,
+                    len(history),
                     settings_version=settings_row.version,
                 )
             reason = _risk_gate(
-                settings=settings, account=account, events=events, decision=decision,
-                close_price=last.close, now_ms=clock,
+                settings=settings,
+                account=account,
+                events=events,
+                decision=decision,
+                close_price=last.close,
+                now_ms=clock,
             )
             if reason is not None:
                 return _block(
-                    reason, symbol, interval, clock, last_close=last.close_time_ms,
-                    checked=len(history), version=settings_row.version,
+                    reason,
+                    symbol,
+                    interval,
+                    clock,
+                    last_close=last.close_time_ms,
+                    checked=len(history),
+                    version=settings_row.version,
                 )
             return PaperSignalPlan(
-                SignalPlanStatus.CANDIDATE, "paper_diagnostic_only_next_open_unknown",
-                symbol, interval, clock, last.close_time_ms, len(history),
-                settings_version=settings_row.version, decision=decision,
+                SignalPlanStatus.CANDIDATE,
+                "paper_diagnostic_only_next_open_unknown",
+                symbol,
+                interval,
+                clock,
+                last.close_time_ms,
+                len(history),
+                settings_version=settings_row.version,
+                decision=decision,
                 idempotency_key=_stable_key(
                     symbol, interval, last.close_time_ms, params, decision.action
                 ),
