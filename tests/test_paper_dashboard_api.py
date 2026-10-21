@@ -194,7 +194,7 @@ def test_realized_pnl_open_position_and_attached_quote_are_exact_strings(
             signal_close_time_ms=1_800_000_000_000,
             requested_at_ms=1_800_000_000_100,
             received_at_ms=1_800_000_000_150,
-            reference_price=Decimal("100.45"),
+            reference_price=Decimal("100.5"),
             fee_bps=10,
             slippage_bps=5,
         )
@@ -215,7 +215,7 @@ def test_realized_pnl_open_position_and_attached_quote_are_exact_strings(
     assert body["positions"][0]["status"] == "open"
     assert body["events"][0]["event_type"] == "spot_buy"
     quote = body["events"][0]["quote"]
-    assert Decimal(quote["reference_price"]) == Decimal("100.45")
+    assert Decimal(quote["reference_price"]) == Decimal("100.5")
     assert quote["observed_at_ms"] == 1_800_000_000_150
     assert quote["fee_bps"] == 10 and quote["slippage_bps"] == 5
     assert body["events"][1]["quote"] is None
