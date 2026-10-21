@@ -95,8 +95,18 @@ def _fixture_transport(
                 ms = base - (60 - i) * 60_000
                 candles.append(
                     [
-                        ms, "100", "110", "90", closes[i], "2", ms + 59_999,
-                        "0", 1, "0", "0", "0",
+                        ms,
+                        "100",
+                        "110",
+                        "90",
+                        closes[i],
+                        "2",
+                        ms + 59_999,
+                        "0",
+                        1,
+                        "0",
+                        "0",
+                        "0",
                     ]
                 )
             return httpx.Response(200, json=candles)
@@ -118,9 +128,13 @@ def test_disabled_optin_no_http_readonly_cooldown_restart_and_concurrent(
 
     def tick(enabled: bool = True, db: Engine = engine) -> PaperWorkerStatus:
         return run_paper_worker_once(
-            db, enabled=enabled, symbol="BTCUSDT", interval="1m",
+            db,
+            enabled=enabled,
+            symbol="BTCUSDT",
+            interval="1m",
             params=SmaCrossParameters(fast_window=3, slow_window=6),
-            clock_ms=lambda: clock[0], transport=transport,
+            clock_ms=lambda: clock[0],
+            transport=transport,
         ).status
 
     assert tick(enabled=False) is PaperWorkerStatus.DISABLED
@@ -131,7 +145,8 @@ def test_disabled_optin_no_http_readonly_cooldown_restart_and_concurrent(
     with Session(engine) as session, session.begin():
         session.add(
             TradingSettingsRow(
-                id=1, version=1,
+                id=1,
+                version=1,
                 data=RiskSettings(
                     bot_enabled=False, manual_approval=False, risk_per_trade_pct=2
                 ).model_dump(mode="json"),
@@ -156,9 +171,7 @@ def test_disabled_optin_no_http_readonly_cooldown_restart_and_concurrent(
         ).model_dump(mode="json")
     assert tick() is PaperWorkerStatus.NO_SIGNAL
     assert _counts(engine) == (60, 0, 1, 0, 1)
-    assert calls == [
-        "/api/v3/klines", "/api/v3/klines", "/api/v3/ticker/price"
-    ]
+    assert calls == ["/api/v3/klines", "/api/v3/klines", "/api/v3/ticker/price"]
     assert tick() is PaperWorkerStatus.READY
     assert len(calls) == 3
     with Session(engine) as session:
