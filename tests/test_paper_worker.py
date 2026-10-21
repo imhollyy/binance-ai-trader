@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import cast
 
 import pytest
 from sqlalchemy import create_engine
@@ -30,7 +31,7 @@ def test_default_worker_does_not_need_database_or_touch_network() -> None:
         )
         for value in (0, -1, True, "100"):
             with pytest.raises(ValueError, match="invalid_worker_clock"):
-                run_paper_worker_once(engine, clock_ms=lambda: value)  # type: ignore[misc]
+                run_paper_worker_once(engine, clock_ms=lambda item=value: cast(int, item))
         with pytest.raises(ValueError, match="invalid_worker_enabled"):
             run_paper_worker_once(
                 engine, enabled=1, clock_ms=lambda: 100_000  # type: ignore[arg-type]
