@@ -80,8 +80,17 @@ def main() -> None:
     assert isinstance(csrf, str) and len(csrf) == 64
     cookie = set_cookie.split(";", maxsplit=1)[0]
     code, dash, _ = send("/api/v1/paper/dashboard", cookie=cookie)
-    assert code == 200 and json.loads(dash)["mode"] == "paper"
-    print("Trusted ingress HTTPS claim -> FastAPI -> PostgreSQL session: PASS")
+    assert code == 200
+    snapshot = json.loads(dash)
+    assert snapshot["mode"] == "paper"
+    assert snapshot["source"] == "persisted_paper_spot"
+    assert snapshot["initialized"] is True
+    assert float(snapshot["account"]["initial_capital_usdt"]) == 1000
+    assert float(snapshot["account"]["cash_usdt"]) == 1000
+    assert snapshot["total_events"] == 1  # repeat bootstrap did not append a second deposit
+    assert snapshot["open_positions"] == snapshot["total_positions"] == 0
+    assert snapshot["worker"]["process_verified_running"] is False
+    print("Trusted ingress HTTPS + single persistent 1000 USDT PAPER account: PASS")
 
     code, _, _ = send("/health/ready")
     assert code == 404
