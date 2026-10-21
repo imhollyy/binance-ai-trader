@@ -50,6 +50,7 @@ SignalPreflight = Callable[
     ],
     None,
 ]
+SignalPostWrite = Callable[[Session, PaperSpotJournalRow], None]
 
 
 class PaperExecutionRejected(ValueError):
@@ -282,6 +283,7 @@ def open_paper_spot(
     explicit_approval: bool = False,
     costs: PaperCosts | None = None,
     _signal_preflight: SignalPreflight | None = None,
+    _signal_postwrite: SignalPostWrite | None = None,
 ) -> PaperTradeReceipt:
     """Simulate one Spot buy, transactionally; no API/exchange/order interaction."""
     key = _key(idempotency_key)
@@ -366,6 +368,9 @@ def open_paper_spot(
             account.cash_usdt = cash_after
             account.paid_fees_usdt = total_fees
             session.flush()
+            if _signal_postwrite is not None:
+                _signal_postwrite(session, journal)
+                session.flush()
             return _receipt(journal, position.trade_id)
 
 
@@ -378,6 +383,7 @@ def close_paper_spot(
     explicit_approval: bool = False,
     costs: PaperCosts | None = None,
     _signal_preflight: SignalPreflight | None = None,
+    _signal_postwrite: SignalPostWrite | None = None,
 ) -> PaperTradeReceipt:
     """Simulate full closure even if bot is disabled; never send an order."""
     key = _key(idempotency_key)
@@ -460,4 +466,7 @@ def close_paper_spot(
             account.paid_fees_usdt = new_fees
             account.realized_pnl_usdt = new_pnl
             session.flush()
+            if _signal_postwrite is not None:
+                _signal_postwrite(session, journal)
+                session.flush()
             return _receipt(journal, trade_id)
