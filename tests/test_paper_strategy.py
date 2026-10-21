@@ -94,9 +94,7 @@ class PrefixRecorder:
         self.close_times: list[int] = []
         self.prefix_lengths: list[int] = []
 
-    def on_closed_candle(
-        self, observation: ClosedCandleObservation
-    ) -> BacktestDecision | None:
+    def on_closed_candle(self, observation: ClosedCandleObservation) -> BacktestDecision | None:
         self.close_times.append(observation.close_time_ms)
         self.prefix_lengths.append(len(observation.observed))
         assert isinstance(observation.observed, tuple)
@@ -336,7 +334,6 @@ def test_repeated_signal_after_realized_loss_respects_daily_loss_limit() -> None
     strategy = SmaCrossStrategy(SmaCrossParameters(fast_window=3, slow_window=6))
     with pytest.raises(PaperBacktestRejected, match="daily_loss_limit"):
         run(data, settings=config(daily_loss_limit_pct=0.1), strategy=strategy)
-
 
 def test_strategy_cannot_claim_live_prices_equity_or_real_orders() -> None:
     data = trend()
