@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: preview-\${{ github.workflow }}-\${{ github.ref }}
+  group: preview-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
