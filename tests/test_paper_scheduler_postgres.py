@@ -164,7 +164,8 @@ def test_explicit_scheduler_two_ticks_429_restart_and_permission_revoke(db: Engi
     logs.clear()
     assert scheduler(enabled=True, ticks=2) is SchedulerStatus.LIMIT_REACHED
     assert [x.status for x in logs] == [
-        PaperWorkerStatus.NO_SIGNAL, PaperWorkerStatus.PAPER_RECORDED
+        PaperWorkerStatus.NO_SIGNAL,
+        PaperWorkerStatus.PAPER_RECORDED,
     ]
     assert _counts(db) == (61, 1, 2, 1, 1)
     assert paths.count("/api/v3/ticker/price") == 2
