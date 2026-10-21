@@ -23,6 +23,7 @@
 ```python
 from getpass import getpass
 from binance_ai_trader.staging_auth import password_hash
+
 print(password_hash(getpass("Viewer or operator secret (never logged): ")))
 ```
 
