@@ -43,13 +43,9 @@ def test_default_off_no_db_or_network_and_cli_refuses_without_opt_in(
 
 
 @pytest.mark.parametrize("interval,step", [("1m", 60_000), ("5m", 300_000), ("15m", 900_000)])
-def test_wakeup_does_not_poll_twice_before_next_closed_candle(
-    interval: str, step: int
-) -> None:
+def test_wakeup_does_not_poll_twice_before_next_closed_candle(interval: str, step: int) -> None:
     now = 1_800_000_000_100
-    new = next_scheduler_wakeup_ms(
-        checked_at_ms=now, interval=interval, next_allowed_at_ms=None
-    )
+    new = next_scheduler_wakeup_ms(checked_at_ms=now, interval=interval, next_allowed_at_ms=None)
     assert new >= now + 60_000
     assert new >= (now // step + 1) * step + 1
     throttled = next_scheduler_wakeup_ms(
@@ -141,6 +137,7 @@ def test_worker_error_and_clock_regression_stop_fail_closed() -> None:
         report=None,
     )
     assert error.status is SchedulerStatus.FAILED
+
     def backward() -> PaperWorkerReport:
         now[0] -= 1000
         return PaperWorkerReport(PaperWorkerStatus.READY, "cooldown_active", now[0])
