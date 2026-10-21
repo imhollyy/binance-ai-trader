@@ -20,6 +20,7 @@ from binance_ai_trader.models import AuditRow, SpotCandleRow, TradingSettingsRow
 from binance_ai_trader.paper_dashboard_api import register_paper_dashboard_route
 from binance_ai_trader.paper_read_api import register_paper_spot_read_route
 from binance_ai_trader.risk_schemas import RiskSettings, SettingsSnapshot, SettingsUpdate
+from binance_ai_trader.staging_auth import StagingAccess
 
 
 class AuditEvent(BaseModel):
@@ -72,23 +73,44 @@ def create_app(
     if db_engine is None and settings.database_url:
         db_engine = create_engine(settings.database_url, pool_pre_ping=True)
 
-    app = FastAPI(title="Binance AI Trader — Paper API", version="0.2.0")
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=list(settings.allowed_origins),
-        allow_methods=["GET", "PUT"],
-        allow_headers=["X-Admin-Token", "Content-Type"],
+    staging = settings.auth_mode == "staging"
+    staging_access = StagingAccess(settings, db_engine) if staging else None
+    app = FastAPI(
+        title="Binance AI Trader — Paper API",
+        version="0.2.0",
+        docs_url=None if staging else "/docs",
+        redoc_url=None if staging else "/redoc",
+        openapi_url=None if staging else "/openapi.json",
     )
     app.add_middleware(
-        TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "testserver"]
+        CORSMiddleware,
+        allow_origins=(
+            [settings.staging_origin or ""] if staging else list(settings.allowed_origins)
+        ),
+        allow_credentials=staging,
+        allow_methods=["GET", "POST", "PUT"] if staging else ["GET", "PUT"],
+        allow_headers=(
+            ["Content-Type", "X-CSRF-Token", "X-Paper-Settings-Approval"]
+            if staging
+            else ["X-Admin-Token", "Content-Type"]
+        ),
+    )
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=(
+            [settings.staging_host or ""] if staging else ["localhost", "127.0.0.1", "testserver"]
+        ),
     )
 
     def require_admin(
         request: Request,
         x_admin_token: str | None = Header(default=None),
     ) -> None:
-        """Both reads and writes require an explicit local development token."""
+        """LOCAL dev token only; STAGING requires a revocable cookie session."""
 
+        if staging_access is not None:
+            staging_access.require(request)
+            return
         if not settings.admin_token:
             raise HTTPException(status_code=503, detail="Local admin access is not configured")
         origin = request.headers.get("origin")
@@ -96,6 +118,20 @@ def create_app(
             raise HTTPException(status_code=403, detail="Origin not permitted")
         if not x_admin_token or not compare_digest(x_admin_token, settings.admin_token):
             raise HTTPException(status_code=401, detail="Not authorized")
+
+    def require_write(
+        request: Request,
+        x_admin_token: str | None = Header(default=None),
+    ) -> None:
+        """Only elevated HTTPS stage operators may change PAPER settings."""
+
+        if staging_access is not None:
+            staging_access.require(request, write=True)
+            return
+        require_admin(request, x_admin_token)
+
+    if staging_access is not None:
+        staging_access.register(app)
 
     @app.get("/health/live")
     def liveness() -> dict[str, str]:
@@ -196,7 +232,7 @@ def create_app(
         except SQLAlchemyError as exc:
             raise HTTPException(status_code=503, detail="Database unavailable") from exc
 
-    @app.put("/api/v1/settings", dependencies=[Depends(require_admin)])
+    @app.put("/api/v1/settings", dependencies=[Depends(require_write)])
     def put_settings(payload: SettingsUpdate) -> SettingsSnapshot:
         if db_engine is None:
             raise HTTPException(status_code=503, detail="Database not configured")

@@ -312,3 +312,38 @@ class PaperWorkerGuardRow(Base):
     last_attempt_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False)
     last_status: Mapped[str] = mapped_column(String(24), nullable=False)
+
+
+class StagingSessionRow(Base):
+    """Revocable random-cookie sessions; never persist bearer/csrf plaintext."""
+
+    __tablename__ = "staging_sessions"
+    __table_args__ = (
+        CheckConstraint("role IN ('viewer', 'operator')", name="ck_stage_session_role"),
+        CheckConstraint("expires_at_ms > issued_at_ms", name="ck_stage_session_expiry"),
+        Index("ix_staging_session_expiry", "expires_at_ms"),
+    )
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    csrf_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    issued_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    expires_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    revoked: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+
+class StagingLoginGateRow(Base):
+    """Shared PostgreSQL brute-force limit; no request IP or PII stored."""
+
+    __tablename__ = "staging_login_gate"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_stage_login_singleton"),
+        CheckConstraint(
+            "failures BETWEEN 0 AND 5 AND locked_until_ms >= 0",
+            name="ck_stage_login_throttle",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    failures: Mapped[int] = mapped_column(Integer, nullable=False)
+    locked_until_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
