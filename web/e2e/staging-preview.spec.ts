@@ -99,7 +99,7 @@ test("staging formats persisted Decimal USDT balances without exposing fractiona
   await expect(page.getByText("1.000,00 USDT")).toHaveCount(2);
   await expect(page.getByText("-2,51 USDT")).toBeVisible();
   await expect(page.getByText("0,00 USDT")).toBeVisible();
-  await expect(page.getByText(/1000\\.000000000000000000/)).toHaveCount(0);
+  await expect(page.getByText(/1000\.000000000000000000/)).toHaveCount(0);
   const overflow = await page.evaluate(() =>
     document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
