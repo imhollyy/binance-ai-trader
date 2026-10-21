@@ -34,7 +34,7 @@ def config() -> ApiConfig:
         auth_mode="staging",
         staging_origin=WEB,
         staging_host="api.staging.example",
-        viewer_password_hash=password_hash(VIEW_PASS, salt=b"viewer-stg-test-1"),
+        viewer_password_hash=password_hash(VIEW_PASS, salt=b"viewer-stg-test1"),
         operator_password_hash=password_hash(OPER_PASS, salt=b"operatr-stg-tst1"),
     )
 
