@@ -2,6 +2,7 @@
 
 import { Clock3, FileClock, LockKeyhole, RefreshCw, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
+import { RealizedTradeChart } from "./RecordedPaperCharts";
 
 type PaperAccount = {
   initial_capital_usdt: string; cash_usdt: string;
@@ -140,7 +141,7 @@ export default function PaperDashboardOverview({connected, apiAddress, token}: {
       </> : <div className="paper-overview-placeholder"><Wallet size={20}/>
         <span>Henüz PAPER Spot hesabı oluşturulmamış. Sanal tutar gösterilmiyor.</span>
       </div>}
-      <div className="paper-overview-worker">
+      <div className="paper-overview-worker" aria-label="Worker son bilinen deneme bilgileri">
         <div className="paper-overview-heading"><Clock3 size={17}/><strong>Worker — Son bilinen durum</strong></div>
         <p>Çalışan servis doğrulanmadı. Ayardaki etkinleştirme isteği, bir worker'ın gerçekten çalıştığı anlamına gelmez.</p>
         <dl>
@@ -150,6 +151,7 @@ export default function PaperDashboardOverview({connected, apiAddress, token}: {
           <div><dt>Bir sonraki izinli deneme</dt><dd>{utcMs(snapshot.worker.next_allowed_at_ms)}</dd></div>
         </dl>
       </div>
+      {snapshot.initialized && <RealizedTradeChart events={snapshot.events}/>}
       <h3>Son sanal işlemler ve fiyat kaynağı</h3>
       {snapshot.events.length === 0 ? <p className="paper-overview-note">Henüz işlem günlüğü kaydı bulunmuyor.</p> :
         <div className="paper-overview-events" aria-label="Son PAPER işlem olayları">
