@@ -122,7 +122,8 @@ def test_readonly_snapshot_latest_only_replay_quality_and_sell(engine: Engine) -
     with Session(engine) as session, session.begin():
         session.add(
             TradingSettingsRow(
-                id=1, version=1,
+                id=1,
+                version=1,
                 data=RiskSettings(
                     bot_enabled=True, manual_approval=False, risk_per_trade_pct=2
                 ).model_dump(mode="json"),
@@ -137,8 +138,7 @@ def test_readonly_snapshot_latest_only_replay_quality_and_sell(engine: Engine) -
 
     with Session(engine) as session, session.begin():
         session.add_all(
-            [_row(base - (60 - i) * 60_000, close="102" if i == 59 else "100")
-             for i in range(60)]
+            [_row(base - (60 - i) * 60_000, close="102" if i == 59 else "100") for i in range(60)]
         )
     assert _counts(engine) == (60, 1, 0, 1)
     before = _counts(engine)
@@ -160,8 +160,13 @@ def test_readonly_snapshot_latest_only_replay_quality_and_sell(engine: Engine) -
     # Every source-state branch blocks without any persistent mutation.
     for state in (None, SourceState.RATE_LIMITED, SourceState.UNAVAILABLE):
         out = plan_paper_spot_signal_once(
-            engine, symbol="BTCUSDT", interval="1m", now_ms=clock,
-            source_state=state, source_checked_at_ms=clock, params=params,
+            engine,
+            symbol="BTCUSDT",
+            interval="1m",
+            now_ms=clock,
+            source_state=state,
+            source_checked_at_ms=clock,
+            params=params,
         )
         assert out.status is SignalPlanStatus.BLOCKED
         assert out.decision is None and out.idempotency_key is None
@@ -238,7 +243,8 @@ def test_readonly_snapshot_latest_only_replay_quality_and_sell(engine: Engine) -
     # Open a hypothetical position ONLY as a fixture, via existing atomic service.
     with Session(engine) as session:
         open_paper_spot(
-            session, SpotBuyIntent("signal-existing", "BTCUSDT", D("100"), D("1"), D("99")),
+            session,
+            SpotBuyIntent("signal-existing", "BTCUSDT", D("100"), D("1"), D("99")),
             "signal-existing-open",
         )
     with Session(engine) as session, session.begin():
