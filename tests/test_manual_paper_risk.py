@@ -6,7 +6,12 @@ from decimal import Decimal
 
 import pytest
 
-from binance_ai_trader.paper_risk import PaperRiskRequest, PaperRiskState, PaperRiskStatus, evaluate_paper_risk
+from binance_ai_trader.paper_risk import (
+    PaperRiskRequest,
+    PaperRiskState,
+    PaperRiskStatus,
+    evaluate_paper_risk,
+)
 from binance_ai_trader.paper_spot import (
     PaperSpotRejected,
     SpotBuyIntent,
@@ -87,9 +92,7 @@ def test_default_risk_is_still_disabled_but_manual_path_needs_matching_settings(
     settings = RiskSettings()
     request = PaperRiskRequest(D("100"), D("1"))
     assert evaluate_paper_risk(settings, request, _state()).reason == "paper_bot_disabled"
-    approved = evaluate_paper_risk(
-        settings, request, _state(), manual_paper_trade=True
-    )
+    approved = evaluate_paper_risk(settings, request, _state(), manual_paper_trade=True)
     assert approved.status == PaperRiskStatus.APPROVAL_REQUIRED
     assert (
         evaluate_paper_risk(
