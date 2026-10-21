@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from ipaddress import ip_address
 from os import environ
-import re
 from urllib.parse import urlsplit
 
 from binance_ai_trader.config import Settings
