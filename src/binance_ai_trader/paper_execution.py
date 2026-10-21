@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Context, Decimal, DecimalException, Inexact, localcontext
@@ -38,6 +39,16 @@ from binance_ai_trader.risk_schemas import RiskSettings
 SCALE = Decimal("0.000000000000000001")
 LockedPaperState = tuple[
     RiskSettings, PaperSpotAccountRow, list[PaperSpotPositionRow], list[PaperSpotJournalRow]
+]
+SignalPreflight = Callable[
+    [
+        Session,
+        RiskSettings,
+        PaperSpotAccountRow,
+        list[PaperSpotPositionRow],
+        list[PaperSpotJournalRow],
+    ],
+    None,
 ]
 
 
@@ -270,6 +281,7 @@ def open_paper_spot(
     *,
     explicit_approval: bool = False,
     costs: PaperCosts | None = None,
+    _signal_preflight: SignalPreflight | None = None,
 ) -> PaperTradeReceipt:
     """Simulate one Spot buy, transactionally; no API/exchange/order interaction."""
     key = _key(idempotency_key)
@@ -296,6 +308,8 @@ def open_paper_spot(
             previous = _existing(events, key, digest, intent.trade_id, "spot_buy")
             if previous is not None:
                 return previous
+            if _signal_preflight is not None:
+                _signal_preflight(session, settings, account, positions, events)
             if any(position.trade_id == intent.trade_id for position in positions):
                 raise PaperExecutionRejected("duplicate_paper_trade_id")
             if any(position.status == "open" for position in positions):
@@ -363,6 +377,7 @@ def close_paper_spot(
     *,
     explicit_approval: bool = False,
     costs: PaperCosts | None = None,
+    _signal_preflight: SignalPreflight | None = None,
 ) -> PaperTradeReceipt:
     """Simulate full closure even if bot is disabled; never send an order."""
     key = _key(idempotency_key)
@@ -384,6 +399,8 @@ def close_paper_spot(
             previous = _existing(events, key, digest, trade_id, "spot_sell")
             if previous is not None:
                 return previous
+            if _signal_preflight is not None:
+                _signal_preflight(session, settings, account, positions, events)
             if settings.manual_approval and not explicit_approval:
                 raise PaperExecutionRejected("manual_approval_required")
             matched = [position for position in positions if position.trade_id == trade_id]
