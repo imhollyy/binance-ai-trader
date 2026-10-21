@@ -128,6 +128,7 @@ def execute_paper_signal_once(
     ):
         raise PaperExecutionRejected("source_unverified_or_restricted")
 
+    assert source_checked_at_ms is not None
     key, trade_id = _identity(plan)
     price: Decimal
     stop: Decimal | None = None
