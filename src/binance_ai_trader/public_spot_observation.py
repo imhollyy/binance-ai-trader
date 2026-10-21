@@ -74,9 +74,7 @@ class PublicSpotObservationClient:
             raise MarketDataInvalid("Invalid local UTC observation clock")
         return clock
 
-    def observe(
-        self, *, symbol: str, interval: str, limit: int = 100
-    ) -> PublicSpotObservation:
+    def observe(self, *, symbol: str, interval: str, limit: int = 100) -> PublicSpotObservation:
         if symbol not in SUPPORTED_SYMBOLS or interval not in INTERVAL_MS:
             raise ValueError("Unsupported public Spot market")
         if type(limit) is not int or not 50 <= limit <= 1000:
@@ -84,14 +82,15 @@ class PublicSpotObservationClient:
         # Order matters: signals can only use fully closed historical candles
         # fetched BEFORE the independently sampled last-price ticker.
         history = tuple(
-            self._candles.fetch_closed_klines(
-                symbol=symbol, interval=interval, limit=limit
-            )
+            self._candles.fetch_closed_klines(symbol=symbol, interval=interval, limit=limit)
         )
         requested = self.now_ms()
         quality = evaluate_closed_spot_feed(
-            history, symbol=symbol, interval=interval,
-            now_ms=requested, min_history=50,
+            history,
+            symbol=symbol,
+            interval=interval,
+            now_ms=requested,
+            min_history=50,
         )
         step = INTERVAL_MS[interval]
         if quality.status is not FeedStatus.READY:
@@ -112,10 +111,7 @@ class PublicSpotObservationClient:
         received = self.now_ms()
         if not 0 <= received - requested <= MAX_HTTP_OBSERVATION_MS:
             raise MarketDataInvalid("ticker_observation_timeout_or_clock_skew")
-        if (
-            received <= history[-1].close_time_ms
-            or received - history[-1].close_time_ms > step
-        ):
+        if received <= history[-1].close_time_ms or received - history[-1].close_time_ms > step:
             raise MarketDataInvalid("ticker_sample_crossed_candle_boundary")
         if reply.status_code in (418, 429):
             raise MarketRateLimited(
@@ -183,8 +179,11 @@ def validate_public_observation(
     ):
         raise MarketDataInvalid("stale_or_future_spot_quote")
     quality = evaluate_closed_spot_feed(
-        sample.closed_candles, symbol=sample.symbol, interval=sample.interval,
-        now_ms=now_ms, min_history=50,
+        sample.closed_candles,
+        symbol=sample.symbol,
+        interval=sample.interval,
+        now_ms=now_ms,
+        min_history=50,
     )
     if quality.status is not FeedStatus.READY:
         raise MarketDataInvalid("invalid_quote_history_" + quality.status.value)
