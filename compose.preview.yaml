@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_USER: trader_preview
       POSTGRES_DB: trader_preview
-      POSTGRES_PASSWORD: \${STAGING_POSTGRES_PASSWORD:?Supply a preview-only DB password}
+      POSTGRES_PASSWORD: ${STAGING_POSTGRES_PASSWORD:?Supply a preview-only DB password}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U trader_preview -d trader_preview"]
       interval: 5s
@@ -29,12 +29,12 @@ services:
     environment:
       TRADING_MODE: paper
       API_AUTH_MODE: staging
-      PRIVATE_PREVIEW_OPT_IN: \${PRIVATE_PREVIEW_OPT_IN:?Explicit private preview opt-in required}
-      DATABASE_URL: \${STAGING_DATABASE_URL:?Provide URL to ONLY preview-db/trader_preview}
-      STAGING_WEB_ORIGIN: \${STAGING_WEB_ORIGIN:?Exact HTTPS origin required}
-      STAGING_API_HOST: \${PREVIEW_HOST:?Exact API hostname required}
-      STAGING_VIEWER_PASSWORD_HASH: \${STAGING_VIEWER_PASSWORD_HASH:?Viewer verifier required}
-      STAGING_OPERATOR_PASSWORD_HASH: \${STAGING_OPERATOR_PASSWORD_HASH:?Operator verifier required}
+      PRIVATE_PREVIEW_OPT_IN: ${PRIVATE_PREVIEW_OPT_IN:?Explicit private preview opt-in required}
+      DATABASE_URL: ${STAGING_DATABASE_URL:?Provide URL to ONLY preview-db/trader_preview}
+      STAGING_WEB_ORIGIN: ${STAGING_WEB_ORIGIN:?Exact HTTPS origin required}
+      STAGING_API_HOST: ${PREVIEW_HOST:?Exact API hostname required}
+      STAGING_VIEWER_PASSWORD_HASH: ${STAGING_VIEWER_PASSWORD_HASH:?Viewer verifier required}
+      STAGING_OPERATOR_PASSWORD_HASH: ${STAGING_OPERATOR_PASSWORD_HASH:?Operator verifier required}
     command:
       - sh
       - -c
@@ -54,7 +54,7 @@ services:
       context: .
       dockerfile: web/Dockerfile.preview
       args:
-        PREVIEW_ORIGIN: \${STAGING_WEB_ORIGIN:?Exact HTTPS origin required}
+        PREVIEW_ORIGIN: ${STAGING_WEB_ORIGIN:?Exact HTTPS origin required}
     restart: "no"
     networks:
       - preview_private
@@ -68,7 +68,7 @@ services:
       - preview-api
       - preview-web
     environment:
-      PREVIEW_HOST: \${PREVIEW_HOST:?Exact HTTPS hostname required}
+      PREVIEW_HOST: ${PREVIEW_HOST:?Exact HTTPS hostname required}
     volumes:
       - ./deploy/preview/Caddyfile:/etc/caddy/Caddyfile:ro
       - preview_caddy_data:/data
