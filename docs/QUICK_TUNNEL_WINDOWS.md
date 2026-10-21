@@ -79,6 +79,37 @@ domain. This setup does not require a Cloudflare account, even if you have
 one connected to ChatGPT. The Cloudflare connected-app API failure does not
 block the manually launched Quick Tunnel.
 
+## Initialize your approved 1,000 USDT PAPER account (local owner action)
+
+This **does not run automatically** when the web preview starts. The initial
+PAPER viewer is intentionally empty. Once the owner explicitly chooses the
+**1,000 synthetic USDT** initial balance, update the `dev` checkout and
+the `preview-api` Docker image, **without stopping cloudflared or removing
+any Docker volume**:
+
+```powershell
+cd "$HOME\Projects\binance-ai-trader-preview"
+git pull --ff-only origin dev
+docker compose -p tradepilot_quick --env-file .env.preview.quick -f compose.preview.yaml --profile preview up --build -d preview-api
+docker compose -p tradepilot_quick --env-file .env.preview.quick -f compose.preview.yaml --profile preview exec -T preview-api python -m binance_ai_trader.preview_account_bootstrap --capital-usdt 1000 --confirm-paper-only
+```
+
+Successful output begins `PAPER_ACCOUNT_READY initial_capital_usdt=1000`.
+This explicitly local Docker-exec command refuses other balances,
+different PostgreSQL targets, non-PAPER/worker-enabled settings and missing
+confirmation. It writes default PAPER Spot settings only if missing,
+then uses the existing transaction-safe idempotent account opener to
+create **exactly one** journal opening event. Re-running never deposits
+again, changes a traded account's cash or erases trade history.
+
+Refresh the external Cloudflare-gated page and sign in as `viewer`.
+Expected: initial capital 1,000 USDT, cash 1,000 USDT, one account-opened
+event, zero trades and no verified running worker. This is not a Binance
+account balance, does not enable the scheduler, and cannot place real orders.
+Only use the `tradepilot_quick` preview project: never the development or
+production database. If a command fails, keep the volume intact and report
+**only the safe error category**; never share the .env or credentials.
+
 ## Stop safely (preserve your PAPER data)
 
 \`\`\`powershell
