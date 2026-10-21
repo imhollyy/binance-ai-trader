@@ -182,3 +182,19 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .staging-error,.staging-notice{margin-top:15px;padding:12px;border-radius:10px;background:#fff4ee;color:#9e5229;font-size:12px;line-height:1.6}
 .staging-panel footer{border-top:1px solid #e8edf5;margin-top:24px;padding-top:15px;font-size:11px;color:#8a9aaf;line-height:1.7}
 @media(max-width:440px){.staging-metrics{grid-template-columns:1fr}.staging-panel{border-radius:14px}.staging-actions button{flex:1}}
+
+/* BT-009F: isolated preview presents persisted PAPER facts only. */
+.staging-history{margin-top:19px;min-width:0}
+.staging-section-heading{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:11px}
+.staging-section-heading h2,.staging-status h2{font-size:14px;font-weight:700;color:#294163}
+.staging-section-heading span,.staging-muted{font-size:11px;color:#788ca7;line-height:1.6}
+.staging-empty{background:#f7faff;border:1px dashed #d9e4f2;border-radius:10px;padding:13px;color:#6e819b;font-size:12px;line-height:1.6}
+.staging-records{display:flex;flex-direction:column;gap:9px}
+.staging-record{min-width:0;padding:13px;border:1px solid #e1e9f5;border-radius:11px;background:#fcfdff;overflow-wrap:anywhere}
+.staging-record-heading{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+.staging-record-heading strong{font-size:12px;color:#2b4266}
+.staging-record-heading span,.staging-record-heading time,.staging-record time{font-size:11px;color:#7288a6}
+.staging-record p{font-size:11px;color:#536c8c;line-height:1.7;margin-top:4px}
+.staging-history>.staging-muted{display:block;margin-top:8px}
+.staging-status .staging-muted{font-size:11px}
+@media(max-width:440px){.staging-record-heading{align-items:flex-start;flex-direction:column}}

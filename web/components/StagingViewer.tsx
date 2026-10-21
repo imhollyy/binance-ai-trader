@@ -11,6 +11,21 @@ type Summary = {
     realized_pnl_usdt: string; paid_fees_usdt: string;
   };
   total_positions: number; open_positions: number; total_events: number;
+  positions: Array<{
+    symbol: string; status: "open" | "closed";
+    quantity: string; entry_fill_price: string; stop_price: string;
+    opened_at: string;
+  }>;
+  events: Array<{
+    id: number; event_type: "account_opened" | "spot_buy" | "spot_sell";
+    created_at: string; cash_delta_usdt: string;
+    realized_pnl_delta_usdt: string; fee_usdt: string;
+    quote: null | {
+      source: string; symbol: string; interval: string;
+      observed_at_ms: number; reference_price: string;
+      fee_bps: number; slippage_bps: number;
+    };
+  }>;
   worker: {
     requested_enabled: boolean | null;
     process_verified_running: false;
@@ -36,7 +51,15 @@ function urlFromEnvironment(raw: string | undefined): string | null {
 function verifiedPaperSnapshot(view: Summary): Summary {
   if (view.mode !== "paper" || view.source !== "persisted_paper_spot" ||
       !view.worker || view.worker.process_verified_running !== false ||
-      (view.initialized && !view.account)) {
+      (view.initialized && !view.account) ||
+      !Array.isArray(view.positions) || !Array.isArray(view.events) ||
+      view.positions.length > 10 || view.events.length > 10 ||
+      !Number.isSafeInteger(view.total_positions) || view.total_positions < 0 ||
+      !Number.isSafeInteger(view.total_events) || view.total_events < 0 ||
+      !Number.isSafeInteger(view.open_positions) || view.open_positions < 0 ||
+      view.open_positions > view.total_positions ||
+      view.positions.some(p => !["open", "closed"].includes(p.status)) ||
+      view.events.some(e => !["account_opened", "spot_buy", "spot_sell"].includes(e.event_type))) {
     throw new Error("Güvenilir PAPER özeti alınamadı.");
   }
   return view;
@@ -56,6 +79,25 @@ function formatPaperUsdt(raw: string): string {
   const whole = (cents / hundred).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   const decimals = (cents % hundred).toString().padStart(2, "0");
   return (negative && cents !== BigInt(0) ? "-" : "") + whole + "," + decimals;
+}
+
+// Keep quantity exact as supplied by the persisted Decimal API.
+function paperQuantity(raw: string): string {
+  return /^\d+(?:\.\d+)?$/.test(raw)
+    ? raw.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")
+    : "—";
+}
+
+function recordedAt(iso: string): string {
+  const timestamp = Date.parse(iso);
+  return Number.isFinite(timestamp)
+    ? new Date(timestamp).toLocaleString("tr-TR", {timeZone:"UTC"}) + " UTC"
+    : "—";
+}
+
+function eventTitle(type: Summary["events"][number]["event_type"]): string {
+  return type === "account_opened" ? "Sanal hesap açıldı"
+    : type === "spot_buy" ? "Sanal Spot alış" : "Sanal Spot satış";
 }
 
 function timeUTC(value: number | null): string {
@@ -195,13 +237,58 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
             <article><span>Gerçekleşmiş PnL (sanal)</span><strong>{formatPaperUsdt(snapshot.account.realized_pnl_usdt)} USDT</strong></article>
             <article><span>Varsayımsal komisyon</span><strong>{formatPaperUsdt(snapshot.account.paid_fees_usdt)} USDT</strong></article>
           </div> : <p>Henüz PAPER hesap verisi bulunmuyor; tutar uydurulmaz.</p>}
-          <div className="staging-status">
-            <strong>Worker — Son bilinen durum</strong>
-            <p>Çalışan servis doğrulanmadı. Sonuç: {snapshot.worker.last_status ?? "Kayıt yok"}</p>
+          <section className="staging-history" aria-labelledby="staging-positions-title">
+            <div className="staging-section-heading">
+              <h2 id="staging-positions-title">PAPER pozisyonları</h2>
+              <span>Toplam {snapshot.total_positions} · Açık {snapshot.open_positions}</span>
+            </div>
+            {snapshot.positions.length === 0
+              ? <p className="staging-empty">Henüz sanal pozisyon kaydı yok. Otomatik işlem başlatılmadı.</p>
+              : <div className="staging-records">
+                {snapshot.positions.map((p, index) => <article key={p.symbol+"-"+p.opened_at+"-"+index} className="staging-record">
+                  <div className="staging-record-heading">
+                    <strong>{p.symbol}</strong>
+                    <span>{p.status === "open" ? "Açık" : "Kapalı"} · PAPER Spot</span>
+                  </div>
+                  <p>Miktar: {paperQuantity(p.quantity)} · Kaydedilmiş giriş: {formatPaperUsdt(p.entry_fill_price)} USDT</p>
+                  <p>Kaydedilmiş stop seviyesi: {formatPaperUsdt(p.stop_price)} USDT</p>
+                  <time dateTime={p.opened_at}>{recordedAt(p.opened_at)}</time>
+                </article>)}
+              </div>}
+            {snapshot.total_positions > snapshot.positions.length &&
+              <p className="staging-muted">Yalnızca son {snapshot.positions.length} pozisyon gösteriliyor.</p>}
+          </section>
+          <section className="staging-history" aria-labelledby="staging-events-title">
+            <div className="staging-section-heading">
+              <h2 id="staging-events-title">Son PAPER olayları</h2>
+              <span>Toplam {snapshot.total_events}</span>
+            </div>
+            {snapshot.events.length === 0
+              ? <p className="staging-empty">Henüz kaydedilmiş sanal hesap olayı yok.</p>
+              : <div className="staging-records">
+                {snapshot.events.map(e => <article key={e.id} className="staging-record">
+                  <div className="staging-record-heading">
+                    <strong>{eventTitle(e.event_type)}</strong>
+                    <time dateTime={e.created_at}>{recordedAt(e.created_at)}</time>
+                  </div>
+                  <p>Nakit değişimi: {formatPaperUsdt(e.cash_delta_usdt)} USDT · Gerçekleşmiş PnL: {formatPaperUsdt(e.realized_pnl_delta_usdt)} USDT</p>
+                  <p>Varsayımsal komisyon: {formatPaperUsdt(e.fee_usdt)} USDT</p>
+                  {e.quote && <p>Kaydedilmiş referans: {e.quote.symbol} · {formatPaperUsdt(e.quote.reference_price)} USDT · {e.quote.interval}</p>}
+                </article>)}
+              </div>}
+            {snapshot.total_events > snapshot.events.length &&
+              <p className="staging-muted">Yalnızca son {snapshot.events.length} olay gösteriliyor.</p>}
+          </section>
+          <section className="staging-status" aria-labelledby="staging-worker-title">
+            <h2 id="staging-worker-title">Bot — Son bilinen durum</h2>
+            <p>{snapshot.worker.requested_enabled === true
+              ? "Bot ayarı açık; çalışan servis doğrulanmadı."
+              : "Otomatik çalışma kapalı; çalışan servis doğrulanmadı."}</p>
+            <p>Son kayıtlı sonuç: {snapshot.worker.last_status ?? "Kayıt yok"}</p>
             <p>Son deneme: {timeUTC(snapshot.worker.last_attempt_at_ms)}</p>
             <p>Bir sonraki izinli deneme: {timeUTC(snapshot.worker.next_allowed_at_ms)}</p>
-            <p>Açık sanal pozisyon: {snapshot.open_positions} · Toplam kayıt: {snapshot.total_events}</p>
-          </div>
+            <p className="staging-muted">Bu kayıtlar canlı bot bağlantısı veya çalışan işlem motoru kanıtı değildir.</p>
+          </section>
         </>}
       </div>}
       {notice && <p role="status" className="staging-notice">{notice}</p>}
