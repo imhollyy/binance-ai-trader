@@ -12,7 +12,12 @@ from sqlalchemy.pool import StaticPool
 
 from binance_ai_trader.api import create_app
 from binance_ai_trader.api_config import ApiConfig
-from binance_ai_trader.models import Base, StagingLoginGateRow, StagingSessionRow, TradingSettingsRow
+from binance_ai_trader.models import (
+    Base,
+    StagingLoginGateRow,
+    StagingSessionRow,
+    TradingSettingsRow,
+)
 from binance_ai_trader.staging_auth import COOKIE, password_hash
 
 WEB = "https://app.staging.example"
