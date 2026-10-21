@@ -144,9 +144,7 @@ def restored_database() -> Iterator[tuple[Engine, Engine]]:
             assert gate is not None and gate.failures == 0
         with Session(source) as session, session.begin():
             session.add(
-                TradingSettingsRow(
-                    id=1, version=1, data=RiskSettings().model_dump(mode="json")
-                )
+                TradingSettingsRow(id=1, version=1, data=RiskSettings().model_dump(mode="json"))
             )
         with Session(source) as session:
             snapshot = ensure_paper_spot_account(session)
