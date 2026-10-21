@@ -63,9 +63,7 @@ def main() -> None:
     assert code == 404
     code, _, _ = send("/api/v1/auth/login", method="POST", body=payload, host="evil.test")
     assert code == 404
-    code, _, _ = send(
-        "/api/v1/auth/login", method="POST", body=payload, origin="https://evil.test"
-    )
+    code, _, _ = send("/api/v1/auth/login", method="POST", body=payload, origin="https://evil.test")
     assert code == 403
     print("Internal routes, wrong host and wrong origin denied: PASS")
     print("NOT RUN: Cloudflare Quick Tunnel email PIN, public trusted TLS or browser cookies")
