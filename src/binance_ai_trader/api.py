@@ -93,7 +93,9 @@ def create_app(
     )
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=[settings.staging_host] if staging else ["localhost", "127.0.0.1", "testserver"],
+        allowed_hosts=(
+            [settings.staging_host] if staging else ["localhost", "127.0.0.1", "testserver"]
+        ),
     )
 
     def require_admin(
