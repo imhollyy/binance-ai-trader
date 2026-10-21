@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import PaperSpotLedger from "./PaperSpotLedger";
 import PaperDashboardOverview from "./PaperDashboardOverview";
+import { StoredCloseChart } from "./RecordedPaperCharts";
 
 type Section = "dashboard" | "market" | "bot" | "risk" | "strategies" | "positions" | "logs";
 type Market = "spot" | "futures";
@@ -222,7 +223,8 @@ export default function Dashboard() {
       </div>
       <div className="nav-label">YÖNETİM</div>
       <nav aria-label="Ana menü">{nav.map(item=>
-        <button key={item.key} className={"nav-item "+(section===item.key?"active":"")}
+        <button key={item.key} aria-current={section===item.key ? "page" : undefined}
+          className={"nav-item "+(section===item.key?"active":"")}
           onClick={()=>{setSection(item.key);setDrawer(false);setNotice("");if(item.key==="logs"){void loadAudit();}if(item.key==="market"){void loadStoredSpot();}}}>
           <item.Icon size={18}/><span>{item.title}</span><ChevronRight size={14}/></button>
       )}</nav>
@@ -237,10 +239,10 @@ export default function Dashboard() {
           <span>{connected?"Yerel API Bağlı":"API Bağlan"}</span></button></div>
       </header>
       <div className="content">
-        <div className="pretitle">GÜVENLİ GELİŞTİRME ORTAMI</div>
+        <div className="pretitle">PAPER TRADING · YEREL GELİŞTİRME</div>
         <div className="page-title"><div><h1>{activeTitle}</h1>
-          <p>{section==="dashboard"?"Trading altyapısını tek noktadan yönet.":"Yalnızca sanal risk ayarları ve bot tercihleri."}</p></div>
-          <span className="build-info">SPRINT 02 · DEV</span></div>
+          <p>{section==="dashboard"?"Sanal işlemler, kayıtlı piyasa verisi ve risk durumunu izle.":"Yalnızca kayıtlı PAPER verileri ve yerel simülasyon tercihleri."}</p></div>
+          <span className="build-info">TRADEPILOT · DEV</span></div>
         {notice&&<div className="notice" role="status"><ShieldAlert size={17}/><span>{notice}</span>
           <button aria-label="Bildirimi kapat" onClick={()=>setNotice("")}><X size={16}/></button></div>}
         <div className="warning"><ShieldAlert size={19}/><div><strong>Gerçek alım-satım kapalı.</strong> Bu paneldeki
@@ -320,6 +322,7 @@ export default function Dashboard() {
                   <strong className="market-time">{new Date(storedCandles[0].close_time_ms).toLocaleString("tr-TR",{timeZone:"UTC"})} UTC</strong>
                   <small>{storedCandles.length} kayıt gösteriliyor</small></div>
               </div>
+              <StoredCloseChart candles={storedCandles} symbol={spotSymbol} interval={spotInterval}/>
               <div className="market-record-list" aria-label="Kayıtlı mum geçmişi">
                 {storedCandles.map(row=><article className="market-record" key={row.open_time_ms}>
                   <div className="record-top">
@@ -344,7 +347,7 @@ export default function Dashboard() {
             <button aria-pressed={risk.market_type==="spot"} className={risk.market_type==="spot"?"selected":""} onClick={()=>market("spot")}>Spot</button>
             <button aria-pressed={risk.market_type==="futures"} className={risk.market_type==="futures"?"selected":""} onClick={()=>market("futures")}>Futures (Sanal)</button>
           </div>
-          <Row label="Botu etkinleştirme isteği" desc="Yalnız PAPER ayarını kaydeder; servis başlatmaz.">
+          <Row label="Botu etkinleştirme isteği" desc="Yalnız PAPER ayarını kaydeder; scheduler servisinin çalıştığı anlamına gelmez.">
             <Switch label="Bot etkinleşme tercihi" value={risk.bot_enabled} onChange={v=>change("bot_enabled",v)}/></Row>
           <Row label="Manuel onay tercihi" desc="Varsayılan açık.">
             <Switch label="Manuel işlem onayı" value={risk.manual_approval} onChange={v=>change("manual_approval",v)}/></Row>
