@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 
 const base = 1_800_000_000_000;
@@ -100,8 +101,12 @@ for (const width of [360, 390, 768, 1280]) {
     const overflow = await page.evaluate(()=>
       document.documentElement.scrollWidth-document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
+    await mkdir("test-artifacts", {recursive:true});
+    const image = await page.screenshot({
+      path: `test-artifacts/recorded-paper-${width}.png`, fullPage:true,
+    });
     await info.attach(`paper-chart-${width}.png`, {
-      body: await page.screenshot({fullPage:true}), contentType:"image/png",
+      body: image, contentType:"image/png",
     });
   });
 }
