@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 
 import pytest
 from fastapi.testclient import TestClient
@@ -60,9 +60,9 @@ def code(
     *,
     method: str = "GET",
     headers: dict[str, str] | None = None,
-    payload: dict[str, object] | None = None,
+    payload: Mapping[str, object] | None = None,
 ) -> int:
-    return client.request(method, path, headers=headers, json=payload).status_code
+    return int(client.request(method, path, headers=headers, json=payload).status_code)
 
 
 def login(client: TestClient, role: str = "viewer") -> str:
