@@ -29,6 +29,7 @@ from binance_ai_trader.models import (
 from binance_ai_trader.paper_execution import open_paper_spot
 from binance_ai_trader.paper_ledger import ensure_paper_spot_account
 from binance_ai_trader.paper_signal_plan import (
+    PaperSignalPlan,
     SignalPlanStatus,
     SourceState,
     plan_paper_spot_signal_once,
@@ -75,7 +76,7 @@ def _counts(db: Engine) -> tuple[int, int, int, int]:
         )
 
 
-def _plan(db: Engine, clock: int, **options: object) -> object:
+def _plan(db: Engine, clock: int, **options: object) -> PaperSignalPlan:
     params = options.get("params")
     state = options.get("state")
     checked_at = options.get("checked_at")
