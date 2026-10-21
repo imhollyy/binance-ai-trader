@@ -14,7 +14,9 @@ https://{$PREVIEW_HOST} {
             reverse_proxy preview-api:8000 {
                 # Only this private reverse proxy attests HTTPS to the API.
                 header_up -Forwarded
-                header_up -X-Forwarded-*
+                header_up -X-Forwarded-For
+                header_up -X-Forwarded-Host
+                header_up -X-Forwarded-Port
                 header_up -X-Real-IP
                 header_up Host {$PREVIEW_HOST}
                 header_up X-Forwarded-Proto https
