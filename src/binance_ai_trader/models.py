@@ -259,7 +259,7 @@ class PaperSpotObservedQuoteRow(Base):
         CheckConstraint(
             "signal_close_time_ms >= 0 AND requested_at_ms > signal_close_time_ms "
             "AND received_at_ms >= requested_at_ms",
-            name="ck_paper_observed_timestamps"
+            name="ck_paper_observed_timestamps",
         ),
         CheckConstraint(
             "reference_price > 0 AND reference_price <> 'NaN'::numeric",
