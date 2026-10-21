@@ -94,8 +94,7 @@ def test_default_risk_is_still_disabled_but_manual_path_needs_matching_settings(
     assert evaluate_paper_risk(settings, request, _state()).reason == "paper_bot_disabled"
     approved = evaluate_paper_risk(settings, request, _state(), manual_paper_trade=True)
     assert approved.status == PaperRiskStatus.APPROVAL_REQUIRED
-    assert (
-        evaluate_paper_risk(
-            RiskSettings(bot_enabled=True), request, _state(), manual_paper_trade=True
-        ).reason == "manual_paper_mode_required"
+    denied = evaluate_paper_risk(
+        RiskSettings(bot_enabled=True), request, _state(), manual_paper_trade=True
     )
+    assert denied.reason == "manual_paper_mode_required"
