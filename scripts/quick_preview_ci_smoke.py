@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import time
 
 HOST = "preview.staging.example"
 ORIGIN = f"https://{HOST}"
@@ -49,7 +50,27 @@ def main() -> None:
     print("Local private quick-tunnel origin web: PASS")
 
     payload = json.dumps({"username": "viewer", "password": VIEWER}).encode()
-    code, body, set_cookie = send("/api/v1/auth/login", method="POST", body=payload)
+    # Web can become ready before the restarted staging API applies migrations.
+    for attempt in range(40):
+        try:
+            code, body, set_cookie = send("/api/v1/auth/login", method="POST", body=payload)
+        except OSError:
+            code, body, set_cookie = 0, b"", None
+        if code == 200:
+            break
+        if code in (0, 502, 503, 504):
+            time.sleep(2)
+            continue
+        # Restrict diagnostics to fixed error classes, never print body/headers.
+        try:
+            reason = json.loads(body).get("detail", "")
+        except (ValueError, AttributeError):
+            reason = ""
+        safe = ("HTTPS required", "Origin not permitted", "Local admin headers forbidden")
+        category = reason if reason in safe else "unclassified"
+        raise RuntimeError(f"Quick-origin login denied: HTTP {code}, reason={category}")
+    else:
+        raise RuntimeError("Quick-origin API not ready after safe retries")
     assert code == 200
     assert set_cookie is not None
     assert all(flag in set_cookie.lower() for flag in ("secure", "httponly", "samesite=strict"))
