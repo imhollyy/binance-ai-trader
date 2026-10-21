@@ -1,0 +1,93 @@
+# ISOLATED LOCAL PREVIEW ONLY. Not a production/Cloudflare deployment.
+# Explicit -f compose.preview.yaml --profile preview and an untracked env file required.
+services:
+  preview-db:
+    profiles: ["preview"]
+    image: postgres:16-alpine
+    restart: "no"
+    environment:
+      POSTGRES_USER: trader_preview
+      POSTGRES_DB: trader_preview
+      POSTGRES_PASSWORD: \${STAGING_POSTGRES_PASSWORD:?Supply a preview-only DB password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trader_preview -d trader_preview"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - preview_postgres_data:/var/lib/postgresql/data
+    networks:
+      - preview_private
+
+  preview-api:
+    profiles: ["preview"]
+    build: .
+    restart: "no"
+    depends_on:
+      preview-db:
+        condition: service_healthy
+    environment:
+      TRADING_MODE: paper
+      API_AUTH_MODE: staging
+      PRIVATE_PREVIEW_OPT_IN: \${PRIVATE_PREVIEW_OPT_IN:?Explicit private preview opt-in required}
+      DATABASE_URL: \${STAGING_DATABASE_URL:?Provide URL to ONLY preview-db/trader_preview}
+      STAGING_WEB_ORIGIN: \${STAGING_WEB_ORIGIN:?Exact HTTPS origin required}
+      STAGING_API_HOST: \${PREVIEW_HOST:?Exact API hostname required}
+      STAGING_VIEWER_PASSWORD_HASH: \${STAGING_VIEWER_PASSWORD_HASH:?Viewer verifier required}
+      STAGING_OPERATOR_PASSWORD_HASH: \${STAGING_OPERATOR_PASSWORD_HASH:?Operator verifier required}
+    command:
+      - sh
+      - -c
+      - >-
+        python -m binance_ai_trader.preview_preflight
+        && alembic upgrade head
+        && exec uvicorn binance_ai_trader.api:app
+        --host 0.0.0.0 --port 8000
+        --proxy-headers --forwarded-allow-ips 172.30.210.10 --no-access-log
+    networks:
+      - preview_private
+    # NO ports, NO ADMIN_TOKEN, NO Binance credentials, NO scheduler.
+
+  preview-web:
+    profiles: ["preview"]
+    build:
+      context: .
+      dockerfile: web/Dockerfile.preview
+      args:
+        PREVIEW_ORIGIN: \${STAGING_WEB_ORIGIN:?Exact HTTPS origin required}
+    restart: "no"
+    networks:
+      - preview_private
+    # UI build opt-in shows ONLY the read-only staging viewer. No API secrets.
+
+  preview-ingress:
+    profiles: ["preview"]
+    image: caddy:2.10-alpine
+    restart: "no"
+    depends_on:
+      - preview-api
+      - preview-web
+    environment:
+      PREVIEW_HOST: \${PREVIEW_HOST:?Exact HTTPS hostname required}
+    volumes:
+      - ./deploy/preview/Caddyfile:/etc/caddy/Caddyfile:ro
+      - preview_caddy_data:/data
+      - preview_caddy_config:/config
+    ports:
+      - "127.0.0.1:443:443"
+    networks:
+      preview_private:
+        ipv4_address: 172.30.210.10
+    # Local private CA; not a publicly trusted cert.
+    # Do NOT tunnel to this port without approved Access/TLS configuration.
+
+networks:
+  preview_private:
+    ipam:
+      config:
+        - subnet: 172.30.210.0/24
+
+volumes:
+  preview_postgres_data:
+  preview_caddy_data:
+  preview_caddy_config:
