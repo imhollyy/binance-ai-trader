@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 for (const width of [360, 390, 768]) {
-  test(`PAPER dashboard keeps truthfully empty balances and worker status on ${width}px`, async ({ page }) => {
+  test(`connected paper dashboard keeps truthful balances and worker last state on ${width}px`, async ({ page }) => {
     test.skip(!process.env.E2E_CONNECTED, "Requires isolated Docker PostgreSQL API");
     const token = process.env.E2E_ADMIN_TOKEN;
     if (!token) throw new Error("E2E_ADMIN_TOKEN must be set");
