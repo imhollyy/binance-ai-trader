@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
-from binance_ai_trader.market_data import PublicSpotMarketClient
+from binance_ai_trader.feed_quality import FeedStatus, evaluate_closed_spot_feed
+from binance_ai_trader.market_data import MarketDataInvalid, PublicSpotMarketClient
 from binance_ai_trader.market_store import missing_stored_candles, save_closed_candles
 
 
@@ -29,6 +30,7 @@ def ingest_once(
     interval: str,
     limit: int = 100,
     now_ms: int | None = None,
+    require_ready: bool = False,
 ) -> IngestReport:
     """Fetch closed market candles, then atomically save and identify gaps.
 
@@ -42,6 +44,12 @@ def ingest_once(
 
     # Entire network operation finishes BEFORE the database transaction.
     candles = client.fetch_closed_klines(symbol=symbol, interval=interval, limit=limit)
+    if require_ready:
+        quality = evaluate_closed_spot_feed(
+            candles, symbol=symbol, interval=interval, now_ms=clock_ms, min_history=50
+        )
+        if quality.status is not FeedStatus.READY:
+            raise MarketDataInvalid("worker_ingest_feed_" + quality.status.value)
     if not candles:
         return IngestReport(symbol, interval, 0, 0, ())
 
