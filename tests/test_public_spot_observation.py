@@ -8,7 +8,11 @@ from decimal import Decimal
 import httpx
 import pytest
 
-from binance_ai_trader.market_data import MarketDataInvalid, MarketDataUnavailable, MarketRateLimited
+from binance_ai_trader.market_data import (
+    MarketDataInvalid,
+    MarketDataUnavailable,
+    MarketRateLimited,
+)
 from binance_ai_trader.public_spot_observation import (
     PublicSpotObservationClient,
     validate_public_observation,
