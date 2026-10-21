@@ -36,7 +36,6 @@ from binance_ai_trader.paper_risk import (
     PaperRiskStatus,
     evaluate_paper_risk,
 )
-from binance_ai_trader.paper_spot import PaperCosts
 from binance_ai_trader.paper_strategy import (
     ClosedCandleObservation,
     SmaCrossParameters,
@@ -47,6 +46,7 @@ from binance_ai_trader.risk_schemas import RiskSettings
 STRATEGY_VERSION = "sma-cross-v1"
 MAX_JOURNAL_ROWS = 2000
 MAX_POSITION_ROWS = 1000
+DEFAULT_PARAMS = SmaCrossParameters()
 BPS = Decimal("10000")
 HUNDRED = Decimal("100")
 
@@ -192,7 +192,7 @@ def plan_paper_spot_signal_once(
     interval: str,
     source_state: SourceState | None,
     source_checked_at_ms: int | None,
-    params: SmaCrossParameters = SmaCrossParameters(),
+    params: SmaCrossParameters = DEFAULT_PARAMS,
     candles_limit: int = 100,
     source_error: MarketDataError | None = None,
     now_ms: int | None = None,
@@ -334,5 +334,5 @@ def plan_paper_spot_signal_once(
                 settings_version=settings_row.version, decision=decision,
                 idempotency_key=_stable_key(symbol, interval, last.close_time_ms, params),
             )
-    except (SQLAlchemyError, OverflowError, ValueError) as exc:
+    except (SQLAlchemyError, OverflowError, ValueError):
         return _block("database_unavailable_or_invalid", symbol, interval, clock)
