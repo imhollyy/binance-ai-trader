@@ -40,9 +40,7 @@ def upgrade() -> None:
         ),
     )
     op.execute(
-        sa.text(
-            "INSERT INTO staging_login_gate(id, failures, locked_until_ms) VALUES (1, 0, 0)"
-        )
+        sa.text("INSERT INTO staging_login_gate(id, failures, locked_until_ms) VALUES (1, 0, 0)")
     )
     # No sessions/worker are launched. PAPER balances and journal are untouched.
 
