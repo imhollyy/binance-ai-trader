@@ -281,6 +281,7 @@ def open_paper_spot(
     idempotency_key: str,
     *,
     explicit_approval: bool = False,
+    manual_paper_trade: bool = False,
     costs: PaperCosts | None = None,
     _signal_preflight: SignalPreflight | None = None,
     _signal_postwrite: SignalPostWrite | None = None,
@@ -330,6 +331,7 @@ def open_paper_spot(
                     state,
                     SpotBuyIntent(intent.trade_id, intent.symbol, price, quantity, stop),
                     explicit_approval=explicit_approval,
+                    manual_paper_trade=manual_paper_trade,
                     costs=assumptions,
                 )
             except PaperSpotRejected as exc:
