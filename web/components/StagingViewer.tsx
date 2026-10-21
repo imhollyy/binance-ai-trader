@@ -83,8 +83,8 @@ function formatPaperUsdt(raw: string): string {
 
 // Keep quantity exact as supplied by the persisted Decimal API.
 function paperQuantity(raw: string): string {
-  return /^\\d+(?:\\.\\d+)?$/.test(raw)
-    ? raw.replace(/(\\.\\d*?)0+$/, "$1").replace(/\\.$/, "")
+  return /^\d+(?:\.\d+)?$/.test(raw)
+    ? raw.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")
     : "—";
 }
 
