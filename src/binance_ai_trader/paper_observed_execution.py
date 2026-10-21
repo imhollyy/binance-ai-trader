@@ -65,9 +65,7 @@ class ObservedPaperResult:
     receipt: PaperTradeReceipt | None = None
 
 
-def _history_rows(
-    session: Session, sample: PublicSpotObservation
-) -> tuple[Candle, ...]:
+def _history_rows(session: Session, sample: PublicSpotObservation) -> tuple[Candle, ...]:
     rows = list(
         session.scalars(
             select(SpotCandleRow)
@@ -164,9 +162,7 @@ def run_observed_paper_spot_once(
             )
         )
         journals = list(
-            session.scalars(
-                select(PaperSpotJournalRow).where(PaperSpotJournalRow.account_id == 1)
-            )
+            session.scalars(select(PaperSpotJournalRow).where(PaperSpotJournalRow.account_id == 1))
         )
         _reconcile(account, positions, journals)
         opening = [position for position in positions if position.status == "open"]
@@ -197,9 +193,12 @@ def run_observed_paper_spot_once(
         "settings_version": version,
         "operation": decision.action,
     }
-    key = "signal-exec-" + hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("ascii")
-    ).hexdigest()
+    key = (
+        "signal-exec-"
+        + hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("ascii")
+        ).hexdigest()
+    )
     trade_id = "signal_" + hashlib.sha256(key_seed.encode("ascii")).hexdigest()[:40]
 
     def locked_verify(
@@ -262,8 +261,11 @@ def run_observed_paper_spot_once(
             receipt = open_paper_spot(
                 session,
                 SpotBuyIntent(
-                    trade_id, symbol, sample.reference_price,
-                    decision.quantity, decision.stop_price,
+                    trade_id,
+                    symbol,
+                    sample.reference_price,
+                    decision.quantity,
+                    decision.stop_price,
                 ),
                 key,
                 costs=costs,
