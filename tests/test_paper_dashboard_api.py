@@ -35,9 +35,12 @@ def read_session() -> Iterator[tuple[TestClient, Session]]:
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
-    with TestClient(
-        create_app(config=ApiConfig(database_url=None, admin_token=TOKEN), engine=engine)
-    ) as client, Session(engine) as session:
+    with (
+        TestClient(
+            create_app(config=ApiConfig(database_url=None, admin_token=TOKEN), engine=engine)
+        ) as client,
+        Session(engine) as session,
+    ):
         yield client, session
     engine.dispose()
 
@@ -54,12 +57,16 @@ def test_empty_dashboard_and_auth_are_read_only(
     uri = "/api/v1/paper/dashboard"
     assert client.get(uri).status_code == 401
     assert client.get(uri, headers={"X-Admin-Token": "wrong"}).status_code == 401
-    assert client.get(uri, headers={
-        "X-Admin-Token": TOKEN, "Origin": "https://malicious.example"
-    }).status_code == 403
-    assert client.get(uri, headers={
-        "X-Admin-Token": TOKEN, "Host": "untrusted.example"
-    }).status_code == 400
+    assert (
+        client.get(
+            uri, headers={"X-Admin-Token": TOKEN, "Origin": "https://malicious.example"}
+        ).status_code
+        == 403
+    )
+    assert (
+        client.get(uri, headers={"X-Admin-Token": TOKEN, "Host": "untrusted.example"}).status_code
+        == 400
+    )
     response = client.get(uri, headers={"X-Admin-Token": TOKEN})
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store, private"
@@ -88,7 +95,9 @@ def test_verified_last_attempt_is_not_a_live_process_claim(
     client, session = read_session
     session.add(
         TradingSettingsRow(
-            id=1, version=1, data={"bot_enabled": True},
+            id=1,
+            version=1,
+            data={"bot_enabled": True},
         )
     )
     session.add(
@@ -117,7 +126,8 @@ def test_realized_pnl_open_position_and_attached_quote_are_exact_strings(
     client, session = read_session
     now = datetime.now(UTC)
     account = PaperSpotAccountRow(
-        id=1, settings_version=1,
+        id=1,
+        settings_version=1,
         initial_capital_usdt=Decimal("1000"),
         cash_usdt=Decimal("890.25"),
         realized_pnl_usdt=Decimal("-2.5"),
@@ -126,42 +136,67 @@ def test_realized_pnl_open_position_and_attached_quote_are_exact_strings(
     session.add(account)
     session.flush()
     position = PaperSpotPositionRow(
-        id=1, account_id=1,
-        trade_id="test_trade_1", idempotency_key="test_trade_unique_1",
-        symbol="BTCUSDT", status="open",
-        quantity=Decimal("1"), entry_fill_price=Decimal("100.5"),
-        entry_notional_usdt=Decimal("100.5"), entry_fee_usdt=Decimal("0.1"),
-        stop_price=Decimal("98"), estimated_stop_loss_usdt=Decimal("2.6"),
+        id=1,
+        account_id=1,
+        trade_id="test_trade_1",
+        idempotency_key="test_trade_unique_1",
+        symbol="BTCUSDT",
+        status="open",
+        quantity=Decimal("1"),
+        entry_fill_price=Decimal("100.5"),
+        entry_notional_usdt=Decimal("100.5"),
+        entry_fee_usdt=Decimal("0.1"),
+        stop_price=Decimal("98"),
+        estimated_stop_loss_usdt=Decimal("2.6"),
         opened_at=now,
     )
     session.add(position)
     session.flush()
     session.add(
         PaperSpotJournalRow(
-            id=1, account_id=1, position_id=None, event_id="account_opened_a",
-            idempotency_key="open_account_a", event_type="account_opened",
-            cash_delta_usdt=Decimal("1000"), balance_after_usdt=Decimal("1000"),
-            fee_usdt=Decimal("0"), realized_pnl_delta_usdt=Decimal("0"),
-            quantity_delta=Decimal("0"), created_at=now,
+            id=1,
+            account_id=1,
+            position_id=None,
+            event_id="account_opened_a",
+            idempotency_key="open_account_a",
+            event_type="account_opened",
+            cash_delta_usdt=Decimal("1000"),
+            balance_after_usdt=Decimal("1000"),
+            fee_usdt=Decimal("0"),
+            realized_pnl_delta_usdt=Decimal("0"),
+            quantity_delta=Decimal("0"),
+            created_at=now,
         )
     )
     journal = PaperSpotJournalRow(
-        id=2, account_id=1, position_id=1, event_id="spot_buy_a",
-        idempotency_key="spot_buy_unique_a", event_type="spot_buy",
-        cash_delta_usdt=Decimal("-109.75"), balance_after_usdt=Decimal("890.25"),
-        fee_usdt=Decimal("0.1"), realized_pnl_delta_usdt=Decimal("0"),
-        quantity_delta=Decimal("1"), created_at=now,
+        id=2,
+        account_id=1,
+        position_id=1,
+        event_id="spot_buy_a",
+        idempotency_key="spot_buy_unique_a",
+        event_type="spot_buy",
+        cash_delta_usdt=Decimal("-109.75"),
+        balance_after_usdt=Decimal("890.25"),
+        fee_usdt=Decimal("0.1"),
+        realized_pnl_delta_usdt=Decimal("0"),
+        quantity_delta=Decimal("1"),
+        created_at=now,
     )
     session.add(journal)
     session.flush()
     session.add(
         PaperSpotObservedQuoteRow(
-            id=1, journal_id=2, symbol="BTCUSDT", interval="1m",
+            id=1,
+            journal_id=2,
+            symbol="BTCUSDT",
+            interval="1m",
             source="binance_public_spot_ticker_price",
             signal_close_time_ms=1_800_000_000_000,
             requested_at_ms=1_800_000_000_100,
             received_at_ms=1_800_000_000_150,
-            reference_price=Decimal("100.45"), fee_bps=10, slippage_bps=5,
+            reference_price=Decimal("100.45"),
+            fee_bps=10,
+            slippage_bps=5,
         )
     )
     session.commit()
