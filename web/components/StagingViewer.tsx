@@ -33,6 +33,15 @@ function urlFromEnvironment(raw: string | undefined): string | null {
   }
 }
 
+function verifiedPaperSnapshot(view: Summary): Summary {
+  if (view.mode !== "paper" || view.source !== "persisted_paper_spot" ||
+      !view.worker || view.worker.process_verified_running !== false ||
+      (view.initialized && !view.account)) {
+    throw new Error("Güvenilir PAPER özeti alınamadı.");
+  }
+  return view;
+}
+
 function timeUTC(value: number | null): string {
   return value === null ? "—" :
     new Date(value).toLocaleString("tr-TR", {timeZone:"UTC"}) + " UTC";
@@ -56,12 +65,7 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
         credentials: "include", cache: "no-store",
       });
       if (!response.ok) throw new Error("Yetkili PAPER verisi okunamadı ("+response.status+").");
-      const view: Summary = await response.json();
-      if (view.mode !== "paper" || view.source !== "persisted_paper_spot" ||
-          view.worker.process_verified_running !== false ||
-          (view.initialized && !view.account)) {
-        throw new Error("Güvenilir PAPER özeti alınamadı.");
-      }
+      const view = verifiedPaperSnapshot(await response.json() as Summary);
       setSnapshot(view);
     } catch (error) {
       setSnapshot(null);
@@ -86,21 +90,22 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
         response.status === 429 ? "Çok sayıda deneme. Giriş geçici olarak kısıtlandı." :
         "Giriş başarısız. Kullanıcı bilgilerini kontrol et."
       );
-      const json: {role:string;csrf_token:string} = await response.json();
-      if (!["viewer","operator"].includes(json.role) || json.csrf_token.length !== 64)
+      const json: {role?:string;csrf_token?:string} = await response.json();
+      if (json.role !== role || typeof json.csrf_token !== "string" ||
+          !/^[a-f0-9]{64}$/i.test(json.csrf_token))
         throw new Error("Geçersiz oturum yanıtı.");
-      setSession({role:json.role,csrf:json.csrf_token});
-      setPassword("");
       const dashboard = await fetch(base + "/api/v1/paper/dashboard", {
         credentials:"include",cache:"no-store",
       });
       if (!dashboard.ok) throw new Error("Oturum açıldı ancak sanal kayıtlar okunamadı.");
-      const view: Summary = await dashboard.json();
-      if (view.mode !== "paper" || view.worker.process_verified_running !== false)
-        throw new Error("Geçersiz PAPER veri yanıtı.");
+      const view = verifiedPaperSnapshot(await dashboard.json() as Summary);
+      // Commit both UI states only after server login AND PAPER snapshot validation.
       setSnapshot(view);
+      setSession({role:json.role,csrf:json.csrf_token});
+      setPassword("");
     } catch (error) {
       setSnapshot(null);
+      setSession(null);
       setNotice(error instanceof Error ? error.message : "Oturum açılamadı.");
     } finally {
       setBusy(false);
@@ -139,14 +144,14 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
       </div> : !session ? <form onSubmit={event=>void signIn(event)} className="staging-form">
         <h2>Güvenli oturum aç</h2>
         <label>Kullanıcı rolü
-          <select value={role} onChange={e=>setRole(e.target.value as "viewer"|"operator")}>
+          <select value={role} disabled={busy} onChange={e=>setRole(e.target.value as "viewer"|"operator")}>
             <option value="viewer">Görüntüleyici</option>
             <option value="operator">Operatör (görüntüleme)</option>
           </select>
         </label>
         <label>Parola
           <input type="password" autoComplete="current-password" value={password}
-            onChange={e=>setPassword(e.target.value)} minLength={1} maxLength={256} required/>
+            onChange={e=>setPassword(e.target.value)} disabled={busy} minLength={1} maxLength={256} required/>
         </label>
         <button type="submit" disabled={busy}><LockKeyhole size={16}/>
           {busy?"Kontrol ediliyor...":"Giriş yap"}</button>
