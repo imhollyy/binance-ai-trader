@@ -34,7 +34,9 @@ def test_default_worker_does_not_need_database_or_touch_network() -> None:
                 run_paper_worker_once(engine, clock_ms=lambda item=value: cast(int, item))
         with pytest.raises(ValueError, match="invalid_worker_enabled"):
             run_paper_worker_once(
-                engine, enabled=1, clock_ms=lambda: 100_000  # type: ignore[arg-type]
+                engine,
+                enabled=1,
+                clock_ms=lambda: 100_000,  # type: ignore[arg-type]
             )
     finally:
         engine.dispose()
@@ -53,12 +55,15 @@ def test_deterministic_backoff_bounds_http418_429_and_no_immediate_retry() -> No
         <= _cooldown(symbol="ETHUSDT", interval="5m", attempts=1, rate_limit=None)
         <= MAX_BACKOFF_MS
     )
-    assert _cooldown(
-        symbol="BTCUSDT",
-        interval="15m",
-        attempts=10,
-        rate_limit=MarketRateLimited(429, retry_after_seconds=999_999),
-    ) == MAX_BACKOFF_MS
+    assert (
+        _cooldown(
+            symbol="BTCUSDT",
+            interval="15m",
+            attempts=10,
+            rate_limit=MarketRateLimited(429, retry_after_seconds=999_999),
+        )
+        == MAX_BACKOFF_MS
+    )
 
 
 def test_no_float_quote_price_or_live_trade_status_is_exposed() -> None:
