@@ -41,7 +41,13 @@ LockedPaperState = tuple[
     RiskSettings, PaperSpotAccountRow, list[PaperSpotPositionRow], list[PaperSpotJournalRow]
 ]
 SignalPreflight = Callable[
-    [Session, RiskSettings, PaperSpotAccountRow, list[PaperSpotPositionRow], list[PaperSpotJournalRow]],
+    [
+        Session,
+        RiskSettings,
+        PaperSpotAccountRow,
+        list[PaperSpotPositionRow],
+        list[PaperSpotJournalRow],
+    ],
     None,
 ]
 
