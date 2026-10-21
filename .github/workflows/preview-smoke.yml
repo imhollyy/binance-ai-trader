@@ -9,6 +9,10 @@ on:
       - "web/**"
       - "src/**"
       - "scripts/preview_ci_smoke.py"
+      - "scripts/quick_preview_ci_smoke.py"
+      - "scripts/prepare_quick_preview.py"
+      - "scripts/*TradePilotQuickPreview.ps1"
+      - "tests/test_quick_preview_config.py"
       - ".dockerignore"
       - ".github/workflows/preview-smoke.yml"
   push:
@@ -19,6 +23,10 @@ on:
       - "web/**"
       - "src/**"
       - "scripts/preview_ci_smoke.py"
+      - "scripts/quick_preview_ci_smoke.py"
+      - "scripts/prepare_quick_preview.py"
+      - "scripts/*TradePilotQuickPreview.ps1"
+      - "tests/test_quick_preview_config.py"
       - ".dockerignore"
       - ".github/workflows/preview-smoke.yml"
 
@@ -47,6 +55,20 @@ jobs:
           -f compose.preview.yaml --profile preview up --build -d
       - name: Real loopback HTTPS viewer session and PAPER dashboard smoke
         run: python3 scripts/preview_ci_smoke.py smoke
+      - name: Stop ephemeral HTTPS preview before testing Quick Tunnel-compatible ingress
+        run: >-
+          docker compose -p tradepilot_preview_ci --env-file .env.preview.ci
+          -f compose.preview.yaml --profile preview down
+      - name: Select loopback-only HTTP origin for email-protected Quick Tunnel simulation
+        run: |
+          printf '\nPREVIEW_CADDYFILE=./deploy/preview/Caddyfile.quick\n' >> .env.preview.ci
+          printf 'PREVIEW_INGRESS_BIND=127.0.0.1:8765:80\n' >> .env.preview.ci
+          docker compose -p tradepilot_preview_ci --env-file .env.preview.ci \
+            -f compose.preview.yaml --profile preview config --quiet
+          docker compose -p tradepilot_preview_ci --env-file .env.preview.ci \
+            -f compose.preview.yaml --profile preview up -d
+      - name: Test private local Quick Tunnel ingress (no external Cloudflare request)
+        run: python3 scripts/quick_preview_ci_smoke.py
       - name: Dispose ONLY isolated preview CI volumes and test credentials
         if: always()
         run: |
