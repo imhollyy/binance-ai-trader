@@ -180,6 +180,7 @@ def test_next_closed_candle_atomic_buy_sell_replay_and_fail_closed(engine: Engin
     assert _counts(engine) == (61, 1, 1, 2)
     assert _execute(engine, buy, end) == receipts[0]
 
+    assert DB_URL is not None
     restarted = create_engine(DB_URL, pool_pre_ping=True)
     try:
         assert _execute(restarted, buy, end) == receipts[0]
@@ -221,6 +222,6 @@ def test_next_closed_candle_atomic_buy_sell_replay_and_fail_closed(engine: Engin
         assert [event.event_type for event in events] == [
             "account_opened", "spot_buy", "spot_sell"
         ]
-    # A stale historical candle cannot be filled again under a new key.
-    with pytest.raises(PaperExecutionRejected, match="feed_not_ready"):
-        _execute(engine, sell, sell_end + 300_000)
+    # A stale identical replay is read-only: no second debit or journal row.
+    assert _execute(engine, sell, sell_end + 300_000) == exit_receipt
+    assert _counts(engine) == (67, 1, 1, 3)
