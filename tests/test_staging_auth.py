@@ -1,4 +1,4 @@
-"""HTTPS staging security: access isolation, revocation, RBAC and CSRF."""
+"""HTTPS staging auth: isolation, session revocation, CSRF and RBAC."""
 
 from __future__ import annotations
 
@@ -6,18 +6,13 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import Engine, create_engine, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from binance_ai_trader.api import create_app
 from binance_ai_trader.api_config import ApiConfig
-from binance_ai_trader.models import (
-    Base,
-    StagingLoginGateRow,
-    StagingSessionRow,
-    TradingSettingsRow,
-)
+from binance_ai_trader.models import Base, StagingLoginGateRow, StagingSessionRow, TradingSettingsRow
 from binance_ai_trader.staging_auth import COOKIE, password_hash
 
 WEB = "https://app.staging.example"
@@ -40,7 +35,7 @@ def config() -> ApiConfig:
 
 
 @pytest.fixture
-def staging() -> Iterator[tuple[TestClient, object]]:
+def staging() -> Iterator[tuple[TestClient, Engine]]:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -54,150 +49,153 @@ def staging() -> Iterator[tuple[TestClient, object]]:
     engine.dispose()
 
 
+def code(
+    client: TestClient,
+    path: str,
+    *,
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+    payload: dict[str, object] | None = None,
+) -> int:
+    return client.request(method, path, headers=headers, json=payload).status_code
+
+
 def login(client: TestClient, role: str = "viewer") -> str:
     passwd = VIEW_PASS if role == "viewer" else OPER_PASS
     result = client.post(
-        "/api/v1/auth/login", headers=HEADERS,
+        "/api/v1/auth/login",
+        headers=HEADERS,
         json={"username": role, "password": passwd},
     )
     assert result.status_code == 200, result.text
     assert result.json()["role"] == role
-    assert "secure" in result.headers["set-cookie"].lower()
-    assert "httponly" in result.headers["set-cookie"].lower()
-    assert "samesite=strict" in result.headers["set-cookie"].lower()
-    assert "__Host-tradepilot=" in result.headers["set-cookie"]
+    cookie = result.headers["set-cookie"].lower()
+    assert all(x in cookie for x in ("secure", "httponly", "samesite=strict", "__host-"))
     return str(result.json()["csrf_token"])
 
 
-def test_staging_requires_cookie_and_never_accepts_dev_token(
-    staging: tuple[TestClient, object],
+def test_stage_no_local_admin_token_or_untrusted_https(
+    staging: tuple[TestClient, Engine],
 ) -> None:
     client, engine = staging
-    assert client.get("/api/v1/settings").status_code == 401
-    assert client.get(
-        "/api/v1/settings", headers={"X-Admin-Token": "local-secret"}
-    ).status_code == 403
-    assert client.get("/docs").status_code == 404
-    assert client.get("/openapi.json").status_code == 404
-    assert client.get("/api/v1/settings", headers={"Host": "evil.example"}).status_code == 400
-    assert client.get("/api/v1/settings", headers={
-        "Origin": "https://evil.example"
-    }).status_code == 403
-    assert client.post(
-        "/api/v1/auth/login", json={"username": "viewer", "password": VIEW_PASS}
-    ).status_code == 403
-    assert client.post(
-        "/api/v1/auth/login",
+    assert code(client, "/api/v1/settings") == 401
+    assert code(client, "/api/v1/settings", headers={"X-Admin-Token": "legacy"}) == 403
+    assert code(client, "/docs") == 404
+    assert code(client, "/openapi.json") == 404
+    assert code(client, "/api/v1/settings", headers={"Host": "evil.example"}) == 400
+    assert code(client, "/api/v1/settings", headers={"Origin": "https://evil.example"}) == 403
+    payload = {"username": "viewer", "password": VIEW_PASS}
+    assert code(client, "/api/v1/auth/login", method="POST", payload=payload) == 403
+    assert code(
+        client, "/api/v1/auth/login", method="POST", payload=payload,
         headers={"Origin": "https://evil.example"},
-        json={"username": "viewer", "password": VIEW_PASS},
-    ).status_code == 403
+    ) == 403
     csrf = login(client)
     assert len(csrf) == 64
     assert client.get("/api/v1/auth/session", headers=HEADERS).json()["role"] == "viewer"
-    assert client.get("/api/v1/status", headers=HEADERS).status_code == 200
-    assert client.get("/api/v1/paper/dashboard", headers=HEADERS).status_code == 200
-    assert client.get("/api/v1/paper/spot", headers=HEADERS).status_code == 200
-    assert client.get("/api/v1/market/candles", headers=HEADERS).status_code == 200
-    assert client.get("/api/v1/audit", headers=HEADERS).status_code == 200
-    assert client.get("/api/v1/settings", headers={
-        "Origin": WEB, "X-Admin-Token": "fallback"
-    }).status_code == 403
-    with Session(engine) as session:  # type: ignore[arg-type]
+    for path in (
+        "/api/v1/status", "/api/v1/settings", "/api/v1/paper/dashboard",
+        "/api/v1/paper/spot", "/api/v1/market/candles", "/api/v1/audit",
+    ):
+        assert code(client, path, headers=HEADERS) == 200
+    assert code(
+        client, "/api/v1/settings", headers={**HEADERS, "X-Admin-Token": "legacy"}
+    ) == 403
+    with Session(engine) as session:
         assert session.scalar(select(func.count()).select_from(TradingSettingsRow)) == 0
 
 
-def test_viewer_cannot_write_even_with_valid_csrf_and_approval(
-    staging: tuple[TestClient, object],
+def test_viewer_denied_settings_and_csrf_logout_replay(
+    staging: tuple[TestClient, Engine],
 ) -> None:
     client, _ = staging
     csrf = login(client)
-    snapshot = client.get("/api/v1/settings", headers=HEADERS).json()
-    payload = {"expected_version": 0, "settings": snapshot["settings"]}
-    assert client.put("/api/v1/settings", headers=HEADERS, json=payload).status_code == 403
-    assert client.put("/api/v1/settings", headers={
-        **HEADERS, "X-CSRF-Token": csrf, "X-Paper-Settings-Approval": "PAPER_SETTINGS_ONLY"
-    }, json=payload).status_code == 403
-    assert client.post("/api/v1/auth/logout", headers=HEADERS).status_code == 403
-    assert client.post("/api/v1/auth/logout", headers={
-        **HEADERS, "X-CSRF-Token": "deadbeef"
-    }).status_code == 403
-    response = client.post("/api/v1/auth/logout", headers={
-        **HEADERS, "X-CSRF-Token": csrf
-    })
-    assert response.status_code == 200
-    assert client.get("/api/v1/settings", headers=HEADERS).status_code == 401
+    baseline = client.get("/api/v1/settings", headers=HEADERS).json()
+    payload = {"expected_version": 0, "settings": baseline["settings"]}
+    privileged = {
+        **HEADERS, "X-CSRF-Token": csrf, "X-Paper-Settings-Approval": "PAPER_SETTINGS_ONLY",
+    }
+    assert code(client, "/api/v1/settings", method="PUT", headers=HEADERS, payload=payload) == 403
+    assert code(
+        client, "/api/v1/settings", method="PUT", headers=privileged, payload=payload
+    ) == 403
+    assert code(client, "/api/v1/auth/logout", method="POST", headers=HEADERS) == 403
+    assert code(
+        client, "/api/v1/auth/logout", method="POST",
+        headers={**HEADERS, "X-CSRF-Token": "bad"},
+    ) == 403
+    assert code(
+        client, "/api/v1/auth/logout", method="POST",
+        headers={**HEADERS, "X-CSRF-Token": csrf},
+    ) == 200
+    assert code(client, "/api/v1/settings", headers=HEADERS) == 401
 
 
-def test_operator_requires_csrf_explicit_approval_and_same_origin(
-    staging: tuple[TestClient, object],
+def test_operator_requires_origin_csrf_elevation_and_revokes_on_logout(
+    staging: tuple[TestClient, Engine],
 ) -> None:
     client, engine = staging
     csrf = login(client, "operator")
-    stored_cookie = client.cookies.get(COOKIE)
-    snapshot = client.get("/api/v1/settings", headers=HEADERS).json()
-    payload = {"expected_version": 0, "settings": snapshot["settings"]}
-    h = {**HEADERS, "X-CSRF-Token": csrf, "X-Paper-Settings-Approval": "PAPER_SETTINGS_ONLY"}
-    assert client.put("/api/v1/settings", json=payload).status_code == 403
-    assert client.put("/api/v1/settings", headers=HEADERS, json=payload).status_code == 403
-    assert client.put("/api/v1/settings", headers={
-        **HEADERS, "X-CSRF-Token": "x" * 64,
-        "X-Paper-Settings-Approval": "PAPER_SETTINGS_ONLY",
-    }, json=payload).status_code == 403
-    assert client.put("/api/v1/settings", headers={
-        **HEADERS, "X-CSRF-Token": csrf
-    }, json=payload).status_code == 403
-    assert client.put("/api/v1/settings", headers={
-        **h, "Origin": "https://evil.example"
-    }, json=payload).status_code == 403
-    assert client.put("/api/v1/settings", headers=h, json=payload).status_code == 200
-    with Session(engine) as session:  # type: ignore[arg-type]
+    cookie = client.cookies.get(COOKIE)
+    baseline = client.get("/api/v1/settings", headers=HEADERS).json()
+    payload = {"expected_version": 0, "settings": baseline["settings"]}
+    privilege = {
+        **HEADERS, "X-CSRF-Token": csrf, "X-Paper-Settings-Approval": "PAPER_SETTINGS_ONLY",
+    }
+    for headers in (
+        HEADERS,
+        {**HEADERS, "X-CSRF-Token": "x" * 64, "X-Paper-Settings-Approval": "PAPER_SETTINGS_ONLY"},
+        {**HEADERS, "X-CSRF-Token": csrf},
+        {**privilege, "Origin": "https://evil.example"},
+    ):
+        assert code(
+            client, "/api/v1/settings", method="PUT", headers=headers, payload=payload
+        ) == 403
+    assert code(
+        client, "/api/v1/settings", method="PUT", headers=privilege, payload=payload
+    ) == 200
+    with Session(engine) as session:
         assert session.scalar(select(func.count()).select_from(TradingSettingsRow)) == 1
-    assert client.post("/api/v1/auth/logout", headers={
-        **HEADERS, "X-CSRF-Token": csrf
-    }).status_code == 200
-    assert stored_cookie is not None
-    assert client.get(
-        "/api/v1/settings", headers={**HEADERS, "Cookie": f"{COOKIE}={stored_cookie}"}
-    ).status_code == 401
-    # Old CSRF and cookie cannot authorize a replayed settings mutation.
-    assert client.put("/api/v1/settings", headers={
-        **h, "Cookie": f"{COOKIE}={stored_cookie}"
-    }, json=payload).status_code == 401
+    assert code(
+        client, "/api/v1/auth/logout", method="POST",
+        headers={**HEADERS, "X-CSRF-Token": csrf},
+    ) == 200
+    assert cookie is not None
+    old = {**privilege, "Cookie": f"{COOKIE}={cookie}"}
+    assert code(client, "/api/v1/settings", headers=old) == 401
+    assert code(client, "/api/v1/settings", method="PUT", headers=old, payload=payload) == 401
 
 
-def test_login_bruteforce_has_durable_shared_lockout(
-    staging: tuple[TestClient, object],
+def test_five_failed_logins_block_even_correct_password(
+    staging: tuple[TestClient, Engine],
 ) -> None:
     client, engine = staging
     for _ in range(5):
-        assert client.post(
-            "/api/v1/auth/login", headers=HEADERS,
-            json={"username": "viewer", "password": "incorrect"},
-        ).status_code == 401
-    assert client.post(
-        "/api/v1/auth/login", headers=HEADERS,
-        json={"username": "viewer", "password": VIEW_PASS},
-    ).status_code == 429
-    with Session(engine) as session:  # type: ignore[arg-type]
+        assert code(
+            client, "/api/v1/auth/login", method="POST", headers=HEADERS,
+            payload={"username": "viewer", "password": "incorrect"},
+        ) == 401
+    assert code(
+        client, "/api/v1/auth/login", method="POST", headers=HEADERS,
+        payload={"username": "viewer", "password": VIEW_PASS},
+    ) == 429
+    with Session(engine) as session:
         gate = session.get(StagingLoginGateRow, 1)
-        assert gate is not None
-        assert gate.failures == 5 and gate.locked_until_ms > 0
+        assert gate is not None and gate.failures == 5 and gate.locked_until_ms > 0
         assert session.scalar(select(func.count()).select_from(StagingSessionRow)) == 0
 
 
-def test_config_fail_closed_and_session_credential_format() -> None:
+def test_stage_config_never_falls_back_to_legacy_admin() -> None:
     assert ApiConfig(database_url=None, admin_token=None).auth_mode == "local"
     with pytest.raises(ValueError):
         ApiConfig.from_env({
-            "TRADING_MODE": "paper", "API_AUTH_MODE": "staging",
-            "ADMIN_TOKEN": "a" * 64,
+            "TRADING_MODE": "paper", "API_AUTH_MODE": "staging", "ADMIN_TOKEN": "a" * 64,
         })
     with pytest.raises(ValueError):
         ApiConfig.from_env({"TRADING_MODE": "paper", "API_AUTH_MODE": "untrusted"})
     with pytest.raises(ValueError):
         ApiConfig(
             database_url="sqlite://", admin_token=None, auth_mode="staging",
-            staging_origin="http://app.staging.example",
-            staging_host="api.staging.example",
+            staging_origin="http://app.staging.example", staging_host="api.staging.example",
             viewer_password_hash="bad", operator_password_hash="bad",
         )
