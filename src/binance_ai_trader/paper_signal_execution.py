@@ -140,8 +140,7 @@ def execute_paper_signal_once(
         if session.in_transaction():
             raise PaperExecutionRejected("unexpected_session_state")
         rows = session.scalars(
-            select(SpotCandleRow)
-            .where(
+            select(SpotCandleRow).where(
                 SpotCandleRow.symbol == plan.symbol,
                 SpotCandleRow.interval == plan.interval,
                 SpotCandleRow.open_time_ms == plan.latest_close_time_ms + 1,
@@ -153,8 +152,7 @@ def execute_paper_signal_once(
         price = row.open
         if decision.action == "sell":
             prior = session.scalar(
-                select(PaperSpotJournalRow)
-                .where(
+                select(PaperSpotJournalRow).where(
                     PaperSpotJournalRow.account_id == 1,
                     PaperSpotJournalRow.idempotency_key == key,
                     PaperSpotJournalRow.event_type == "spot_sell",
@@ -197,10 +195,7 @@ def execute_paper_signal_once(
             or account.initial_capital_usdt != Decimal(settings.spot_capital_usdt)
         ):
             raise PaperExecutionRejected("signal_settings_or_approval_changed")
-        opening = [
-            position for position in positions
-            if position.status == "open"
-        ]
+        opening = [position for position in positions if position.status == "open"]
         if len(opening) > 1 or any(p.symbol != plan.symbol for p in opening):
             raise PaperExecutionRejected("uncertain_paper_position")
         if opening and opening[0].opened_at.timestamp() * 1000 > plan.evaluated_at_ms:
@@ -222,9 +217,14 @@ def execute_paper_signal_once(
         )
         history = tuple(
             Candle(
-                symbol=row.symbol, interval=row.interval,
-                open_time_ms=row.open_time_ms, close_time_ms=row.close_time_ms,
-                open=row.open, high=row.high, low=row.low, close=row.close,
+                symbol=row.symbol,
+                interval=row.interval,
+                open_time_ms=row.open_time_ms,
+                close_time_ms=row.close_time_ms,
+                open=row.open,
+                high=row.high,
+                low=row.low,
+                close=row.close,
                 volume=row.volume,
             )
             for row in reversed(rows)
@@ -249,14 +249,14 @@ def execute_paper_signal_once(
             or source_checked_at_ms <= latest.close_time_ms
         ):
             raise PaperExecutionRejected("next_candle_or_source_is_stale")
-        observed = ClosedCandleObservation(
-            history[:-1], position_open=bool(opening)
-        )
+        observed = ClosedCandleObservation(history[:-1], position_open=bool(opening))
         recomputed = SmaCrossStrategy(params).on_closed_candle(observed)
         if recomputed != decision:
             raise PaperExecutionRejected("strategy_signal_changed")
         if decision.action == "buy" and (
-            quantity is None or stop is None or quantity != decision.quantity
+            quantity is None
+            or stop is None
+            or quantity != decision.quantity
             or stop != decision.stop_price
         ):
             raise PaperExecutionRejected("invalid_buy_payload")
