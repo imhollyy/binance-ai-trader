@@ -226,7 +226,10 @@ def test_account_bootstrap_constraints_rollback_and_restart(ledger_engine: Engin
             "DELETE FROM paper_spot_journal WHERE event_id = 'buy-1'",
             "TRUNCATE TABLE paper_spot_journal",
         ):
-            with pytest.raises(DBAPIError, match="append only|cannot truncate"), session.begin_nested():
+            with (
+                pytest.raises(DBAPIError, match="append only|cannot truncate"),
+                session.begin_nested(),
+            ):
                 session.execute(text(statement))
     with Session(ledger_engine) as session:
         assert session.scalar(select(func.count()).select_from(PaperSpotJournalRow)) == 2
