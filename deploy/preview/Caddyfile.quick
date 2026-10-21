@@ -1,0 +1,41 @@
+{
+    auto_https off
+    admin off
+}
+
+# HTTP is allowed ONLY on the host's 127.0.0.1 loopback: Cloudflare's
+# authenticated outbound tunnel terminates browser TLS before reaching us.
+# Never publish this origin directly on a LAN or the public Internet.
+:80 {
+    @exact_host header Host {$PREVIEW_HOST}
+    handle @exact_host {
+        route {
+            @api path /api/v1/*
+            handle @api {
+                reverse_proxy preview-api:8000 {
+                    header_up -Forwarded
+                    header_up -X-Forwarded-For
+                    header_up -X-Forwarded-Host
+                    header_up -X-Forwarded-Port
+                    header_up -X-Real-IP
+                    # This private ingress is the ONLY proxy trusted by
+                    # Uvicorn at fixed Docker bridge IP 172.30.210.10.
+                    header_up Host {$PREVIEW_HOST}
+                    header_up X-Forwarded-Proto https
+                }
+            }
+
+            @internal path /api/* /health/* /docs /redoc /openapi.json
+            handle @internal {
+                respond "Not found" 404
+            }
+
+            handle {
+                reverse_proxy preview-web:3000
+            }
+        }
+    }
+    handle {
+        respond "Not found" 404
+    }
+}

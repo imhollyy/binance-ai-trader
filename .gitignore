@@ -22,3 +22,6 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# Protected local preview tunnel process IDs and private logs
+.local-tradepilot/
