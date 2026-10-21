@@ -180,7 +180,7 @@ def test_explicit_scheduler_two_ticks_429_restart_and_permission_revoke(db: Engi
     prev_http = len(paths)
     logs.clear()
     assert scheduler(enabled=True, ticks=1) is SchedulerStatus.LIMIT_REACHED
-    assert logs[-1].status == PaperWorkerStatus.READY
+    assert [result.status for result in logs] == [PaperWorkerStatus.READY]
     assert len(paths) == prev_http
     assert _counts(db) == (61, 1, 2, 1, 1)
 
@@ -189,7 +189,7 @@ def test_explicit_scheduler_two_ticks_429_restart_and_permission_revoke(db: Engi
     status[0] = 429
     logs.clear()
     assert scheduler(enabled=True, ticks=1) is SchedulerStatus.LIMIT_REACHED
-    assert logs[-1].status is PaperWorkerStatus.RATE_LIMITED
+    assert [result.status for result in logs] == [PaperWorkerStatus.RATE_LIMITED]
     before = len(paths)
     with Session(db) as session:
         guard = session.get(PaperWorkerGuardRow, 1)
