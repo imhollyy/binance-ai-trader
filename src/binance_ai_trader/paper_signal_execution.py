@@ -128,9 +128,10 @@ def execute_paper_signal_once(
         raise PaperExecutionRejected("source_unverified_or_restricted")
 
     key, trade_id = _identity(plan)
-    price: Decimal | None = None
+    price: Decimal
     stop: Decimal | None = None
     quantity: Decimal | None = None
+    settlement_trade_id: str | None = None
 
     # The public reference must come from a persisted, consecutive, CLOSED
     # next candle; never from a caller-supplied or synthetic market price.
@@ -151,7 +152,34 @@ def execute_paper_signal_once(
             raise PaperExecutionRejected("next_closed_candle_required")
         row = rows[0]
         price = row.open
+        if decision.action == "sell":
+            prior = session.scalar(
+                select(PaperSpotJournalRow)
+                .where(
+                    PaperSpotJournalRow.account_id == 1,
+                    PaperSpotJournalRow.idempotency_key == key,
+                    PaperSpotJournalRow.event_type == "spot_sell",
+                )
+            )
+            if prior is not None and prior.position_id is not None:
+                prior_position = session.get(PaperSpotPositionRow, prior.position_id)
+                if prior_position is not None:
+                    settlement_trade_id = prior_position.trade_id
+            else:
+                opened = session.scalars(
+                    select(PaperSpotPositionRow)
+                    .where(
+                        PaperSpotPositionRow.account_id == 1,
+                        PaperSpotPositionRow.status == "open",
+                        PaperSpotPositionRow.symbol == plan.symbol,
+                    )
+                    .limit(2)
+                ).all()
+                if len(opened) == 1:
+                    settlement_trade_id = opened[0].trade_id
         session.rollback()
+    if decision.action == "sell" and settlement_trade_id is None:
+        raise PaperExecutionRejected("paper_signal_position_not_open")
 
     def verify_locked(
         session: Session,
@@ -180,10 +208,7 @@ def execute_paper_signal_once(
             raise PaperExecutionRejected("position_opened_after_signal")
         if (decision.action == "buy") != (not opening):
             raise PaperExecutionRejected("signal_position_state_changed")
-        if decision.action == "sell" and opening[0].trade_id != trade_id:
-            # Buying manually before the strategy signal is supported, but
-            # the plan must use the real trade_id of the open position.
-            # This check is performed by the caller's provided plan binding.
+        if decision.action == "sell" and opening[0].trade_id != settlement_trade_id:
             raise PaperExecutionRejected("signal_trade_id_mismatch")
         rows = list(
             session.scalars(
@@ -256,6 +281,7 @@ def execute_paper_signal_once(
                 _signal_preflight=verify_locked,
             )
     with Session(engine) as session:
+        assert settlement_trade_id is not None
         return close_paper_spot(
-            session, trade_id, price, key, _signal_preflight=verify_locked
+            session, settlement_trade_id, price, key, _signal_preflight=verify_locked
         )
