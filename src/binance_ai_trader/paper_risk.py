@@ -60,6 +60,8 @@ def evaluate_paper_risk(
     settings: RiskSettings,
     request: PaperRiskRequest,
     state: PaperRiskState,
+    *,
+    manual_paper_trade: bool = False,
 ) -> PaperRiskDecision:
     """Apply fixed fail-closed rules to a paper-only hypothetical position.
 
@@ -69,7 +71,17 @@ def evaluate_paper_risk(
 
     if settings.mode != "paper":
         return _reject("non_paper_mode")
-    if not settings.bot_enabled:
+    # A manual PAPER simulation may pass with the autonomous bot OFF, but
+    # only when manual approval remains enabled. Never let this turn into
+    # permission for the autonomous scheduler to execute trades.
+    if manual_paper_trade:
+        if (
+            type(manual_paper_trade) is not bool
+            or settings.bot_enabled
+            or not settings.manual_approval
+        ):
+            return _reject("manual_paper_mode_required")
+    elif not settings.bot_enabled:
         return _reject("paper_bot_disabled")
     if (
         not request.proposed_notional_usdt.is_finite()
