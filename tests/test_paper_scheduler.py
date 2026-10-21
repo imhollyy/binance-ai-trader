@@ -71,7 +71,9 @@ def test_retry_after_wait_stop_and_two_ticks_with_virtual_clock() -> None:
         return False
 
     responses = [
-        PaperWorkerReport(PaperWorkerStatus.RATE_LIMITED, "public_http_429", clock[0], clock[0] + 240_000),
+        PaperWorkerReport(
+            PaperWorkerStatus.RATE_LIMITED, "public_http_429", clock[0], clock[0] + 240_000
+        ),
         PaperWorkerReport(PaperWorkerStatus.NO_SIGNAL, "no_signal", clock[0] + 240_000),
     ]
 
