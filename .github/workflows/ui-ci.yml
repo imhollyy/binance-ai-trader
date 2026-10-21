@@ -35,3 +35,11 @@ jobs:
       - name: Responsive browser tests
         working-directory: web
         run: npm run test:e2e
+      - name: Retain responsive chart QA screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: responsive-paper-chart-qa
+          path: web/test-results/**/*.png
+          if-no-files-found: ignore
+          retention-days: 7
