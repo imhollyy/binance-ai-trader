@@ -221,41 +221,60 @@ def run_paper_worker_once(
                 # trigger aggressive public polling or a duplicate tick.
                 minimum = max(INTERVAL_MS[interval], BASE_BACKOFF_MS)
                 _store_guard(
-                    engine, attempt_ms=stamp, next_allowed_ms=stamp + minimum,
-                    failures=failures, status=PaperWorkerStatus.READY,
+                    engine,
+                    attempt_ms=stamp,
+                    next_allowed_ms=stamp + minimum,
+                    failures=failures,
+                    status=PaperWorkerStatus.READY,
                 )
                 try:
                     market = PublicSpotMarketClient(transport=transport, clock_ms=now)
                     ingest = ingest_once(
-                        engine, market, symbol=symbol, interval=interval, limit=limit,
-                        now_ms=now(), require_ready=True,
+                        engine,
+                        market,
+                        symbol=symbol,
+                        interval=interval,
+                        limit=limit,
+                        now_ms=now(),
+                        require_ready=True,
                     )
                     if ingest.missing_open_times_ms:
                         raise MarketDataInvalid("stored_spot_candle_gap")
                     observer = PublicSpotObservationClient(transport=transport, clock_ms=now)
                     executed = run_observed_paper_spot_once(
-                        engine, observer, symbol=symbol, interval=interval,
-                        params=params, limit=limit,
+                        engine,
+                        observer,
+                        symbol=symbol,
+                        interval=interval,
+                        params=params,
+                        limit=limit,
                     )
                 except (MarketDataError, PaperExecutionRejected, ValueError) as exc:
                     source = exc if isinstance(exc, MarketDataError) else exc.__cause__
                     restricted = source if isinstance(source, MarketRateLimited) else None
                     attempts = min(failures + 1, 10)
                     status = (
-                        PaperWorkerStatus.RATE_LIMITED if restricted
+                        PaperWorkerStatus.RATE_LIMITED
+                        if restricted
                         else PaperWorkerStatus.SOURCE_BLOCKED
                     )
                     delay = _cooldown(
-                        symbol=symbol, interval=interval, attempts=attempts,
+                        symbol=symbol,
+                        interval=interval,
+                        attempts=attempts,
                         rate_limit=restricted,
                     )
                     _store_guard(
-                        engine, attempt_ms=stamp, next_allowed_ms=stamp + delay,
-                        failures=attempts, status=status,
+                        engine,
+                        attempt_ms=stamp,
+                        next_allowed_ms=stamp + delay,
+                        failures=attempts,
+                        status=status,
                     )
                     reason = (
                         f"public_http_{restricted.status_code}"
-                        if restricted else "source_or_paper_preflight_rejected"
+                        if restricted
+                        else "source_or_paper_preflight_rejected"
                     )
                     return _result(status, reason, stamp, until=stamp + delay)
                 status = (
@@ -264,11 +283,17 @@ def run_paper_worker_once(
                     else PaperWorkerStatus.NO_SIGNAL
                 )
                 _store_guard(
-                    engine, attempt_ms=stamp, next_allowed_ms=stamp + minimum,
-                    failures=0, status=status,
+                    engine,
+                    attempt_ms=stamp,
+                    next_allowed_ms=stamp + minimum,
+                    failures=0,
+                    status=status,
                 )
                 return _result(
-                    status, status.value, stamp, until=stamp + minimum,
+                    status,
+                    status.value,
+                    stamp,
+                    until=stamp + minimum,
                     key=executed.receipt.idempotency_key if executed.receipt else None,
                 )
             except Exception:
