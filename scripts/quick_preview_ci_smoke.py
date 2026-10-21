@@ -51,7 +51,7 @@ def main() -> None:
 
     payload = json.dumps({"username": "viewer", "password": VIEWER}).encode()
     # Web can become ready before the restarted staging API applies migrations.
-    for attempt in range(40):
+    for _attempt in range(40):
         try:
             code, body, set_cookie = send("/api/v1/auth/login", method="POST", body=payload)
         except OSError:
