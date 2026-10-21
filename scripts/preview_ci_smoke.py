@@ -25,9 +25,7 @@ POSTGRES_PASSWORD = "ci_only_preview_postgres_password_2026"
 
 def _verifier(password: str) -> str:
     salt = os.urandom(16)
-    digest = hashlib.scrypt(
-        password.encode("utf-8"), salt=salt, n=16384, r=8, p=1, dklen=64
-    )
+    digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=16384, r=8, p=1, dklen=64)
     return f"scrypt_16384:{salt.hex()}:{digest.hex()}"
 
 
@@ -66,11 +64,25 @@ def request(
 ) -> tuple[int, bytes]:
     target = destination / "body.out"
     cmd = [
-        "curl", "--silent", "--show-error", "--insecure", "--noproxy", "*",
-        "--resolve", f"{HOST}:443:127.0.0.1",
-        "--connect-timeout", "3", "--max-time", "12",
-        "--output", str(target), "--write-out", "%{http_code}",
-        "--request", method, f"{BASE}{path}",
+        "curl",
+        "--silent",
+        "--show-error",
+        "--insecure",
+        "--noproxy",
+        "*",
+        "--resolve",
+        f"{HOST}:443:127.0.0.1",
+        "--connect-timeout",
+        "3",
+        "--max-time",
+        "12",
+        "--output",
+        str(target),
+        "--write-out",
+        "%{http_code}",
+        "--request",
+        method,
+        f"{BASE}{path}",
     ]
     if origin is not None:
         cmd.extend(["--header", f"Origin: {origin}"])
