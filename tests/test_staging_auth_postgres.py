@@ -69,13 +69,15 @@ def _config() -> ApiConfig:
 
 
 def test_stage_session_survives_restart_but_not_logout_or_expiry(
-    engine: Engine, monkeypatch: pytest.MonkeyPatch,
+    engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config()
     with TestClient(create_app(config=config, engine=engine), base_url=ROOT) as client:
         result = client.post(
-            "/api/v1/auth/login", headers=HEADERS,
-            json={"username":"viewer","password":PASS},
+            "/api/v1/auth/login",
+            headers=HEADERS,
+            json={"username": "viewer", "password": PASS},
         )
         assert result.status_code == 200
         csrf = result.json()["csrf_token"]
@@ -94,15 +96,20 @@ def test_stage_session_survives_restart_but_not_logout_or_expiry(
         try:
             with TestClient(create_app(config=config, engine=reopened), base_url=ROOT) as other:
                 cookie = {"Cookie": f"{COOKIE}={raw}"}
-                assert other.get(
-                    "/api/v1/paper/dashboard", headers={**HEADERS, **cookie}
-                ).status_code == 200
-                assert client.post(
-                    "/api/v1/auth/logout", headers={**HEADERS, "X-CSRF-Token":csrf}
-                ).status_code == 200
-                assert other.get(
-                    "/api/v1/paper/dashboard", headers={**HEADERS, **cookie}
-                ).status_code == 401
+                assert (
+                    other.get("/api/v1/paper/dashboard", headers={**HEADERS, **cookie}).status_code
+                    == 200
+                )
+                assert (
+                    client.post(
+                        "/api/v1/auth/logout", headers={**HEADERS, "X-CSRF-Token": csrf}
+                    ).status_code
+                    == 200
+                )
+                assert (
+                    other.get("/api/v1/paper/dashboard", headers={**HEADERS, **cookie}).status_code
+                    == 401
+                )
         finally:
             reopened.dispose()
 
@@ -115,7 +122,7 @@ def test_stage_session_survives_restart_but_not_logout_or_expiry(
         cookie2 = client.cookies.get(COOKIE)
         assert cookie2 is not None
         monkeypatch.setattr(staging_auth, "_now_ms", lambda: created + SESSION_LIFETIME_MS + 60_000)
-        assert client.get("/api/v1/settings",headers=HEADERS).status_code == 401
+        assert client.get("/api/v1/settings", headers=HEADERS).status_code == 401
 
     with Session(engine) as session:
         assert session.scalar(select(func.count()).select_from(StagingSessionRow)) == 2
