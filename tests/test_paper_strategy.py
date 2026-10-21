@@ -316,7 +316,6 @@ def test_manual_approval_is_not_forged_and_loss_and_costs_are_realized() -> None
         run(data, strategy=strategy, settings=config(spot_capital_usdt=100))
 
 
-
 def test_adverse_gap_at_next_open_rejects_buy_instead_of_changing_stop() -> None:
     data = trend()
     strategy = SmaCrossStrategy(SmaCrossParameters(fast_window=3, slow_window=6))
@@ -334,6 +333,7 @@ def test_repeated_signal_after_realized_loss_respects_daily_loss_limit() -> None
     strategy = SmaCrossStrategy(SmaCrossParameters(fast_window=3, slow_window=6))
     with pytest.raises(PaperBacktestRejected, match="daily_loss_limit"):
         run(data, settings=config(daily_loss_limit_pct=0.1), strategy=strategy)
+
 
 def test_strategy_cannot_claim_live_prices_equity_or_real_orders() -> None:
     data = trend()
