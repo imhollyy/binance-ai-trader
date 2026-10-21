@@ -115,8 +115,9 @@ def test_stage_session_survives_restart_but_not_logout_or_expiry(
 
         # New session expires at absolute UTC expiry; not extended by requests.
         logged = client.post(
-            "/api/v1/auth/login", headers=HEADERS,
-            json={"username":"viewer","password":PASS},
+            "/api/v1/auth/login",
+            headers=HEADERS,
+            json={"username": "viewer", "password": PASS},
         )
         assert logged.status_code == 200
         cookie2 = client.cookies.get(COOKIE)
