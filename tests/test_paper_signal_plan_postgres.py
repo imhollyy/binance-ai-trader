@@ -196,12 +196,16 @@ def test_readonly_snapshot_latest_only_replay_quality_and_sell(engine: Engine) -
 
     # Contradictory/still-open latest candle fails the feed gate.
     with Session(engine) as session, session.begin():
-        last = session.scalar(select(SpotCandleRow).where(SpotCandleRow.open_time_ms == base - 60_000))
+        last = session.scalar(
+            select(SpotCandleRow).where(SpotCandleRow.open_time_ms == base - 60_000)
+        )
         assert last is not None
         last.close_time_ms = base + 59_999
     assert _plan(engine, clock).reason == "feed_invalid"
     with Session(engine) as session, session.begin():
-        last = session.scalar(select(SpotCandleRow).where(SpotCandleRow.open_time_ms == base - 60_000))
+        last = session.scalar(
+            select(SpotCandleRow).where(SpotCandleRow.open_time_ms == base - 60_000)
+        )
         assert last is not None
         last.close_time_ms = base - 1
 
@@ -222,7 +226,9 @@ def test_readonly_snapshot_latest_only_replay_quality_and_sell(engine: Engine) -
 
     # No SMA cross at the latest close -> explicit NO_SIGNAL.
     with Session(engine) as session, session.begin():
-        last = session.scalar(select(SpotCandleRow).where(SpotCandleRow.open_time_ms == base - 60_000))
+        last = session.scalar(
+            select(SpotCandleRow).where(SpotCandleRow.open_time_ms == base - 60_000)
+        )
         assert last is not None
         last.close = D("100")
     no_signal = _plan(engine, clock)
@@ -236,7 +242,9 @@ def test_readonly_snapshot_latest_only_replay_quality_and_sell(engine: Engine) -
             "signal-existing-open",
         )
     with Session(engine) as session, session.begin():
-        last = session.scalar(select(SpotCandleRow).where(SpotCandleRow.open_time_ms == base - 60_000))
+        last = session.scalar(
+            select(SpotCandleRow).where(SpotCandleRow.open_time_ms == base - 60_000)
+        )
         assert last is not None
         last.close = D("98")
     journal_before = _counts(engine)
