@@ -23,7 +23,6 @@ from binance_ai_trader.models import (
     PaperSpotPositionRow,
     SpotCandleRow,
 )
-from binance_ai_trader.paper_backtest import BacktestDecision
 from binance_ai_trader.paper_execution import (
     PaperExecutionRejected,
     PaperTradeReceipt,
