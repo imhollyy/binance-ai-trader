@@ -196,6 +196,24 @@ def test_next_closed_candle_atomic_buy_sell_replay_and_fail_closed(engine: Engin
     assert _counts(engine) == (61, 1, 1, 2)
     assert _execute(engine, buy, end) == receipts[0]
 
+    # Reusing the SAME idempotency key with a changed NEXT open price
+    # must conflict, never silently return a different fill or debit.
+    with Session(engine) as session, session.begin():
+        next_candle = session.scalar(
+            select(SpotCandleRow).where(SpotCandleRow.open_time_ms == start)
+        )
+        assert next_candle is not None
+        next_candle.open = D("102.5")
+    with pytest.raises(PaperExecutionRejected, match="paper_idempotency_conflict"):
+        _execute(engine, buy, end)
+    assert _counts(engine) == (61, 1, 1, 2)
+    with Session(engine) as session, session.begin():
+        next_candle = session.scalar(
+            select(SpotCandleRow).where(SpotCandleRow.open_time_ms == start)
+        )
+        assert next_candle is not None
+        next_candle.open = D("102")
+
     assert DB_URL is not None
     restarted = create_engine(DB_URL, pool_pre_ping=True)
     try:
