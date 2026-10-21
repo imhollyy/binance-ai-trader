@@ -44,9 +44,7 @@ class ClosedCandleObservation:
 class CausalSpotStrategy(Protocol):
     """Only historical observations are provided; user implementations are untrusted."""
 
-    def on_closed_candle(
-        self, observation: ClosedCandleObservation
-    ) -> BacktestDecision | None: ...
+    def on_closed_candle(self, observation: ClosedCandleObservation) -> BacktestDecision | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,9 +82,7 @@ class SmaCrossStrategy:
 
     params: SmaCrossParameters = SmaCrossParameters()
 
-    def on_closed_candle(
-        self, observation: ClosedCandleObservation
-    ) -> BacktestDecision | None:
+    def on_closed_candle(self, observation: ClosedCandleObservation) -> BacktestDecision | None:
         observed = observation.observed
         fast = self.params.fast_window
         slow = self.params.slow_window
