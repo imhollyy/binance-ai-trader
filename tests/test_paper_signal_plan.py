@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import cast
 
 import pytest
 
@@ -19,21 +20,26 @@ D = Decimal
 
 
 def test_invalid_clock_or_market_parameters_fail_without_io() -> None:
-    params = {
-        "symbol": "BTCUSDT",
-        "interval": "1m",
-        "source_state": SourceState.HEALTHY,
-        "source_checked_at_ms": 120_000,
-        "now_ms": 120_000,
-    }
     for value in (-1, 0, True, "120000"):
         with pytest.raises(ValueError, match="invalid_utc_clock"):
-            plan_paper_spot_signal_once(None, **(params | {"now_ms": value}))
+            plan_paper_spot_signal_once(
+                None, symbol="BTCUSDT", interval="1m",
+                source_state=SourceState.HEALTHY, source_checked_at_ms=120_000,
+                now_ms=cast(int, value),
+            )
     with pytest.raises(ValueError, match="unsupported_spot_market"):
-        plan_paper_spot_signal_once(None, **(params | {"symbol": "DOGEUSDT"}))
+        plan_paper_spot_signal_once(
+            None, symbol="DOGEUSDT", interval="1m",
+            source_state=SourceState.HEALTHY, source_checked_at_ms=120_000,
+            now_ms=120_000,
+        )
     for limit in (0, 49, 1001, True):
         with pytest.raises(ValueError, match="invalid_history_limit"):
-            plan_paper_spot_signal_once(None, **params, candles_limit=limit)
+            plan_paper_spot_signal_once(
+                None, symbol="BTCUSDT", interval="1m",
+                source_state=SourceState.HEALTHY, source_checked_at_ms=120_000,
+                now_ms=120_000, candles_limit=limit,
+            )
 
 
 def test_fail_closed_unknown_and_rate_limited_source_state() -> None:
