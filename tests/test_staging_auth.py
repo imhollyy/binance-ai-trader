@@ -158,6 +158,42 @@ def test_viewer_denied_settings_and_csrf_logout_replay(
     assert code(client, "/api/v1/settings", headers=HEADERS) == 401
 
 
+def test_expired_session_logout_clears_stale_cookie_without_weakening_csrf(
+    staging: tuple[TestClient, Engine],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, engine = staging
+    csrf = login(client)
+    old_cookie = client.cookies.get(COOKIE)
+    assert old_cookie is not None
+    with Session(engine) as session:
+        row = session.scalar(select(StagingSessionRow))
+        assert row is not None
+        expired_after = row.expires_at_ms + 1
+
+    # Simulate an elapsed 15-minute staging session without waiting.
+    monkeypatch.setattr("binance_ai_trader.staging_auth._now_ms", lambda: expired_after)
+    assert code(client, "/api/v1/auth/session", headers=HEADERS) == 401
+    invalid_origin = client.post(
+        "/api/v1/auth/logout",
+        headers={**HEADERS, "Origin": "https://evil.example", "X-CSRF-Token": csrf},
+    )
+    assert invalid_origin.status_code == 403
+    assert client.cookies.get(COOKIE) == old_cookie
+
+    result = client.post("/api/v1/auth/logout", headers={**HEADERS, "X-CSRF-Token": csrf})
+    assert result.status_code == 200
+    assert result.json() == {"status": "signed_out"}
+    assert "max-age=0" in result.headers["set-cookie"].lower()
+    assert client.cookies.get(COOKIE) is None
+    assert code(client, "/api/v1/auth/session", headers=HEADERS) == 401
+
+    # Already signed out is safe/idempotent, but missing or wrong Origin
+    # remains forbidden even without a valid cookie.
+    assert code(client, "/api/v1/auth/logout", method="POST", headers=HEADERS) == 200
+    assert code(client, "/api/v1/auth/logout", method="POST", headers={}) == 403
+
+
 def test_operator_requires_origin_csrf_elevation_and_revokes_on_logout(
     staging: tuple[TestClient, Engine],
 ) -> None:

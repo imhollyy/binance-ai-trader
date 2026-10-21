@@ -74,7 +74,10 @@ def main() -> None:
     assert code == 200
     assert set_cookie is not None
     assert all(flag in set_cookie.lower() for flag in ("secure", "httponly", "samesite=strict"))
-    assert json.loads(body)["role"] == "viewer"
+    session = json.loads(body)
+    assert session["role"] == "viewer"
+    csrf = session["csrf_token"]
+    assert isinstance(csrf, str) and len(csrf) == 64
     cookie = set_cookie.split(";", maxsplit=1)[0]
     code, dash, _ = send("/api/v1/paper/dashboard", cookie=cookie)
     assert code == 200 and json.loads(dash)["mode"] == "paper"
@@ -86,6 +89,28 @@ def main() -> None:
     assert code == 404
     code, _, _ = send("/api/v1/auth/login", method="POST", body=payload, origin="https://evil.test")
     assert code == 403
+
+    # Exercise the same POST Origin, JSON content-type, cookie and CSRF
+    # headers used by the real browser logout UI (no Cloudflare involved).
+    logout_headers = {
+        "Host": HOST,
+        "Origin": ORIGIN,
+        "Cookie": cookie,
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrf,
+    }
+    conn = http.client.HTTPConnection("127.0.0.1", port=8765, timeout=6)
+    try:
+        conn.request("POST", "/api/v1/auth/logout", body=b"{}", headers=logout_headers)
+        logout = conn.getresponse()
+        logout_status = logout.status
+        logout.read()
+    finally:
+        conn.close()
+    assert logout_status == 200
+    code, _, _ = send("/api/v1/auth/session", cookie=cookie)
+    assert code == 401
+    print("Quick-origin browser-style CSRF logout and revoked-cookie denial: PASS")
     print("Internal routes, wrong host and wrong origin denied: PASS")
     print("NOT RUN: Cloudflare Quick Tunnel email PIN, public trusted TLS or browser cookies")
 

@@ -255,7 +255,20 @@ class StagingAccess:
 
         @app.post("/api/v1/auth/logout")
         def logout(request: Request, response: Response) -> dict[str, str]:
-            row = self._current(request, require_csrf=True)
+            try:
+                row = self._current(request, require_csrf=True)
+            except HTTPException as exc:
+                # An expired/missing/revoked session is already signed out on
+                # the server. Clear its stale browser cookie without treating
+                # a legitimate sign-out as an error. 403 Origin/CSRF and 503
+                # database failures still fail closed and are NOT swallowed.
+                if exc.status_code != 401:
+                    raise
+                response.delete_cookie(
+                    COOKIE, path="/", secure=True, httponly=True, samesite="strict"
+                )
+                response.headers["Cache-Control"] = "no-store, private"
+                return {"status": "signed_out"}
             try:
                 with Session(self._engine()) as session, session.begin():
                     session.execute(
