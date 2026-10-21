@@ -97,13 +97,9 @@ def _run_loop(
             # Host callback receives a bounded safe reason and PAPER journal key.
             report(outcome)
         if outcome.status is PaperWorkerStatus.DISABLED:
-            return SchedulerSummary(
-                SchedulerStatus.DISABLED, outcome.reason, ticks, outcome.status
-            )
+            return SchedulerSummary(SchedulerStatus.DISABLED, outcome.reason, ticks, outcome.status)
         if outcome.status is PaperWorkerStatus.ERROR:
-            return SchedulerSummary(
-                SchedulerStatus.FAILED, outcome.reason, ticks, outcome.status
-            )
+            return SchedulerSummary(SchedulerStatus.FAILED, outcome.reason, ticks, outcome.status)
         if stop_event.is_set():
             return SchedulerSummary(
                 SchedulerStatus.STOPPED, "stop_requested", ticks, outcome.status
@@ -220,6 +216,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     signal.signal(signal.SIGINT, request_stop)
     engine = create_engine(database_url, pool_pre_ping=True, pool_timeout=5)
     try:
+
         def log_safe(result: PaperWorkerReport) -> None:
             # Never log connection strings, credentials, prices, position cash,
             # arbitrary exception messages or identifiable user fields.
