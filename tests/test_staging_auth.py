@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -249,3 +250,73 @@ def test_stage_config_never_falls_back_to_legacy_admin() -> None:
             viewer_password_hash="bad",
             operator_password_hash="bad",
         )
+
+
+@pytest.mark.parametrize(
+    "bad_host",
+    (
+        "*.staging.example",
+        "api..staging.example",
+        "api.staging.example.",
+        "-api.staging.example",
+        "api-.staging.example",
+        "bad_host.staging.example",
+        "API.staging.example",
+        "api staging.example",
+        "192.0.2.12",
+        "a" * 64 + ".staging.example",
+    ),
+)
+def test_staging_rejects_non_exact_api_dns_names(bad_host: str) -> None:
+    good = config()
+    with pytest.raises(ValueError, match="Staging origin and API host"):
+        replace(good, staging_host=bad_host)
+
+
+@pytest.mark.parametrize(
+    "bad_origin",
+    (
+        "https://*.staging.example",
+        "https://app..staging.example",
+        "https://app.staging.example.",
+        "https://bad_host.staging.example",
+        "https://APP.staging.example",
+        "https://büro.staging.example",
+        "https://192.0.2.12",
+    ),
+)
+def test_staging_rejects_non_exact_origin_dns_names(bad_origin: str) -> None:
+    good = config()
+    with pytest.raises(ValueError, match="Staging origin and API host"):
+        replace(good, staging_origin=bad_origin)
+
+
+def test_staging_supports_a_single_strict_https_hostname() -> None:
+    good = config()
+    same_host = replace(good, staging_host="app.staging.example")
+    assert same_host.staging_origin == "https://app.staging.example"
+
+
+def test_client_forwarded_https_headers_cannot_upgrade_http_scheme(
+    staging: tuple[TestClient, Engine],
+) -> None:
+    valid_https_client, engine = staging
+    spoof_headers = {
+        **HEADERS,
+        "X-Forwarded-Proto": "https",
+        "X-Forwarded-Host": "api.staging.example",
+        "Forwarded": "proto=https;host=api.staging.example",
+    }
+    with TestClient(valid_https_client.app, base_url="http://api.staging.example") as client:
+        assert (
+            code(
+                client,
+                "/api/v1/auth/login",
+                method="POST",
+                headers=spoof_headers,
+                payload={"username": "viewer", "password": VIEW_PASS},
+            )
+            == 403
+        )
+    with Session(engine) as session:
+        assert session.scalar(select(func.count()).select_from(StagingSessionRow)) == 0

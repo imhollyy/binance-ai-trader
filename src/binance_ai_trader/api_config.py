@@ -2,12 +2,31 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from ipaddress import ip_address
 from os import environ
 from urllib.parse import urlsplit
 
 from binance_ai_trader.config import Settings
+
+
+def _exact_dns_name(value: str | None) -> bool:
+    """Only an exact, lowercase ASCII DNS hostname; never a wildcard/IP."""
+    if value is None or len(value) > 253 or value != value.lower():
+        return False
+    labels = value.split(".")
+    if len(labels) < 2 or not all(
+        re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label, flags=re.ASCII)
+        for label in labels
+    ):
+        return False
+    try:
+        ip_address(value)
+    except ValueError:
+        return True
+    return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,11 +62,8 @@ class ApiConfig:
                 or parsed.fragment
                 or parsed.port not in (None, 443)
                 or origin != f"https://{parsed.hostname}"
-                or host != host.lower()
-                or ":" in host
-                or "/" in host
-                or host in ("localhost", "127.0.0.1", "testserver")
-                or "." not in host
+                or not _exact_dns_name(parsed.hostname)
+                or not _exact_dns_name(host)
             ):
                 raise ValueError("Staging origin and API host must be exact HTTPS DNS names")
             from binance_ai_trader.staging_auth import valid_password_hash
