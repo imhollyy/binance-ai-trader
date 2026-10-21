@@ -123,8 +123,10 @@ def smoke() -> None:
             time.sleep(2)
         print("Local single-host TLS web route: PASS (ephemeral internal CA)")
 
-        # Never confuse a web 200 with API readiness: require real auth roundtrip.
-        deadline = time.monotonic() + 150
+        # Never confuse web 200 with API readiness: require real authentication.
+        # Only the numeric HTTP code is diagnostic, never headers/body/cookie.
+        deadline = time.monotonic() + 75
+        retry = 0
         while True:
             code, response = request(
                 "/api/v1/auth/login", dest, method="POST", cookie=cookie, body=body
@@ -135,8 +137,11 @@ def smoke() -> None:
                 csrf = data["csrf_token"]
                 assert isinstance(csrf, str) and len(csrf) == 64
                 break
+            retry += 1
+            if code in (400, 401, 403, 404, 405, 422) and retry >= 3:
+                raise RuntimeError(f"Staging login rejected with HTTP {code} (no details logged)")
             if time.monotonic() >= deadline:
-                raise RuntimeError("Private preview API auth is not ready")
+                raise RuntimeError(f"Private preview API not ready, HTTP {code}")
             time.sleep(2)
         print("Actual loopback HTTPS -> private Caddy -> FastAPI -> PostgreSQL login: PASS")
 
