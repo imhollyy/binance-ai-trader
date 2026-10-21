@@ -24,8 +24,8 @@ from binance_ai_trader.models import (
     TradingSettingsRow,
 )
 from binance_ai_trader.paper_ledger import ensure_paper_spot_account
-from binance_ai_trader.paper_worker import PaperWorkerStatus, run_paper_worker_once
 from binance_ai_trader.paper_strategy import SmaCrossParameters
+from binance_ai_trader.paper_worker import PaperWorkerStatus, run_paper_worker_once
 from binance_ai_trader.risk_schemas import RiskSettings
 
 DB_URL = os.environ.get("TEST_POSTGRES_URL")
