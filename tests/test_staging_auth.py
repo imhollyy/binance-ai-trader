@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator, Mapping
 from dataclasses import replace
 
@@ -320,3 +321,103 @@ def test_client_forwarded_https_headers_cannot_upgrade_http_scheme(
         )
     with Session(engine) as session:
         assert session.scalar(select(func.count()).select_from(StagingSessionRow)) == 0
+
+
+def test_staging_rotation_invalidates_existing_role_cookie(
+    staging: tuple[TestClient, Engine],
+) -> None:
+    client, engine = staging
+    _ = login(client, "viewer")
+    old_viewer = client.cookies.get(COOKIE)
+    assert old_viewer is not None
+    client.cookies.clear()
+
+    _ = login(client, "operator")
+    old_operator = client.cookies.get(COOKIE)
+    assert old_operator is not None
+    client.cookies.clear()
+
+    rotated_secret = "synthetic-rotated-viewer-passphrase-2026"
+    rotated = replace(
+        config(),
+        viewer_password_hash=password_hash(rotated_secret, salt=b"rotated-viewer-1"),
+    )
+    # A freshly configured API instance references the SAME persisted DB.
+    with TestClient(create_app(config=rotated, engine=engine), base_url=BASE) as new_instance:
+        viewer_cookie = {"Cookie": f"{COOKIE}={old_viewer}"}
+        operator_cookie = {"Cookie": f"{COOKIE}={old_operator}"}
+        assert (
+            new_instance.get(
+                "/api/v1/auth/session", headers={**HEADERS, **viewer_cookie}
+            ).status_code
+            == 401
+        )
+        assert (
+            new_instance.get(
+                "/api/v1/auth/session", headers={**HEADERS, **operator_cookie}
+            ).status_code
+            == 200
+        )
+        assert (
+            new_instance.post(
+                "/api/v1/auth/login",
+                headers=HEADERS,
+                json={"username": "viewer", "password": rotated_secret},
+            ).status_code
+            == 200
+        )
+        assert new_instance.get("/api/v1/auth/session", headers=HEADERS).status_code == 200
+
+    # Invalidated rows remain as audit/revocation evidence rather than being
+    # automatically deleted; expired session cleanup is a separate task.
+    with Session(engine) as session:
+        assert session.scalar(select(func.count()).select_from(StagingSessionRow)) == 3
+
+
+def test_staging_safe_log_and_no_store_on_success_denial_and_validation(
+    staging: tuple[TestClient, Engine], caplog: pytest.LogCaptureFixture
+) -> None:
+    client, _ = staging
+    password_marker = "synthetic-secret-sentinel-" + "z" * 300
+    query_marker = "QUERY-SENTINEL-NEVER-LOG"
+    fake_cookie = "COOKIE-SENTINEL-NEVER-LOG"
+    fake_csrf = "CSRF-SENTINEL-NEVER-LOG"
+
+    with caplog.at_level(logging.INFO, logger="binance_ai_trader.staging_events"):
+        denied = client.get(
+            "/api/v1/settings?debug=" + query_marker,
+            headers={**HEADERS, "Cookie": f"{COOKIE}={fake_cookie}", "X-CSRF-Token": fake_csrf},
+        )
+        validation = client.post(
+            "/api/v1/auth/login",
+            headers=HEADERS,
+            json={"username": "viewer", "password": password_marker},
+        )
+        wrong_origin = client.get("/api/v1/status", headers={"Origin": "https://untrusted.example"})
+        unknown = client.get("/anything-" + query_marker + "?q=" + fake_cookie)
+        csrf = login(client)
+        signed_in = client.get("/api/v1/auth/session", headers=HEADERS)
+
+    assert (denied.status_code, validation.status_code, wrong_origin.status_code) == (401, 422, 403)
+    assert unknown.status_code == 404
+    assert signed_in.status_code == 200
+    assert len(csrf) == 64
+    for response in (denied, validation, wrong_origin, unknown, signed_in):
+        assert response.headers["cache-control"] == "no-store, private"
+        assert response.headers["pragma"] == "no-cache"
+        assert response.headers["referrer-policy"] == "no-referrer"
+        assert response.headers["x-content-type-options"] == "nosniff"
+    assert validation.json() == {"detail": "Invalid request"}
+
+    safe_logs = "\n".join(
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "binance_ai_trader.staging_events"
+    )
+    assert "staging_http route=login method=POST status=4xx" in safe_logs
+    assert "staging_http route=settings method=GET status=4xx" in safe_logs
+    assert "staging_http route=other method=GET status=4xx" in safe_logs
+    assert "staging_http route=session method=GET status=2xx" in safe_logs
+    for secret in (password_marker, query_marker, fake_cookie, fake_csrf, csrf):
+        assert secret not in safe_logs
+    assert password_marker not in validation.text

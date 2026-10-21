@@ -200,6 +200,64 @@ production RPO/RTO proof. Staging database provider isolation and
 real-world restore/retention remain **NOT RUN** until explicit
 infrastructure approval.
 
+## Staging observability and credential-rotation preflight (not deployed)
+
+The staging-only `StagingObservabilityMiddleware` sets `Cache-Control:
+no-store, private`, `Pragma: no-cache`, `Referrer-Policy:
+no-referrer`, and `X-Content-Type-Options: nosniff` on application
+responses, including handled 4xx rejections. It emits bounded,
+structured `staging_http` events with **only** an exact allowlisted
+route category, a fixed HTTP-method category and a 2xx/4xx/5xx status
+class. Unknown paths are recorded as `other`. It never serializes a
+URL, query string, address, forwarded headers, cookies, CSRF token,
+username, password, role, database URL, body or traceback. Staging
+validation errors return the generic `{"detail":"Invalid request"}`,
+not Pydantic `input` containing an attempted password.
+
+**Critical additional perimeter rule:** Uvicorn's ordinary access log,
+Next.js request logging and reverse-proxy or Cloudflare request logs are
+**outside the scope** of this FastAPI middleware. A staging service must
+disable *raw* Uvicorn access logging (for example start a reviewed
+Uvicorn command with `--no-access-log`), and suppress or redact edge,
+proxy and web access logs before any real use. Never log URL queries,
+headers, `Set-Cookie`, `Cookie` or request/response bodies at any
+layer. The middleware is **not** proof that a deployed stack is free
+of sensitive log leaks. CDN/hosting audit settings must be reviewed.
+
+The stored staging cookie-token digest is now HMAC-SHA256 keyed by the
+**current role-specific salted scrypt verifier**. If the viewer verifier
+changes, a *new* API instance with that verifier cannot authenticate
+old viewer cookies; it can continue to authenticate valid operator
+cookies against the unchanged operator verifier. The same behavior
+applies in reverse. This deliberately invalidates legacy plain-SHA256
+staging sessions; no Alembic migration or deletion is needed. Tokens
+and verifier material are never placed in structured events.
+
+**Safe rotation sequence, subject to separate staging authorization:**
+1. Block new staging traffic at private Access/ingress and stop/drain
+   **all** API instances using the old verifier; otherwise rolling
+   mixed-version instances may still accept old cookies.
+2. Provision two independently rotated verifier hashes through the
+   authorized staging secret store; never print or place them in Git
+   or `NEXT_PUBLIC_*` values. Separately rotate DB/TLS/Access secrets
+   following the provider's documented steps.
+3. Deploy/restart **all** isolated staging instances with identical
+   verifier versions. Keep the ingress closed until a disposable
+   synthetic browser session confirms old cookies rejected, new viewer
+   and operator logins work, and no unexpected access logs appear.
+4. For an explicit emergency all-session revocation, use a separately
+   authorized and audited PostgreSQL transaction on the verified
+   **staging-only** database to mark sessions revoked. Do not run it
+   against personal, production or shared data.
+5. Restore ingress only after incident contacts, redaction policy and
+   rollback are checked. Never restore a known-compromised old
+   verifier or let an old API process remain live during cutover.
+
+Evidence for the above is **LOCAL_STAGING_UNIT/PG/TLS_FIXTURE** only.
+Cloudflare Access edge logs, actual multi-instance deployment, real
+provider rotation, offsite backup and hosted HTTPS browser verification
+remain **NOT RUN**. This preflight does not authorize a deployment.
+
 ## 5. Rollout, shutdown and incident plan (approval gated)
 
 **Before creating any provider resources** record a separate explicit

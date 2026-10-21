@@ -7,6 +7,7 @@ from decimal import Decimal
 from hmac import compare_digest
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -21,6 +22,7 @@ from binance_ai_trader.paper_dashboard_api import register_paper_dashboard_route
 from binance_ai_trader.paper_read_api import register_paper_spot_read_route
 from binance_ai_trader.risk_schemas import RiskSettings, SettingsSnapshot, SettingsUpdate
 from binance_ai_trader.staging_auth import StagingAccess
+from binance_ai_trader.staging_observability import StagingObservabilityMiddleware
 
 
 class AuditEvent(BaseModel):
@@ -101,6 +103,18 @@ def create_app(
             [settings.staging_host or ""] if staging else ["localhost", "127.0.0.1", "testserver"]
         ),
     )
+
+    if staging:
+        # All staging responses, including denied requests, must prevent
+        # caching; audit only fixed safe route/status buckets, not raw URLs.
+        app.add_middleware(StagingObservabilityMiddleware)
+
+        @app.exception_handler(RequestValidationError)
+        async def staging_invalid_payload(
+            _request: Request, _exc: RequestValidationError
+        ) -> JSONResponse:
+            # Pydantic errors may echo "input", including attempted passwords.
+            return JSONResponse(status_code=422, content={"detail": "Invalid request"})
 
     def require_admin(
         request: Request,

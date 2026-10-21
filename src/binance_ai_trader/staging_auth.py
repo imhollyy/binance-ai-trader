@@ -101,6 +101,24 @@ class StagingAccess:
         self.config = config
         self.engine = engine
 
+    def _session_key(self, raw: str, role: str) -> str:
+        """Bind the bearer digest to the currently configured role verifier.
+
+        Updating that role's salted verifier invalidates *all* older tokens
+        without dropping migration 0006 tables or requiring raw token storage.
+        Never include the verifier, token or generated key in logs.
+        """
+        verifier = (
+            self.config.viewer_password_hash
+            if role == "viewer"
+            else self.config.operator_password_hash
+            if role == "operator"
+            else None
+        )
+        if verifier is None:
+            raise ValueError("Unknown staging session role")
+        return hmac.new(verifier.encode("ascii"), raw.encode("ascii"), hashlib.sha256).hexdigest()
+
     def _origin(self, request: Request, *, required: bool = False) -> None:
         # Host checked independently by TrustedHostMiddleware.
         if request.url.scheme != "https":
@@ -124,13 +142,23 @@ class StagingAccess:
         if not raw or len(raw) != 64:
             raise HTTPException(401, "Session required")
         try:
-            key = _digest(raw)
+            candidates = (
+                self._session_key(raw, "viewer"),
+                self._session_key(raw, "operator"),
+            )
         except UnicodeEncodeError as exc:
             raise HTTPException(401, "Session required") from exc
         try:
             with Session(self._engine()) as session:
-                row = session.get(StagingSessionRow, key)
-                if row is None or row.revoked or row.expires_at_ms <= _now_ms():
+                row = session.scalars(
+                    select(StagingSessionRow).where(StagingSessionRow.token_hash.in_(candidates))
+                ).one_or_none()
+                if (
+                    row is None
+                    or row.token_hash != self._session_key(raw, row.role)
+                    or row.revoked
+                    or row.expires_at_ms <= _now_ms()
+                ):
                     raise HTTPException(401, "Session expired or revoked")
                 if require_csrf:
                     candidate = request.headers.get("x-csrf-token", "")
@@ -192,7 +220,7 @@ class StagingAccess:
                         expires = now + SESSION_LIFETIME_MS
                         session.add(
                             StagingSessionRow(
-                                token_hash=_digest(sid),
+                                token_hash=self._session_key(sid, body.username),
                                 csrf_hash=_digest(csrf),
                                 role=body.username,
                                 issued_at_ms=now,
