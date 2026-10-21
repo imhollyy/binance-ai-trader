@@ -20,8 +20,10 @@ def upgrade() -> None:
         "paper_spot_observed_quotes",
         sa.Column("id", sa.BigInteger(), sa.Identity(), primary_key=True),
         sa.Column(
-            "journal_id", sa.BigInteger(),
-            sa.ForeignKey("paper_spot_journal.id", ondelete="RESTRICT"), nullable=False,
+            "journal_id",
+            sa.BigInteger(),
+            sa.ForeignKey("paper_spot_journal.id", ondelete="RESTRICT"),
+            nullable=False,
         ),
         sa.Column("symbol", sa.String(20), nullable=False),
         sa.Column("interval", sa.String(5), nullable=False),
@@ -33,16 +35,14 @@ def upgrade() -> None:
         sa.Column("fee_bps", sa.Integer(), nullable=False),
         sa.Column("slippage_bps", sa.Integer(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            nullable=False, server_default=sa.func.now(),
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
         ),
         sa.UniqueConstraint("journal_id", name="uq_paper_spot_observed_quotes_journal"),
-        sa.CheckConstraint(
-            "symbol IN ('BTCUSDT', 'ETHUSDT')", name="ck_paper_observed_symbol"
-        ),
-        sa.CheckConstraint(
-            "interval IN ('1m', '5m', '15m')", name="ck_paper_observed_interval"
-        ),
+        sa.CheckConstraint("symbol IN ('BTCUSDT', 'ETHUSDT')", name="ck_paper_observed_symbol"),
+        sa.CheckConstraint("interval IN ('1m', '5m', '15m')", name="ck_paper_observed_interval"),
         sa.CheckConstraint(
             "source = 'binance_public_spot_ticker_price'", name="ck_paper_observed_source"
         ),
@@ -74,8 +74,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    if op.get_bind().execute(
-        sa.text("SELECT EXISTS (SELECT 1 FROM paper_spot_observed_quotes)")
-    ).scalar_one():
+    if (
+        op.get_bind()
+        .execute(sa.text("SELECT EXISTS (SELECT 1 FROM paper_spot_observed_quotes)"))
+        .scalar_one()
+    ):
         raise RuntimeError("Refusing to erase observed PAPER quote audit history")
     op.drop_table("paper_spot_observed_quotes")
