@@ -107,8 +107,7 @@ def register_paper_dashboard_route(
                 worker = PaperWorkerLastKnown(
                     requested_enabled=(
                         settings.data.get("bot_enabled")
-                        if settings is not None
-                        and type(settings.data.get("bot_enabled")) is bool
+                        if settings is not None and type(settings.data.get("bot_enabled")) is bool
                         else None
                     ),
                     last_status=guard.last_status if guard else None,
@@ -151,24 +150,33 @@ def register_paper_dashboard_route(
                     else []
                 )
                 by_journal = {q.journal_id: q for q in quotes}
-                total_positions = session.scalar(
-                    select(func.count())
-                    .select_from(PaperSpotPositionRow)
-                    .where(PaperSpotPositionRow.account_id == account.id)
-                ) or 0
-                open_positions = session.scalar(
-                    select(func.count())
-                    .select_from(PaperSpotPositionRow)
-                    .where(
-                        PaperSpotPositionRow.account_id == account.id,
-                        PaperSpotPositionRow.status == "open",
+                total_positions = (
+                    session.scalar(
+                        select(func.count())
+                        .select_from(PaperSpotPositionRow)
+                        .where(PaperSpotPositionRow.account_id == account.id)
                     )
-                ) or 0
-                total_events = session.scalar(
-                    select(func.count())
-                    .select_from(PaperSpotJournalRow)
-                    .where(PaperSpotJournalRow.account_id == account.id)
-                ) or 0
+                    or 0
+                )
+                open_positions = (
+                    session.scalar(
+                        select(func.count())
+                        .select_from(PaperSpotPositionRow)
+                        .where(
+                            PaperSpotPositionRow.account_id == account.id,
+                            PaperSpotPositionRow.status == "open",
+                        )
+                    )
+                    or 0
+                )
+                total_events = (
+                    session.scalar(
+                        select(func.count())
+                        .select_from(PaperSpotJournalRow)
+                        .where(PaperSpotJournalRow.account_id == account.id)
+                    )
+                    or 0
+                )
                 return PaperDashboardView(
                     initialized=True,
                     account=PaperOverviewAccount(
