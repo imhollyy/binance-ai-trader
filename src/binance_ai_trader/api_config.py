@@ -81,6 +81,7 @@ class ApiConfig:
         if token is not None and len(token) < 32:
             raise ValueError("ADMIN_TOKEN must contain at least 32 characters.")
         return cls(
-            database_url=values.get("DATABASE_URL"), admin_token=token,
+            database_url=values.get("DATABASE_URL"),
+            admin_token=token,
             auth_mode=mode,
         )
