@@ -240,15 +240,16 @@ def test_real_tls_cookie_csrf_and_revocation(
     assert client.cookies.get(COOKIE) is not None
     assert client.get("/api/v1/auth/session").status_code == 200
     settings = client.get("/api/v1/settings").json()
-    assert client.put(
-        "/api/v1/settings",
-        headers={"X-CSRF-Token": csrf, "X-Paper-Settings-Approval": "PAPER_SETTINGS_ONLY"},
-        json={"expected_version": 0, "settings": settings["settings"]},
-    ).status_code == 403
+    assert (
+        client.put(
+            "/api/v1/settings",
+            headers={"X-CSRF-Token": csrf, "X-Paper-Settings-Approval": "PAPER_SETTINGS_ONLY"},
+            json={"expected_version": 0, "settings": settings["settings"]},
+        ).status_code
+        == 403
+    )
     assert client.post("/api/v1/auth/logout").status_code == 403
-    assert client.post(
-        "/api/v1/auth/logout", headers={"X-CSRF-Token": csrf}
-    ).status_code == 200
+    assert client.post("/api/v1/auth/logout", headers={"X-CSRF-Token": csrf}).status_code == 200
     assert client.get("/api/v1/auth/session").status_code == 401
 
 
@@ -265,12 +266,18 @@ def test_tls_proxy_strips_spoofed_forwarded_headers_and_rejects_bad_host(
     }
     # Client-supplied forwarding headers cannot alter the verified TLS fact.
     assert client.post("/api/v1/auth/login", headers=forged, json=payload).status_code == 200
-    assert client.post(
-        "/api/v1/auth/login", headers={"Host": "evil.example"}, json=payload
-    ).status_code == 400
-    assert client.post(
-        "/api/v1/auth/login", headers={"Origin": "https://evil.example"}, json=payload
-    ).status_code == 403
+    assert (
+        client.post(
+            "/api/v1/auth/login", headers={"Host": "evil.example"}, json=payload
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            "/api/v1/auth/login", headers={"Origin": "https://evil.example"}, json=payload
+        ).status_code
+        == 403
+    )
     assert client.get("/health/live").status_code == 404
 
     # A direct HTTP caller on 127.0.0.1, even with an HTTPS scheme spoof,
@@ -297,9 +304,15 @@ def test_operator_elevation_over_real_loopback_tls(
     payload = {"expected_version": 0, "settings": snapshot["settings"]}
     approval = {"X-Paper-Settings-Approval": "PAPER_SETTINGS_ONLY"}
     assert client.put("/api/v1/settings", headers=approval, json=payload).status_code == 403
-    assert client.put(
-        "/api/v1/settings", headers={**approval, "X-CSRF-Token": "x" * 64}, json=payload
-    ).status_code == 403
-    assert client.put(
-        "/api/v1/settings", headers={**approval, "X-CSRF-Token": csrf}, json=payload
-    ).status_code == 200
+    assert (
+        client.put(
+            "/api/v1/settings", headers={**approval, "X-CSRF-Token": "x" * 64}, json=payload
+        ).status_code
+        == 403
+    )
+    assert (
+        client.put(
+            "/api/v1/settings", headers={**approval, "X-CSRF-Token": csrf}, json=payload
+        ).status_code
+        == 200
+    )
