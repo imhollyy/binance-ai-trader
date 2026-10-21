@@ -64,26 +64,38 @@ def engine() -> Iterator[Engine]:
 def _candle(open_ms: int, close_price: str = "100") -> SpotCandleRow:
     price = D(close_price)
     return SpotCandleRow(
-        symbol="BTCUSDT", interval="1m",
-        open_time_ms=open_ms, close_time_ms=open_ms + 59_999,
-        open=price, high=price + D("1"), low=price - D("1"),
-        close=price, volume=D("1"),
+        symbol="BTCUSDT",
+        interval="1m",
+        open_time_ms=open_ms,
+        close_time_ms=open_ms + 59_999,
+        open=price,
+        high=price + D("1"),
+        low=price - D("1"),
+        close=price,
+        volume=D("1"),
     )
 
 
 def _plan(db: Engine, at_ms: int) -> PaperSignalPlan:
     return plan_paper_spot_signal_once(
         db,
-        symbol="BTCUSDT", interval="1m",
-        source_state=SourceState.HEALTHY, source_checked_at_ms=at_ms,
-        params=PARAMS, now_ms=at_ms,
+        symbol="BTCUSDT",
+        interval="1m",
+        source_state=SourceState.HEALTHY,
+        source_checked_at_ms=at_ms,
+        params=PARAMS,
+        now_ms=at_ms,
     )
 
 
 def _execute(db: Engine, plan: PaperSignalPlan, at_ms: int) -> PaperTradeReceipt:
     return execute_paper_signal_once(
-        db, plan, source_state=SourceState.HEALTHY,
-        source_checked_at_ms=at_ms, params=PARAMS, now_ms=at_ms,
+        db,
+        plan,
+        source_state=SourceState.HEALTHY,
+        source_checked_at_ms=at_ms,
+        params=PARAMS,
+        now_ms=at_ms,
     )
 
 
@@ -105,16 +117,16 @@ def test_next_closed_candle_atomic_buy_sell_replay_and_fail_closed(engine: Engin
     with Session(engine) as session, session.begin():
         session.add(
             TradingSettingsRow(
-                id=1, version=1,
+                id=1,
+                version=1,
                 data=RiskSettings(
                     bot_enabled=True, manual_approval=False, risk_per_trade_pct=2
                 ).model_dump(mode="json"),
             )
         )
-        session.add_all([
-            _candle(start - (60 - i) * 60_000, "102" if i == 59 else "100")
-            for i in range(60)
-        ])
+        session.add_all(
+            [_candle(start - (60 - i) * 60_000, "102" if i == 59 else "100") for i in range(60)]
+        )
     with Session(engine) as session:
         ensure_paper_spot_account(session)
 
@@ -139,8 +151,12 @@ def test_next_closed_candle_atomic_buy_sell_replay_and_fail_closed(engine: Engin
     end = start + 60_001
     with pytest.raises(PaperExecutionRejected, match="source_unverified_or_restricted"):
         execute_paper_signal_once(
-            engine, buy, source_state=SourceState.RATE_LIMITED,
-            source_checked_at_ms=end, params=PARAMS, now_ms=end,
+            engine,
+            buy,
+            source_state=SourceState.RATE_LIMITED,
+            source_checked_at_ms=end,
+            params=PARAMS,
+            now_ms=end,
         )
     with Session(engine) as session, session.begin():
         settings = session.get(TradingSettingsRow, 1)
@@ -194,9 +210,7 @@ def test_next_closed_candle_atomic_buy_sell_replay_and_fail_closed(engine: Engin
 
     # Next later genuine downward SMA cross while a position exists.
     with Session(engine) as session, session.begin():
-        session.add_all(
-            [_candle(start + i * 60_000, "102") for i in range(1, 5)]
-        )
+        session.add_all([_candle(start + i * 60_000, "102") for i in range(1, 5)])
         session.add(_candle(start + 5 * 60_000, "98"))
     sell_signal_clock = start + 360_001
     sell = _plan(engine, sell_signal_clock)
@@ -219,9 +233,7 @@ def test_next_closed_candle_atomic_buy_sell_replay_and_fail_closed(engine: Engin
         positions = session.scalars(select(PaperSpotPositionRow)).all()
         assert len(positions) == 1 and positions[0].status == "closed"
         events = session.scalars(select(PaperSpotJournalRow)).all()
-        assert [event.event_type for event in events] == [
-            "account_opened", "spot_buy", "spot_sell"
-        ]
+        assert [event.event_type for event in events] == ["account_opened", "spot_buy", "spot_sell"]
     # A stale identical replay is read-only: no second debit or journal row.
     assert _execute(engine, sell, sell_end + 300_000) == exit_receipt
     assert _counts(engine) == (67, 1, 1, 3)
