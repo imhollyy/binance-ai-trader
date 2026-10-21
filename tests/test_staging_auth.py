@@ -158,7 +158,6 @@ def test_viewer_denied_settings_and_csrf_logout_replay(
     assert code(client, "/api/v1/settings", headers=HEADERS) == 401
 
 
-
 def test_expired_session_logout_clears_stale_cookie_without_weakening_csrf(
     staging: tuple[TestClient, Engine],
     monkeypatch: pytest.MonkeyPatch,
@@ -182,9 +181,7 @@ def test_expired_session_logout_clears_stale_cookie_without_weakening_csrf(
     assert invalid_origin.status_code == 403
     assert client.cookies.get(COOKIE) == old_cookie
 
-    result = client.post(
-        "/api/v1/auth/logout", headers={**HEADERS, "X-CSRF-Token": csrf}
-    )
+    result = client.post("/api/v1/auth/logout", headers={**HEADERS, "X-CSRF-Token": csrf})
     assert result.status_code == 200
     assert result.json() == {"status": "signed_out"}
     assert "max-age=0" in result.headers["set-cookie"].lower()
@@ -195,6 +192,7 @@ def test_expired_session_logout_clears_stale_cookie_without_weakening_csrf(
     # remains forbidden even without a valid cookie.
     assert code(client, "/api/v1/auth/logout", method="POST", headers=HEADERS) == 200
     assert code(client, "/api/v1/auth/logout", method="POST", headers={}) == 403
+
 
 def test_operator_requires_origin_csrf_elevation_and_revokes_on_logout(
     staging: tuple[TestClient, Engine],
