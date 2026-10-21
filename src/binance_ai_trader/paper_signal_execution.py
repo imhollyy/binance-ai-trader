@@ -33,6 +33,7 @@ from binance_ai_trader.paper_signal_plan import (
     PaperSignalPlan,
     SignalPlanStatus,
     SourceState,
+    STRATEGY_VERSION,
     _stable_key,
 )
 from binance_ai_trader.paper_spot import SpotBuyIntent
@@ -110,6 +111,7 @@ def execute_paper_signal_once(
         or not plan.latest_close_time_ms < plan.evaluated_at_ms
         or plan.evaluated_at_ms >= plan.latest_close_time_ms + 1 + step
         or decision.explicit_approval is not False
+        or plan.strategy_version != STRATEGY_VERSION
         or plan.idempotency_key
         != _stable_key(
             plan.symbol, plan.interval, plan.latest_close_time_ms, params, decision.action
