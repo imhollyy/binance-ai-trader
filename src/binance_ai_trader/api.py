@@ -84,7 +84,9 @@ def create_app(
     )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[settings.staging_origin or ""] if staging else list(settings.allowed_origins),
+        allow_origins=(
+            [settings.staging_origin or ""] if staging else list(settings.allowed_origins)
+        ),
         allow_credentials=staging,
         allow_methods=["GET", "POST", "PUT"] if staging else ["GET", "PUT"],
         allow_headers=(
