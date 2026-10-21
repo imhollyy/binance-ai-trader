@@ -63,7 +63,9 @@ def _read_env(path: Path) -> dict[str, str]:
     return result
 
 
-def prepare(origin: str, path: Path, viewer: str | None = None, operator: str | None = None) -> bool:
+def prepare(
+    origin: str, path: Path, viewer: str | None = None, operator: str | None = None
+) -> bool:
     parsed = urlsplit(origin)
     if (
         parsed.scheme != "https"
