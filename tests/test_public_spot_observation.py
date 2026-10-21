@@ -24,8 +24,18 @@ NOW = START + 50
 
 def kline(ms: int, close: str = "100") -> list[object]:
     return [
-        ms, "100", "110", "90", close, "20", ms + 59_999,
-        "0", 1, "0", "0", "0",
+        ms,
+        "100",
+        "110",
+        "90",
+        close,
+        "20",
+        ms + 59_999,
+        "0",
+        1,
+        "0",
+        "0",
+        "0",
     ]
 
 
@@ -51,7 +61,7 @@ def client(
             start = START - 60 * 60_000
             rows = [kline(start + i * 60_000) for i in range(60)]
             if malformed_kline:
-                rows[25][6] += 60_000
+                rows[25][6] = int(rows[25][6]) + 60_000
             return httpx.Response(200, json=rows)
         clock[0] += clock_overrun
         data = payload if payload is not None else {"symbol": "BTCUSDT", "price": "100.5"}
@@ -91,7 +101,8 @@ def test_quote_exchange_restrictions_fail_without_retry(status: int) -> None:
 @pytest.mark.parametrize(
     "payload",
     [
-        {}, {"symbol": "ETHUSDT", "price": "100"},
+        {},
+        {"symbol": "ETHUSDT", "price": "100"},
         {"symbol": "BTCUSDT", "price": "0"},
         {"symbol": "BTCUSDT", "price": "-1"},
         {"symbol": "BTCUSDT", "price": "NaN"},
@@ -136,9 +147,7 @@ def test_network_timeout_invalid_feed_delayed_response_or_bad_http() -> None:
 
     def fail(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v3/klines":
-            return httpx.Response(
-                200, json=[kline(START - (60 - i) * 60_000) for i in range(60)]
-            )
+            return httpx.Response(200, json=[kline(START - (60 - i) * 60_000) for i in range(60)])
         raise httpx.ReadTimeout("simulated", request=request)
 
     observer = PublicSpotObservationClient(
