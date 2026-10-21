@@ -116,11 +116,22 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
     setBusy(true);
     try {
       const response = await fetch(base + "/api/v1/auth/logout", {
-        method:"POST",credentials:"include",
-        headers:{"X-CSRF-Token":session.csrf},
+        method:"POST",credentials:"include",cache:"no-store",
+        headers:{"Content-Type":"application/json","X-CSRF-Token":session.csrf},
+        body:"{}",
       });
+      if (response.status === 401) {
+        // Older staging API versions may return 401 for a session that has
+        // already expired. This is not a live session; clear local UI state.
+        setSession(null);
+        setSnapshot(null);
+        setNotice("Oturum süresi dolmuş. Yeniden giriş yapabilirsin.");
+        return;
+      }
       if (!response.ok) {
-        setNotice("Oturum kapatma doğrulanamadı. Sayfayı kapat ve yöneticine haber ver.");
+        setNotice(response.status === 403
+          ? "Çıkış güvenlik doğrulaması tarafından reddedildi (HTTP 403). Oturum henüz doğrulanarak kapatılmadı."
+          : "Oturum kapatma doğrulanamadı (HTTP " + response.status + "). Tekrar deneyebilirsin.");
         return;
       }
       setSession(null);
