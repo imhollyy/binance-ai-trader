@@ -11,6 +11,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session
 
+import binance_ai_trader.staging_auth as staging_auth
 from binance_ai_trader.api import create_app
 from binance_ai_trader.api_config import ApiConfig
 from binance_ai_trader.models import (
@@ -20,7 +21,6 @@ from binance_ai_trader.models import (
     StagingSessionRow,
 )
 from binance_ai_trader.staging_auth import COOKIE, SESSION_LIFETIME_MS, password_hash
-import binance_ai_trader.staging_auth as staging_auth
 
 DB_URL = os.environ.get("TEST_POSTGRES_URL")
 SAFE = bool(
@@ -63,8 +63,8 @@ def _config() -> ApiConfig:
         auth_mode="staging",
         staging_origin=ORIGIN,
         staging_host="api.staging.example",
-        viewer_password_hash=password_hash(PASS, salt=b"view-auth-pg-tst1"),
-        operator_password_hash=password_hash(PASS + "-different", salt=b"oper-auth-pg-tst1"),
+        viewer_password_hash=password_hash(PASS, salt=b"view-auth-pg-tst"),
+        operator_password_hash=password_hash(PASS + "-different", salt=b"oper-auth-pg-tst"),
     )
 
 
