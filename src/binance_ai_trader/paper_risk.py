@@ -75,7 +75,11 @@ def evaluate_paper_risk(
     # only when manual approval remains enabled. Never let this turn into
     # permission for the autonomous scheduler to execute trades.
     if manual_paper_trade:
-        if type(manual_paper_trade) is not bool or settings.bot_enabled or not settings.manual_approval:
+        if (
+            type(manual_paper_trade) is not bool
+            or settings.bot_enabled
+            or not settings.manual_approval
+        ):
             return _reject("manual_paper_mode_required")
     elif not settings.bot_enabled:
         return _reject("paper_bot_disabled")
