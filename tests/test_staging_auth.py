@@ -251,6 +251,7 @@ def test_stage_config_never_falls_back_to_legacy_admin() -> None:
             operator_password_hash="bad",
         )
 
+
 @pytest.mark.parametrize(
     "bad_host",
     (
