@@ -333,7 +333,9 @@ def plan_paper_spot_signal_once(
                 SignalPlanStatus.CANDIDATE, "paper_diagnostic_only_next_open_unknown",
                 symbol, interval, clock, last.close_time_ms, len(history),
                 settings_version=settings_row.version, decision=decision,
-                idempotency_key=_stable_key(symbol, interval, last.close_time_ms, params, decision.action),
+                idempotency_key=_stable_key(
+                    symbol, interval, last.close_time_ms, params, decision.action
+                ),
             )
     except (SQLAlchemyError, OverflowError, ValueError):
         return _block("database_unavailable_or_invalid", symbol, interval, clock)
