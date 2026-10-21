@@ -117,7 +117,7 @@ export default function PaperDashboardOverview({connected, apiAddress, token}: {
     {!connected ? <div className="empty paper-overview-empty"><LockKeyhole size={27}/>
       <strong>Yerel API bağlantısı gerekiyor</strong>
       <span>Sanal kâr veya bakiye uydurulmaz; bağlantı kurunca kayıtlı bilgiler gösterilir.</span>
-    </div> : state === "loading" ? <div className="empty paper-overview-empty" role="status">
+    </div> : state === "loading" ? <div className="empty paper-overview-empty" aria-live="polite">
       <RefreshCw size={27}/><strong>PAPER kayıtları okunuyor...</strong>
     </div> : state === "error" ? <div className="empty paper-overview-empty" role="alert">
       <FileClock size={27}/><strong>PAPER özetine ulaşılamadı</strong><span>{message}</span>
