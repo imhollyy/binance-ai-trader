@@ -17,13 +17,16 @@
 
 ```python
 from binance_ai_trader.paper_signal_plan import (
-    SourceState, plan_paper_spot_signal_once,
+    SourceState,
+    plan_paper_spot_signal_once,
 )
 
 # The trusted caller must independently verify public market-feed health
 # and supply the true source observation clock:
 plan = plan_paper_spot_signal_once(
-    engine, symbol='BTCUSDT', interval='1m',
+    engine,
+    symbol="BTCUSDT",
+    interval="1m",
     source_state=SourceState.HEALTHY,
     source_checked_at_ms=verified_public_feed_timestamp_ms,
 )
