@@ -126,12 +126,20 @@ def simulate_spot_buy(
     intent: SpotBuyIntent,
     *,
     explicit_approval: bool = False,
+    manual_paper_trade: bool = False,
     costs: PaperCosts | None = None,
 ) -> PaperSpotBook:
     """Return a NEW immutable paper book or reject without any partial mutation."""
 
     if settings.mode != "paper" or settings.market_type != "spot":
         raise PaperSpotRejected("spot_paper_only")
+    if manual_paper_trade and (
+        type(manual_paper_trade) is not bool
+        or explicit_approval is not True
+        or settings.bot_enabled
+        or not settings.manual_approval
+    ):
+        raise PaperSpotRejected("manual_paper_approval_required")
     _validate_book(book, settings)
     if (
         not isinstance(intent.trade_id, str)
@@ -176,6 +184,7 @@ def simulate_spot_buy(
             stop_distance_pct=stop_distance_pct,
         ),
         risk_state,
+        manual_paper_trade=manual_paper_trade,
     )
     if decision.status == PaperRiskStatus.REJECTED:
         raise PaperSpotRejected(decision.reason)
