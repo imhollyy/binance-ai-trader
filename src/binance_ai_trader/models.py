@@ -287,3 +287,28 @@ class PaperSpotObservedQuoteRow(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class PaperWorkerGuardRow(Base):
+    """Local PAPER worker cooldown; NO credentials or process authorization."""
+
+    __tablename__ = "paper_worker_guard"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_paper_worker_singleton"),
+        CheckConstraint(
+            "next_allowed_at_ms >= 0 AND last_attempt_at_ms >= 0",
+            name="ck_paper_worker_clock",
+        ),
+        CheckConstraint("consecutive_failures BETWEEN 0 AND 10", name="ck_paper_worker_failures"),
+        CheckConstraint(
+            "last_status IN ('ready', 'no_signal', 'paper_recorded', "
+            "'rate_limited', 'source_blocked', 'error')",
+            name="ck_paper_worker_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    next_allowed_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    last_attempt_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False)
+    last_status: Mapped[str] = mapped_column(String(24), nullable=False)
