@@ -138,6 +138,36 @@ The current BT-009A test suite verifies portions of `AUTH-01/02/03`
 against isolated local fixtures only. **All real-edge rows above remain
 NOT RUN** until a separate approved staging deployment and test.
 
+## BT-009B loopback HTTPS integration fixture (local test only)
+
+\`tests/test_staging_https_ingress.py\` exercises a **real TLS socket** and
+certificate verification (ephemeral OpenSSL-generated self-signed certificate
+with loopback IP SAN), a restricted **test-only** reverse proxy, Uvicorn and
+FastAPI with an isolated in-memory SQLite staging-auth fixture. Both
+listening sockets are **127.0.0.1 only** and no account/domain/Cloudflare
+resource is created. The proxy connects from \`127.0.0.2\` and Uvicorn
+accepts forwarded scheme assertions from that exact source, never the
+direct \`127.0.0.1\` client. Incoming forwarded headers are removed before
+the test proxy sets its own. The tests cover a successful TLS
+login/session/logout, viewer/operator/CSRF behavior, header and origin/host
+rejection, local route isolation and rejection of direct HTTP-with-spoof.
+
+Run with \`python -m pytest -q tests/test_staging_https_ingress.py\`.
+OpenSSL is required only to generate a temporary certificate (the tests
+skip on systems without its CLI); certificate private key remains in
+a disposable test directory, never in Git. The CI Ubuntu runner is expected
+to exercise it rather than skip it. **The fixture is not a production-ready
+reverse proxy or authentication gateway.**
+
+Evidence classification: **LOCAL_TLS_FIXTURE**, not **LIVE_CLOUDFLARE**
+and not **BROWSER_TLS**. It does *not* prove actual cloud edge Access/WAF,
+public network isolation, trusted production certificates, multi-host
+browser SameSite handling, real PostgreSQL backup/restore, automatic
+session cleanup, or a verified deployment. Keep ING-01/02/03 and every
+real-edge row above **NOT RUN** until separately authorized staging testing.
+
+
+
 ## 5. Rollout, shutdown and incident plan (approval gated)
 
 **Before creating any provider resources** record a separate explicit
