@@ -98,7 +98,7 @@ def create_app(
     app.add_middleware(
         TrustedHostMiddleware,
         allowed_hosts=(
-            [settings.staging_host] if staging else ["localhost", "127.0.0.1", "testserver"]
+            [settings.staging_host or ""] if staging else ["localhost", "127.0.0.1", "testserver"]
         ),
     )
 
