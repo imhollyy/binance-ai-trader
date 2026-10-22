@@ -23,7 +23,7 @@ const dashboard = {
     cash_delta_usdt:"1000.000000000000000000",realized_pnl_delta_usdt:"0.000000000000000000",
     fee_usdt:"0.000000000000000000",quote:null}],
   worker:{requested_enabled:false,process_verified_running:false,last_status:null,
-    last_attempt_at_ms:null,next_allowed_at_ms:null},
+    last_attempt_at_ms:null,next_allowed_at_ms:null,consecutive_failures:null},
 };
 function stagingOnly() {
   test.skip(process.env.NEXT_PUBLIC_TP_STAGING_PREVIEW !== "enabled",
