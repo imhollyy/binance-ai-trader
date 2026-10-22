@@ -98,8 +98,11 @@ def change_paper_pilot_mode(engine: Engine, *, enable: bool) -> int:
         elif not current.bot_enabled or current.manual_approval:
             raise PaperPilotRejected("inconsistent_paper_mode")
         updated = RiskSettings.model_validate(
-            {**current.model_dump(mode="json"),
-             "bot_enabled": enable, "manual_approval": not enable}
+            {
+                **current.model_dump(mode="json"),
+                "bot_enabled": enable,
+                "manual_approval": not enable,
+            }
         )
         next_version = setting.version + 1
         setting.version = next_version
@@ -163,14 +166,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if paper_pilot_status(engine) != "AUTO_PAPER_PERMITTED_NOT_RUNNING_VERIFIED":
                     raise PaperPilotRejected("explicit_account_mode_enable_required")
                 result = run_paper_scheduler(
-                    engine, enabled=True,
-                    symbol=ALLOWED_SYMBOL, interval=ALLOWED_INTERVAL,
+                    engine,
+                    enabled=True,
+                    symbol=ALLOWED_SYMBOL,
+                    interval=ALLOWED_INTERVAL,
                 )
                 print(f"PAPER_PILOT_ENDED status={result.status.value} ticks={result.ticks}")
                 return (
-                    0
-                    if result.status in (SchedulerStatus.STOPPED, SchedulerStatus.DISABLED)
-                    else 1
+                    0 if result.status in (SchedulerStatus.STOPPED, SchedulerStatus.DISABLED) else 1
                 )
         finally:
             engine.dispose()
