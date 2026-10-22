@@ -58,14 +58,14 @@ def engine() -> Iterator[Engine]:
 
 def _now(db: Engine) -> int:
     with Session(db) as session:
-        return int(session.scalar(
-            text("SELECT FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint")
-        ))
+        return int(
+            session.scalar(
+                text("SELECT FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint")
+            )
+        )
 
 
-def request(
-    db: Engine, signal_id: str = "forecast_initial_0001"
-) -> ForecastReceiptInput:
+def request(db: Engine, signal_id: str = "forecast_initial_0001") -> ForecastReceiptInput:
     now = _now(db)
     closed = now // MINUTE * MINUTE - 1
     return ForecastReceiptInput(
@@ -97,9 +97,7 @@ def test_server_clocked_immutable_receipts_and_restart(engine: Engine) -> None:
     with Session(engine) as session:
         row = session.scalar(select(AiResearchForecastReceiptRow))
         assert row is not None
-        assert (row.prob_win, row.prob_loss, row.prob_flat) == (
-            D(".50"), D(".30"), D(".20")
-        )
+        assert (row.prob_win, row.prob_loss, row.prob_flat) == (D(".50"), D(".30"), D(".20"))
         assert session.scalar(select(func.count()).select_from(PaperSpotAccountRow)) == 0
         assert session.scalar(select(func.count()).select_from(PaperSpotJournalRow)) == 0
     with Session(engine) as session, pytest.raises(DBAPIError, match="append only"):
@@ -136,12 +134,14 @@ def test_sql_ingest_server_clock_cannot_be_backdated(engine: Engine) -> None:
 
 def test_duplicate_concurrent_writers_accept_exactly_one(engine: Engine) -> None:
     item = request(engine, "forecast_concurrent")
+
     def race(_: int) -> str:
         try:
             append_disposable_forecast(engine, forecast=item)
             return "accepted"
         except ForecastReceiptRejected:
             return "rejected"
+
     with ThreadPoolExecutor(max_workers=3) as pool:
         outcomes = list(pool.map(race, range(3)))
     assert sorted(outcomes) == ["accepted", "rejected", "rejected"]
@@ -156,9 +156,10 @@ def test_invalid_inputs_fail_before_database_mutation(engine: Engine) -> None:
         replace(item, interval="2m"),
         replace(item, outcome_due_at_ms=item.observed_close_at_ms + 1000),
         replace(item, observed_close_at_ms=item.observed_close_at_ms - 1),
-        replace(item, forecast=ProbabilityEstimate.model_construct(
-            win=D("1.2"), loss=D("-.2"), flat=D(0)
-        )),
+        replace(
+            item,
+            forecast=ProbabilityEstimate.model_construct(win=D("1.2"), loss=D("-.2"), flat=D(0)),
+        ),
     )
     for candidate in bad:
         with pytest.raises(ForecastReceiptRejected):
@@ -175,8 +176,13 @@ def test_non_disposable_database_is_rejected_before_connection() -> None:
             append_disposable_forecast(
                 fake,
                 forecast=ForecastReceiptInput(
-                    "x" * 9, "v1", "BTCUSDT", "1m", 1, 60001,
-                    ProbabilityEstimate(win=D(".5"), loss=D(".3"), flat=D(".2"))
+                    "x" * 9,
+                    "v1",
+                    "BTCUSDT",
+                    "1m",
+                    1,
+                    60001,
+                    ProbabilityEstimate(win=D(".5"), loss=D(".3"), flat=D(".2")),
                 ),
             )
     finally:

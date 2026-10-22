@@ -111,10 +111,7 @@ def _validate(item: object) -> ForecastReceiptInput:
     ):
         raise ForecastReceiptRejected("invalid_closed_candle_horizon")
     probabilities = (item.forecast.win, item.forecast.loss, item.forecast.flat)
-    if (
-        not all(_valid_probability(p) for p in probabilities)
-        or sum(probabilities, _ZERO) != _ONE
-    ):
+    if not all(_valid_probability(p) for p in probabilities) or sum(probabilities, _ZERO) != _ONE:
         raise ForecastReceiptRejected("invalid_forecast_probabilities")
     return item
 
