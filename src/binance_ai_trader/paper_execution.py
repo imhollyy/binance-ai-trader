@@ -293,18 +293,21 @@ def open_paper_spot(
         price = _money(intent.reference_price)
         quantity = _money(intent.quantity)
         stop = _money(intent.stop_price)
+        payload: dict[str, str | int] = {
+            "trade": intent.trade_id,
+            "symbol": intent.symbol,
+            "price": _number(price),
+            "quantity": _number(quantity),
+            "stop": _number(stop),
+            "fee_bps": assumptions.fee_bps,
+            "slippage_bps": assumptions.slippage_bps,
+        }
+        if assumptions.spread_bps:
+            payload["spread_bps"] = assumptions.spread_bps
         digest = _event_id(
             "spot_buy",
             key,
-            {
-                "trade": intent.trade_id,
-                "symbol": intent.symbol,
-                "price": _number(price),
-                "quantity": _number(quantity),
-                "stop": _number(stop),
-                "fee_bps": assumptions.fee_bps,
-                "slippage_bps": assumptions.slippage_bps,
-            },
+            payload,
         )
         with session.begin():
             settings, account, positions, events = _locked_state(session)
@@ -392,15 +395,18 @@ def close_paper_spot(
     assumptions = costs if costs is not None else PaperCosts()
     with localcontext(Context(prec=64)):
         price = _money(reference_price)
+        payload: dict[str, str | int] = {
+            "trade": trade_id,
+            "price": _number(price),
+            "fee_bps": assumptions.fee_bps,
+            "slippage_bps": assumptions.slippage_bps,
+        }
+        if assumptions.spread_bps:
+            payload["spread_bps"] = assumptions.spread_bps
         digest = _event_id(
             "spot_sell",
             key,
-            {
-                "trade": trade_id,
-                "price": _number(price),
-                "fee_bps": assumptions.fee_bps,
-                "slippage_bps": assumptions.slippage_bps,
-            },
+            payload,
         )
         with session.begin():
             settings, account, positions, events = _locked_state(session)

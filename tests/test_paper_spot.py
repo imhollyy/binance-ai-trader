@@ -66,6 +66,7 @@ def test_immutable_paper_open_close_with_taker_fee_slippage_and_pnl() -> None:
     assert opened.closed == ()
     assert closed.closed[0].exit_fill_price == D("109.9450")
     assert closed.realized_pnl_usdt == D("9.6850050")
+    assert closed.closed[0].gross_realized_pnl_usdt == D("9.8950")
     assert closed.cash_usdt == D("1009.6850050")
     assert closed.paid_fees_usdt == D("0.2099950")
     assert initial.cash_usdt == D("1000")
@@ -131,6 +132,22 @@ def test_cash_spend_includes_fees() -> None:
         )
 
 
+def test_spread_is_applied_adversely_on_entry_and_exit() -> None:
+    settings = config(risk_per_trade_pct=2)
+    costs = PaperCosts(fee_bps=0, slippage_bps=0, spread_bps=10)
+    opened = simulate_spot_buy(
+        new_paper_spot_book(settings),
+        settings,
+        risk_state(),
+        intent(quantity="0.1"),
+        costs=costs,
+    )
+    closed = simulate_spot_sell(opened, "trade_1", D("100"), costs=costs)
+    assert opened.positions[0].entry_fill_price == D("100.0500")
+    assert closed.closed[0].exit_fill_price == D("99.9500")
+    assert closed.closed[0].realized_pnl_usdt < 0
+
+
 @pytest.mark.parametrize(
     ("reference", "quantity", "stop"),
     [
@@ -162,7 +179,10 @@ def test_unapproved_symbol_rejected() -> None:
         simulate_spot_buy(new_paper_spot_book(settings), settings, risk_state(), intent())
 
 
-@pytest.mark.parametrize("costs", [PaperCosts(fee_bps=-1), PaperCosts(slippage_bps=101)])
+@pytest.mark.parametrize(
+    "costs",
+    [PaperCosts(fee_bps=-1), PaperCosts(slippage_bps=101), PaperCosts(spread_bps=101)],
+)
 def test_invalid_cost_assumptions_rejected(costs: PaperCosts) -> None:
     settings = config()
     with pytest.raises(PaperSpotRejected, match="invalid_simulation_costs"):

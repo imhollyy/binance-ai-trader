@@ -249,6 +249,7 @@ def run_manual_paper_once(
                         reference_price=reference,
                         fee_bps=COSTS.fee_bps,
                         slippage_bps=COSTS.slippage_bps,
+                        spread_bps=COSTS.spread_bps,
                     )
                 )
 
