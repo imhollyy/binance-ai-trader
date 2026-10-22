@@ -123,9 +123,13 @@ def test_manual_endpoint_not_exposed_without_explicit_preview_flag(
     db = stage.app.state  # Existing stage fixture is separate from a newly created app.
     assert db is not None
     config = ApiConfig(
-        auth_mode="staging", database_url=URL, admin_token=None,
-        staging_origin=ORIGIN, staging_host=HOST,
-        viewer_password_hash=V_HASH, operator_password_hash=O_HASH,
+        auth_mode="staging",
+        database_url=URL,
+        admin_token=None,
+        staging_origin=ORIGIN,
+        staging_host=HOST,
+        viewer_password_hash=V_HASH,
+        operator_password_hash=O_HASH,
     )
     new_app = create_app(config=config, engine=None)
     with TestClient(new_app, base_url=ORIGIN) as client:
