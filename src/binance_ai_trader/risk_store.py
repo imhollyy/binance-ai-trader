@@ -430,6 +430,8 @@ def record_shadow_preflight(
             "order_intent_created": False,
             "model_version": prediction.model_version,
             "artifact_sha256": prediction.artifact_sha256,
+            "data_sha256": result.data_sha256,
+            "cost_sha256": result.cost_sha256,
             "model_action": prediction.action.value,
             "risk_decision": None if risk_decision is None else risk_decision.audit_code,
         }

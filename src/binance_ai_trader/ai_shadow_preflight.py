@@ -7,10 +7,24 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from decimal import Decimal
 
+from binance_ai_trader.ai_constitution import ProbabilityEstimate
 from binance_ai_trader.ai_trainable_model import ModelAction, ResearchPrediction
 from binance_ai_trader.risk_guard import RiskDecision, RiskProfile, RiskRequest, evaluate_risk
 
 _HASH = re.compile(r"^[0-9a-f]{64}$")
+_SIGNAL = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
+_MODEL = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+
+
+def _valid_probability(value: object) -> bool:
+    if value is None:
+        return True
+    if type(value) is not ProbabilityEstimate:
+        return False
+    values = (value.win, value.loss, value.flat)
+    return all(type(x) is Decimal and x.is_finite() and 0 <= x <= 1 for x in values) and sum(
+        values, Decimal(0)
+    ) == Decimal(1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +52,8 @@ class ShadowPreflightResult:
     risk_decision: RiskDecision | None
     paper_suitability: bool
     order_intent_created: bool = False
+    data_sha256: str | None = None
+    cost_sha256: str | None = None
 
 
 def evaluate_shadow_preflight(
@@ -52,7 +68,29 @@ def evaluate_shadow_preflight(
 ) -> ShadowPreflightResult:
     """Validate typed model output, fresh provenance and costs, then independent RiskGuard."""
     status, reason, verdict = "BLOCKED", "INVALID_MODEL_SCHEMA", None
-    if type(prediction) is not ResearchPrediction or prediction.schema_version != "1.0":
+    if (
+        type(prediction) is not ResearchPrediction
+        or prediction.schema_version != "1.0"
+        or not isinstance(prediction.action, ModelAction)
+        or type(request) is not RiskRequest
+        or type(prediction.signal_id) is not str
+        or _SIGNAL.fullmatch(prediction.signal_id) is None
+        or type(prediction.model_version) is not str
+        or _MODEL.fullmatch(prediction.model_version) is None
+        or prediction.symbol not in ("BTCUSDT", "ETHUSDT")
+        or prediction.interval not in ("1m", "5m", "15m")
+        or type(prediction.probability_verified) is not bool
+        or (
+            prediction.artifact_sha256 is not None
+            and _HASH.fullmatch(prediction.artifact_sha256) is None
+        )
+        or (
+            prediction.feature_sha256 is not None
+            and _HASH.fullmatch(prediction.feature_sha256) is None
+        )
+        or not _valid_probability(prediction.probability)
+        or (prediction.probability_verified and prediction.probability is None)
+    ):
         result = ShadowPreflightResult(status, reason, "invalid_signal", None, False)
         audit(prediction, result)
         return result
@@ -74,10 +112,14 @@ def evaluate_shadow_preflight(
         return result
     if (
         evidence is None
+        or type(evidence) is not ShadowEvidence
         or not evidence.data_verified
         or not evidence.costs_verified
         or type(now_ms) is not int
         or type(max_data_age_ms) is not int
+        or type(evidence.observed_close_at_ms) is not int
+        or type(evidence.received_at_ms) is not int
+        or type(evidence.valid_until_ms) is not int
         or max_data_age_ms <= 0
         or evidence.symbol != prediction.symbol
         or evidence.interval != prediction.interval
@@ -117,7 +159,14 @@ def evaluate_shadow_preflight(
     else:
         status, reason = "PAPER_SUITABILITY_ONLY", "RISK_GUARD_ALLOWED_REVIEW"
     result = ShadowPreflightResult(
-        status, reason, prediction.signal_id, verdict, status == "PAPER_SUITABILITY_ONLY"
+        status,
+        reason,
+        prediction.signal_id,
+        verdict,
+        status == "PAPER_SUITABILITY_ONLY",
+        False,
+        evidence.data_sha256,
+        evidence.cost_sha256,
     )
     audit(prediction, result)
     return result
