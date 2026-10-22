@@ -152,9 +152,7 @@ def simulate_reviewed_ai_spot(
             or policy.account_state.reserved_capital_usdt != 0
         ):
             return _deny(proposal, book, "PAPER_RISK_SNAPSHOT_MISMATCH")
-        verdict = evaluate_constitution_spot_proposal(
-            proposal, policy, evidence, now_ms=now_ms
-        )
+        verdict = evaluate_constitution_spot_proposal(proposal, policy, evidence, now_ms=now_ms)
         if not verdict.proposal_eligible:
             return AiPaperDryRun(verdict, book, "NONE")
         entry_reference = evidence.reference_price * (1 + half_spread)
@@ -184,9 +182,7 @@ def simulate_reviewed_ai_spot(
     if proposal.decision is ConstitutionAction.SELL:
         # STOPPED's stop_behavior is not specified by current RiskSettings;
         # do not silently invent it. PAUSED and EMERGENCY may reduce risk.
-        if policy.bot_state not in (
-            BotState.RUNNING, BotState.PAUSED, BotState.EMERGENCY_FLATTEN
-        ):
+        if policy.bot_state not in (BotState.RUNNING, BotState.PAUSED, BotState.EMERGENCY_FLATTEN):
             return _deny(proposal, book, "BOT_NOT_RUNNING")
         if (
             evidence.source != "verified_public_binance_spot"
@@ -200,17 +196,14 @@ def simulate_reviewed_ai_spot(
             or now_ms >= proposal.valid_until_ms
             or type(policy.max_market_age_ms) is not int
             or policy.max_market_age_ms <= 0
-            or not (
-                evidence.last_closed_at_ms
-                <= evidence.received_at_ms
-                <= proposal.created_at_ms
-            )
+            or not (evidence.last_closed_at_ms <= evidence.received_at_ms <= proposal.created_at_ms)
             or now_ms - evidence.received_at_ms > policy.max_market_age_ms
             or now_ms - evidence.last_closed_at_ms > policy.max_market_age_ms
         ):
             return _deny(proposal, book, "DATA_QUALITY_FAILURE")
         matches = [
-            p for p in book.positions
+            p
+            for p in book.positions
             if p.trade_id == trade_id_to_close and p.symbol == proposal.symbol
         ]
         if len(matches) != 1:

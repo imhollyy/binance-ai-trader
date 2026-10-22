@@ -24,8 +24,15 @@ def history(interval: str, *, trend: int = 1, n: int = 50) -> TimeframeHistory:
         close = D("100") + D(idx * trend) / 10
         candles.append(
             Candle(
-                "BTCUSDT", interval, open_ms, open_ms + step - 1,
-                close, close + D("0.1"), close - D("0.1"), close, D("10"),
+                "BTCUSDT",
+                interval,
+                open_ms,
+                open_ms + step - 1,
+                close,
+                close + D("0.1"),
+                close - D("0.1"),
+                close,
+                D("10"),
             )
         )
     return TimeframeHistory(interval, tuple(candles))
@@ -77,9 +84,13 @@ def test_missing_gap_or_stale_any_timeframe_blocks(interval: str) -> None:
     assert analyze(tuple(short)).reason_code == "DATA_QUALITY_FAILURE"
     stale = feeds[:]
     stale[pos] = replace(
-        feeds[pos], candles=tuple(
-            replace(c, open_time_ms=c.open_time_ms - INTERVAL_MS[interval] * 4,
-                    close_time_ms=c.close_time_ms - INTERVAL_MS[interval] * 4)
+        feeds[pos],
+        candles=tuple(
+            replace(
+                c,
+                open_time_ms=c.open_time_ms - INTERVAL_MS[interval] * 4,
+                close_time_ms=c.close_time_ms - INTERVAL_MS[interval] * 4,
+            )
             for c in feeds[pos].candles
         ),
     )
@@ -91,8 +102,15 @@ def test_live_unclosed_candle_not_valid_for_analysis() -> None:
     prior = feeds[0].candles
     next_open = NOW
     contaminated = Candle(
-        "BTCUSDT", "1m", next_open, next_open + 59_999,
-        D("100"), D("101"), D("99"), D("100"), D("1"),
+        "BTCUSDT",
+        "1m",
+        next_open,
+        next_open + 59_999,
+        D("100"),
+        D("101"),
+        D("99"),
+        D("100"),
+        D("1"),
     )
     feeds[0] = replace(feeds[0], candles=(*prior, contaminated))
     assert analyze(tuple(feeds)).reason_code == "DATA_QUALITY_FAILURE"

@@ -34,10 +34,19 @@ def feeds() -> tuple[TimeframeHistory, ...]:
         for i in range(50):
             opened = final_open - (49 - i) * step
             close = D("100") + D(i) / 10
-            candles.append(Candle(
-                "BTCUSDT", interval, opened, opened + step - 1,
-                close, close + D("0.1"), close - D("0.1"), close, D("10"),
-            ))
+            candles.append(
+                Candle(
+                    "BTCUSDT",
+                    interval,
+                    opened,
+                    opened + step - 1,
+                    close,
+                    close + D("0.1"),
+                    close - D("0.1"),
+                    close,
+                    D("10"),
+                )
+            )
         data.append(TimeframeHistory(interval, tuple(candles)))
     return tuple(data)
 
@@ -67,18 +76,21 @@ def policy(*, bot_state: BotState = BotState.RUNNING) -> IndependentRiskPolicy:
 
 
 def evidence(**updates: object) -> TrustedSpotEvidence:
-    return replace(TrustedSpotEvidence(
-        symbol="BTCUSDT",
-        interval="1m",
-        last_closed_at_ms=NOW - 1,
-        received_at_ms=NOW + 400,
-        reference_price=D("104.9"),
-        taker_fee_bps=D("10"),
-        spread_bps=D("2"),
-        slippage_bps=D("5"),
-        critical_data_ok=True,
-        exchange_constraints_ok=True,
-    ), **updates)
+    return replace(
+        TrustedSpotEvidence(
+            symbol="BTCUSDT",
+            interval="1m",
+            last_closed_at_ms=NOW - 1,
+            received_at_ms=NOW + 400,
+            reference_price=D("104.9"),
+            taker_fee_bps=D("10"),
+            spread_bps=D("2"),
+            slippage_bps=D("5"),
+            critical_data_ok=True,
+            exchange_constraints_ok=True,
+        ),
+        **updates,
+    )
 
 
 def signal(action: str = "BUY", **updates: object) -> AiSpotProposal:
@@ -86,7 +98,9 @@ def signal(action: str = "BUY", **updates: object) -> AiSpotProposal:
         "schema_version": "1.0",
         "signal_id": "dry_run_signal_01" if action == "BUY" else "dry_run_exit_01",
         "model_version": "synthetic-calibrated",
-        "market": "SPOT", "mode": "PAPER", "symbol": "BTCUSDT",
+        "market": "SPOT",
+        "mode": "PAPER",
+        "symbol": "BTCUSDT",
         "execution_timeframe": "1m",
         "observed_close_at_ms": NOW - 1,
         "created_at_ms": NOW + 1000,
@@ -95,8 +109,10 @@ def signal(action: str = "BUY", **updates: object) -> AiSpotProposal:
         "market_regime": "UPTREND",
         "reason_codes": ["SYNTHETIC_TEST"],
         "probability": {"win": "0.6", "loss": "0.3", "flat": "0.1"},
-        "expected_win_bps": "130", "expected_loss_bps": "20",
-        "suggested_notional_usdt": "100", "stop_price": "103.9",
+        "expected_win_bps": "130",
+        "expected_loss_bps": "20",
+        "suggested_notional_usdt": "100",
+        "stop_price": "103.9",
     }
     data.update(updates)
     return AiSpotProposal.model_validate(data)
@@ -137,7 +153,9 @@ def test_ai_buy_then_sell_books_net_realized_pnl_after_fee_slip_spread() -> None
     assert first.book.positions[0].entry_notional_usdt <= D("100")
 
     closed = run(
-        signal("SELL"), book=first.book, e=evidence(reference_price=D("110")),
+        signal("SELL"),
+        book=first.book,
+        e=evidence(reference_price=D("110")),
         trade_id="dry_run_signal_01",
         # Closed candle source must still match the independently verified mark.
     )
@@ -152,17 +170,15 @@ def test_ai_buy_then_sell_books_net_realized_pnl_after_fee_slip_spread() -> None
     assert len(same_quote_close.book.positions) == 0
     assert same_quote_close.book.realized_pnl_usdt < 0  # costs defeat flat gross price
     assert same_quote_close.book.paid_fees_usdt > first.book.paid_fees_usdt
-    assert same_quote_close.book.cash_usdt == (
-        D("1000") + same_quote_close.book.realized_pnl_usdt
-    )
+    assert same_quote_close.book.cash_usdt == (D("1000") + same_quote_close.book.realized_pnl_usdt)
     assert first.book.positions  # immutable original book
 
 
 @pytest.mark.parametrize(
     ("bad_signal", "bad_policy", "bad_evidence", "expected"),
     [
-        ({ "market_regime": "DOWNTREND" }, {}, {}, "MTF_CONTEXT_MISMATCH"),
-        ({ "expected_win_bps": "1" }, {}, {}, "INSUFFICIENT_EXPECTED_NET_EDGE"),
+        ({"market_regime": "DOWNTREND"}, {}, {}, "MTF_CONTEXT_MISMATCH"),
+        ({"expected_win_bps": "1"}, {}, {}, "INSUFFICIENT_EXPECTED_NET_EDGE"),
         ({}, {"bot_state": BotState.PAUSED}, {}, "BOT_NOT_RUNNING"),
         ({}, {"calibrated_model_versions": frozenset()}, {}, "MODEL_NOT_CALIBRATED"),
         ({}, {"account_settings_version": 1}, {}, "USER_HARD_LIMIT"),
@@ -205,8 +221,10 @@ def test_reduce_only_exit_allowed_while_new_entries_paused(state: BotState) -> N
     no_new = run(signal(signal_id="another_trade_0001"), p=policy(bot_state=state))
     assert not no_new.simulated
     done = run(
-        signal("SELL"), p=policy(bot_state=state),
-        book=opened.book, trade_id="dry_run_signal_01",
+        signal("SELL"),
+        p=policy(bot_state=state),
+        book=opened.book,
+        trade_id="dry_run_signal_01",
     )
     assert done.event == "PAPER_SELL"
     assert not done.book.positions
@@ -215,8 +233,10 @@ def test_reduce_only_exit_allowed_while_new_entries_paused(state: BotState) -> N
 def test_stopped_exit_and_double_exit_are_rejected() -> None:
     opened = run()
     stopped = run(
-        signal("SELL"), p=policy(bot_state=BotState.STOPPED),
-        book=opened.book, trade_id="dry_run_signal_01",
+        signal("SELL"),
+        p=policy(bot_state=BotState.STOPPED),
+        book=opened.book,
+        trade_id="dry_run_signal_01",
     )
     assert stopped.verdict.reason_code == "BOT_NOT_RUNNING"
     closed = run(signal("SELL"), book=opened.book, trade_id="dry_run_signal_01")
