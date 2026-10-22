@@ -437,3 +437,33 @@ birleştirilmesi, sınırlı ve açık onaylı PAPER forward-run.
   değerlendirme, işlem maliyetlerine göre etiket oluşturma,
   güvenilirlik diyagramı ve kör forward-PAPER testi.
   Bunlar olmadan yüksek güven skoru üretim kararına giremez.
+
+## BT-023B: SHA-256 çevrimdışı araştırma manifesti ve değişiklik tespiti
+
+- `ai_offline_artifact_manifest.py`, **yalnızca araştırma** için
+  sınırlı boyuttaki model dosyası, eğitim veri örneği, kronolojik
+  validation/test tahminleri ve protokolü deterministik JSON
+  (alan sıralaması sabit, kanonik Decimal) ile SHA-256'ya bağlar.
+  Bölümlerin digest'leri ve kapsam sayıları ayrı saklanır.
+- BT-023A'nın zaman/sızıntı ve veri yeterlilik kuralları her
+  manifest oluşturma ve doğrulama işleminde tekrar çalıştırılır.
+  Model, eğitim girdisi, tahmin/etiket, sıra, sürüm veya protokol
+  değişirse mevcut manifestle eşleşmez. Boş/aşırı büyük dosya,
+  geçersiz ya da kısmi veri reddedilir. Dışarıda ayrı tutulduğu
+  **iddia edilen** SHA-256 referansı yoksa `DETACHED_REFERENCE_MISSING`.
+- SHA-256 yalnız *elde tutulan veri aynı mı?* sorusuna cevap verir:
+  Yayımlayıcının kimliğini, etiketin gerçek borsadan geldiğini,
+  deneyin kör yapıldığını veya ayrı saklanan referansın güvenilir
+  bir yönetici tarafından korunduğunu KANITLAMAZ. Referans ve
+  içerik birlikte değiştirilirse sahte bilimsel geçmiş üretilebilir.
+- `SELF_REPORTED_RESEARCH_MATCH_ONLY` dâhil
+  `qualifies_as_calibrated_model=False`,
+  `trade_authorized=False`, `no_trade=True` her zaman.
+  Canlı model eğitimi ve tahmin, gerçek Binance hesabı, PAPER
+  işlem motoru, otomatik worker, kullanıcı sermaye ayarları,
+  borsa özel API uç noktası ve anayasa değiştirilmedi.
+- Sıradaki ihtiyaçlar: saklanan salt-eklemeli tahmin günlükleri,
+  bağımsız piyasa veri kaynağına bağlı doğrulanmış outcome
+  etiketleri, ayrı model artefakt deposu / imzalı referans,
+  birden çok ileri yürüyüş dönemi ve canlı olmayan
+  forward-PAPER performans kabulü.
