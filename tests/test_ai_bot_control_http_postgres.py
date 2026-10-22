@@ -121,29 +121,40 @@ def test_real_https_session_csrf_approval_and_cas_reboot(
         assert absent.put(URL_PATH, json=change(expected=1, state="PAUSED")).status_code == 404
     monkeypatch.setenv("BOT_CONTROLS_HTTP_TEST_ISOLATED", "1")
 
-    with TestClient(create_app(config=cfg, engine=engine), base_url=ROOT) as op, TestClient(
-        create_app(config=cfg, engine=engine), base_url=ROOT
-    ) as viewer:
+    with (
+        TestClient(create_app(config=cfg, engine=engine), base_url=ROOT) as op,
+        TestClient(create_app(config=cfg, engine=engine), base_url=ROOT) as viewer,
+    ):
         # Route auth is cookie-backed; a fabricated session hash is NOT accepted.
         assert op.get(URL_PATH, headers=HEADERS).status_code == 401
-        assert op.put(
-            URL_PATH, headers=APPROVED,
-            json={**change(expected=1, state="PAUSED"), "actor_session_hash": "a" * 64},
-        ).status_code == 422
+        assert (
+            op.put(
+                URL_PATH,
+                headers=APPROVED,
+                json={**change(expected=1, state="PAUSED"), "actor_session_hash": "a" * 64},
+            ).status_code
+            == 422
+        )
         viewer_login = viewer.post(
-            "/api/v1/auth/login", headers=HEADERS,
+            "/api/v1/auth/login",
+            headers=HEADERS,
             json={"username": "viewer", "password": VIEW_PASS},
         )
         assert viewer_login.status_code == 200
         viewer_csrf = viewer_login.json()["csrf_token"]
         assert viewer.get(URL_PATH, headers=HEADERS).status_code == 200
-        assert viewer.put(
-            URL_PATH, headers={**APPROVED, "X-CSRF-Token": viewer_csrf},
-            json=change(expected=1, state="PAUSED"),
-        ).status_code == 403
+        assert (
+            viewer.put(
+                URL_PATH,
+                headers={**APPROVED, "X-CSRF-Token": viewer_csrf},
+                json=change(expected=1, state="PAUSED"),
+            ).status_code
+            == 403
+        )
 
         login = op.post(
-            "/api/v1/auth/login", headers=HEADERS,
+            "/api/v1/auth/login",
+            headers=HEADERS,
             json={"username": "operator", "password": OP_PASS},
         )
         assert login.status_code == 200
@@ -169,37 +180,54 @@ def test_real_https_session_csrf_approval_and_cas_reboot(
             assert r.status_code == status, r.text
         assert read_disposable_bot_control(engine) == initial
         assert op.get(URL_PATH, headers=HEADERS).json()["state"] == "STOPPED"
-        assert op.put(
-            URL_PATH, headers=base_headers, json=change(expected=1, state="RUNNING")
-        ).status_code == 409
-        assert op.put(
-            URL_PATH, headers=base_headers,
-            json={**change(expected=1, state="PAUSED"), "surprise_field": 1},
-        ).status_code == 422
-        assert op.put(
-            URL_PATH, headers=base_headers,
-            json=change(expected=1, state="PAUSED", confirmed=True),
-        ).status_code == 409
+        assert (
+            op.put(
+                URL_PATH, headers=base_headers, json=change(expected=1, state="RUNNING")
+            ).status_code
+            == 409
+        )
+        assert (
+            op.put(
+                URL_PATH,
+                headers=base_headers,
+                json={**change(expected=1, state="PAUSED"), "surprise_field": 1},
+            ).status_code
+            == 422
+        )
+        assert (
+            op.put(
+                URL_PATH,
+                headers=base_headers,
+                json=change(expected=1, state="PAUSED", confirmed=True),
+            ).status_code
+            == 409
+        )
         assert op.get(URL_PATH, headers=HEADERS).json()["revision"] == 1
 
-        paused = op.put(
-            URL_PATH, headers=base_headers, json=change(expected=1, state="PAUSED")
-        )
+        paused = op.put(URL_PATH, headers=base_headers, json=change(expected=1, state="PAUSED"))
         assert paused.status_code == 200 and paused.json()["revision"] == 2
-        assert op.put(
-            URL_PATH, headers=base_headers, json=change(expected=1, state="STOPPED")
-        ).status_code == 409
+        assert (
+            op.put(
+                URL_PATH, headers=base_headers, json=change(expected=1, state="STOPPED")
+            ).status_code
+            == 409
+        )
         review = op.put(
-            URL_PATH, headers=base_headers,
+            URL_PATH,
+            headers=base_headers,
             json=change(expected=2, state="PAUSED", stop="REVIEW_REDUCE_ONLY", confirmed=True),
         )
         assert review.status_code == 200 and review.json()["revision"] == 3
         assert review.json()["operator_confirmed_reduce_only"]
         assert review.json()["state"] == "PAUSED"
-        assert op.put(
-            URL_PATH, headers=base_headers,
-            json=change(expected=3, state="RUNNING", stop="REVIEW_REDUCE_ONLY", confirmed=True),
-        ).status_code == 200
+        assert (
+            op.put(
+                URL_PATH,
+                headers=base_headers,
+                json=change(expected=3, state="RUNNING", stop="REVIEW_REDUCE_ONLY", confirmed=True),
+            ).status_code
+            == 200
+        )
         assert op.get(URL_PATH, headers=HEADERS).json()["state"] == "RUNNING"
         assert op.get(URL_PATH, headers=HEADERS).headers["cache-control"] == "no-store, private"
 
@@ -208,10 +236,13 @@ def test_real_https_session_csrf_approval_and_cas_reboot(
         reopened = create_engine(URL, pool_pre_ping=True)
         try:
             with TestClient(create_app(config=cfg, engine=reopened), base_url=ROOT) as other:
-                assert other.get(
-                    URL_PATH,
-                    headers={**HEADERS, "Cookie": f"{COOKIE}={session_cookie}"},
-                ).json()["revision"] == 4
+                assert (
+                    other.get(
+                        URL_PATH,
+                        headers={**HEADERS, "Cookie": f"{COOKIE}={session_cookie}"},
+                    ).json()["revision"]
+                    == 4
+                )
         finally:
             reopened.dispose()
 
@@ -221,12 +252,16 @@ def test_real_https_session_csrf_approval_and_cas_reboot(
             assert all(a.actor_session_hash != live.token_hash for a in audits)
             assert session.scalar(select(func.count()).select_from(PaperSpotAccountRow)) == 0
             assert session.scalar(select(func.count()).select_from(PaperSpotJournalRow)) == 0
-        assert op.post(
-            "/api/v1/auth/logout", headers={**HEADERS, "X-CSRF-Token": csrf}
-        ).status_code == 200
-        assert op.put(
-            URL_PATH, headers=base_headers, json=change(expected=4, state="STOPPED")
-        ).status_code == 401
+        assert (
+            op.post("/api/v1/auth/logout", headers={**HEADERS, "X-CSRF-Token": csrf}).status_code
+            == 200
+        )
+        assert (
+            op.put(
+                URL_PATH, headers=base_headers, json=change(expected=4, state="STOPPED")
+            ).status_code
+            == 401
+        )
 
         second = op.post(
             "/api/v1/auth/login", headers=HEADERS,
@@ -241,10 +276,14 @@ def test_real_https_session_csrf_approval_and_cas_reboot(
                 .where(StagingSessionRow.role == "operator", StagingSessionRow.revoked.is_(False))
                 .values(expires_at_ms=now_ms - 1)
             )
-        assert op.put(
-            URL_PATH, headers={**APPROVED, "X-CSRF-Token": csrf2},
-            json=change(expected=4, state="STOPPED"),
-        ).status_code == 401
+        assert (
+            op.put(
+                URL_PATH,
+                headers={**APPROVED, "X-CSRF-Token": csrf2},
+                json=change(expected=4, state="STOPPED"),
+            ).status_code
+            == 401
+        )
 
     with Session(engine) as session:
         assert session.scalar(select(func.count()).select_from(PaperBotControlEventRow)) == 3

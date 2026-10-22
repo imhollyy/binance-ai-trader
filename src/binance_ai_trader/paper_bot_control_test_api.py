@@ -55,9 +55,7 @@ class ChangeControlRequest(BaseModel):
     confirm_reduce_only_review: bool = Field(strict=True)
 
 
-def register_bot_control_test_routes(
-    app: FastAPI, access: StagingAccess, engine: Engine
-) -> None:
+def register_bot_control_test_routes(app: FastAPI, access: StagingAccess, engine: Engine) -> None:
     """Register after *server-side* isolated-db eligibility has been checked.
 
     _current checks the genuine cookie using the verifier-bound hash,
