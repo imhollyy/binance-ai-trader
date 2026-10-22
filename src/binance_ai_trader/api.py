@@ -17,7 +17,9 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from binance_ai_trader.ai_paper_bot_controls_test import is_disposable_control_http_test
 from binance_ai_trader.api_config import ApiConfig
+from binance_ai_trader.paper_bot_control_test_api import register_bot_control_test_routes
 from binance_ai_trader.manual_paper_api import register_manual_paper_route
 from binance_ai_trader.models import (
     AuditRow,
@@ -155,6 +157,10 @@ def create_app(
 
     if staging_access is not None:
         staging_access.register(app)
+        # This route is NOT part of normal staging/local. It is registered
+        # only on a disposable localhost DB with a dedicated explicit test flag.
+        if db_engine is not None and is_disposable_control_http_test(db_engine):
+            register_bot_control_test_routes(app, staging_access, db_engine)
 
     @app.get("/health/live")
     def liveness() -> dict[str, str]:

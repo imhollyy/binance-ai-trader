@@ -1,10 +1,11 @@
 """BT-016: disposable PostgreSQL-only bot-state compare-and-swap rehearsal.
 
 A server-internal isolated integration fixture, not an authorized HTTP API.
-Only localhost/trader_bot_controls_test is writable. No public routes,
-worker activation, PAPER account mutations, execution or exchange calls.
-Presence of a session HASH is not proof of cookie/CSRF possession: the final
-API boundary must independently authenticate the bearer and same-origin CSRF.
+Only two EXPLICIT localhost disposable databases are writable, each with
+its own test-only environment sentinel. No worker activation, PAPER account
+mutations, execution or exchange calls. Cookie/CSRF trust belongs exclusively
+to the guarded staging HTTP entrypoint; this service still accepts only an
+operator session hash and MUST NOT be exposed directly.
 """
 
 from __future__ import annotations
@@ -35,12 +36,25 @@ from binance_ai_trader.models import (
 from binance_ai_trader.risk_schemas import RiskSettings
 
 
+def is_disposable_control_http_test(engine: Engine) -> bool:
+    """Hard registration boundary for staging-only HTTPS route tests."""
+    return (
+        engine.dialect.name == "postgresql"
+        and engine.url.host in ("localhost", "127.0.0.1")
+        and engine.url.database == "trader_bot_controls_http_test"
+        and os.environ.get("BOT_CONTROLS_HTTP_TEST_ISOLATED") == "1"
+    )
+
+
 def _disposable_only(engine: Engine) -> None:
+    original_fixture = (
+        engine.url.database == "trader_bot_controls_test"
+        and os.environ.get("BOT_CONTROLS_TEST_ISOLATED") == "1"
+    )
     if (
         engine.dialect.name != "postgresql"
         or engine.url.host not in ("localhost", "127.0.0.1")
-        or engine.url.database != "trader_bot_controls_test"
-        or os.environ.get("BOT_CONTROLS_TEST_ISOLATED") != "1"
+        or not (original_fixture or is_disposable_control_http_test(engine))
     ):
         raise BotControlRejected("isolated_bot_control_database_only")
 
