@@ -11,10 +11,10 @@ from binance_ai_trader.ai_constitution import (
     AiSpotProposal, BotState, IndependentRiskPolicy, TrustedSpotEvidence,
 )
 from binance_ai_trader.ai_market_regime import TimeframeHistory
-from binance_ai_trader.ai_paper_dry_run import simulate_reviewed_ai_spot
+from binance_ai_trader.ai_paper_dry_run import AiPaperDryRun, simulate_reviewed_ai_spot
 from binance_ai_trader.market_data import INTERVAL_MS, Candle
 from binance_ai_trader.paper_risk import PaperRiskState
-from binance_ai_trader.paper_spot import new_paper_spot_book
+from binance_ai_trader.paper_spot import PaperSpotBook, new_paper_spot_book
 from binance_ai_trader.risk_schemas import RiskSettings
 
 D = Decimal
@@ -105,9 +105,9 @@ def run(
     p: IndependentRiskPolicy | None = None,
     e: TrustedSpotEvidence | None = None,
     histories: tuple[TimeframeHistory, ...] | None = None,
-    book=None,
+    book: PaperSpotBook | None = None,
     trade_id: str | None = None,
-):
+) -> AiPaperDryRun:
     owner = p or policy()
     return simulate_reviewed_ai_spot(
         proposal or signal(),
