@@ -25,6 +25,25 @@ type RiskSettings = {
 };
 type SettingsSnapshot = {version: number; settings: RiskSettings};
 type AuditLog = {events: Array<{version:number;action:string;created_at:string}>};
+type WorkerRecord = {
+  requested_enabled: boolean|null; process_verified_running: false;
+  last_status: string|null; last_attempt_at_ms: number|null;
+  next_allowed_at_ms: number|null; consecutive_failures: number|null;
+};
+type WorkerEnvelope = {mode:"paper"; source:"persisted_paper_spot"; worker:WorkerRecord};
+const safeTime = (v:unknown):boolean =>
+  v === null || (typeof v === "number" && Number.isSafeInteger(v) && v >= 0);
+function safeWorkerEnvelope(value:WorkerEnvelope):boolean {
+  const w = value?.worker;
+  return value?.mode === "paper" && value.source === "persisted_paper_spot" &&
+    !!w && w.process_verified_running === false &&
+    (w.requested_enabled === null || typeof w.requested_enabled === "boolean") &&
+    (w.last_status === null || (typeof w.last_status === "string" &&
+      ["disabled","ready","no_signal","paper_recorded","source_blocked",
+        "rate_limited","error"].includes(w.last_status))) &&
+    safeTime(w.last_attempt_at_ms) && safeTime(w.next_allowed_at_ms) &&
+    safeTime(w.consecutive_failures);
+}
 
 function isSettings(value: SettingsSnapshot): boolean {
   const r = value?.settings;
@@ -73,6 +92,7 @@ export default function StagingConsoleSections({
   const [market, setMarket] = useState<MarketHistory|null>(null);
   const [settings, setSettings] = useState<SettingsSnapshot|null>(null);
   const [audit, setAudit] = useState<AuditLog|null>(null);
+  const [worker, setWorker] = useState<WorkerRecord|null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
@@ -86,7 +106,7 @@ export default function StagingConsoleSections({
     const controller = new AbortController();
     async function load() {
       setLoading(true); setMessage("");
-      setMarket(null); setSettings(null); setAudit(null);
+      setMarket(null); setSettings(null); setAudit(null); setWorker(null);
       setApproval(false);
       const query = new URLSearchParams({symbol, interval,limit:"30"});
       const endpoint = section === "market" ? "/api/v1/market/candles?" + query.toString()
@@ -114,6 +134,17 @@ export default function StagingConsoleSections({
           const snapshot = data as SettingsSnapshot;
           if (!isSettings(snapshot)) throw new Error("PAPER ayarları doğrulanamadı.");
           setSettings(snapshot);
+          if (section === "bot") {
+            const latest = await fetch(base + "/api/v1/paper/dashboard?limit=1", {
+              credentials:"include",cache:"no-store",signal:controller.signal,
+            });
+            if (latest.status === 401) {if (!controller.signal.aborted) onExpired(); return;}
+            if (!latest.ok) throw new Error("Son PAPER worker kaydı okunamadı.");
+            const workerResult = await latest.json() as WorkerEnvelope;
+            if (!safeWorkerEnvelope(workerResult)) throw new Error("Worker kaydı doğrulanamadı.");
+            if (controller.signal.aborted) return;
+            setWorker(workerResult.worker);
+          }
           setRiskTrade(String(snapshot.settings.risk_per_trade_pct));
           setRiskDay(String(snapshot.settings.daily_loss_limit_pct));
           setRiskDrawdown(String(snapshot.settings.max_drawdown_pct));
@@ -226,10 +257,21 @@ export default function StagingConsoleSections({
           <div><span>İzinli semboller</span><strong>{settings.settings.allowed_symbols.join(", ")}</strong></div>
           <div><span>Ayar sürümü</span><strong>{settings.version}</strong></div>
         </div>
-        {section === "bot" && <p className="staging-data-warning">
-          Kaydedilmiş etkinleştirme tercihi çalışan bir bot veya scheduler anlamına gelmez.
-          Otomatik çalıştırma bu özel beta sayfasından yapılamaz.
-        </p>}
+        {section === "bot" && <>
+          <h3>Otomatik PAPER — son kayıtlı deneme</h3>
+          <div className="staging-keyvalues">
+            <div><span>Son worker sonucu</span><strong>{worker?.last_status ?? "Kayıt yok"}</strong></div>
+            <div><span>Son deneme (UTC)</span><strong>{worker?.last_attempt_at_ms
+              ? utc(worker.last_attempt_at_ms) : "Kayıt yok"}</strong></div>
+            <div><span>Bir sonraki izinli deneme</span><strong>{worker?.next_allowed_at_ms
+              ? utc(worker.next_allowed_at_ms) : "Kayıt yok"}</strong></div>
+            <div><span>Ardışık kaynak hataları</span><strong>{worker?.consecutive_failures ?? 0}</strong></div>
+          </div>
+          <p className="staging-data-warning">Kaydedilmiş worker sonucu veya etkinleştirme
+            tercihi, çalışan bir işlem sürecinin kanıtı değildir. Bu ekranda
+            otomatik bot başlatma veya gerçek Binance emir yetkisi bulunmaz.
+            İlk otomatik PAPER denemesi yalnızca yerel bilgisayarda ayrı onayla başlatılır.</p>
+        </>}
         {section === "risk" && <>
           <h3>Risk sınırları</h3>
           <div className="staging-risk-grid">

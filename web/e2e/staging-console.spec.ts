@@ -88,6 +88,11 @@ for(const width of [360,390,768,1280]){
     await menu.getByRole("button",{name:"Piyasa Verileri"}).click();
     await expect(page.getByRole("heading",{name:"Piyasa Verileri"})).toBeVisible();
     await expect(page.getByText("Kayıtlı mum bulunamadı")).toBeVisible();
+    await nav(page,"Bot Yönetimi",width);
+    await expect(page.getByRole("heading",{name:"Bot Yönetimi"})).toBeVisible();
+    await expect(page.getByText("Son worker sonucu")).toBeVisible();
+    await expect(page.getByText(/çalışan bir işlem sürecinin kanıtı değildir/)).toBeVisible();
+    await expect(page.getByRole("button",{name:/botu başlat/i})).toHaveCount(0);
     await nav(page,"Risk Yönetimi",width);
     await expect(page.getByRole("heading",{name:"Risk Yönetimi"})).toBeVisible();
     await expect(page.getByText("Bot çalışma tercihi")).toBeVisible();

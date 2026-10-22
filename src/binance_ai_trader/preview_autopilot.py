@@ -9,7 +9,9 @@ Compose profile with persisted authorization. Real-money trading is impossible.
 from __future__ import annotations
 
 import argparse
+import signal
 import sys
+from threading import Event
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from os import environ
@@ -39,7 +41,7 @@ class PaperPilotRejected(ValueError):
 
 def validate_preview_pilot(values: Mapping[str, str], *, action: str) -> str:
     """Require the exact isolated preview DB BEFORE creating any SQL connection."""
-    if action not in ("status", "enable", "disable", "run"):
+    if action not in ("status", "preflight", "enable", "disable", "run"):
         raise PaperPilotRejected("unsupported_action")
     # The API always denies autonomous operation. A distinct non-HTTP pilot
     # container can have the scheduler opt-in; strip only for origin validation.
@@ -140,17 +142,54 @@ def paper_pilot_status(engine: Engine) -> str:
         raise PaperPilotRejected("inconsistent_paper_mode")
 
 
+
+def paper_pilot_preflight(engine: Engine) -> str:
+    """Non-mutating full ledger audit before user-controlled PAPER activation.
+
+    Does not send HTTP requests or place orders. A previous manual position
+    must be explicitly closed by the user, never by this helper.
+    """
+    if engine.dialect.name != "postgresql":
+        raise PaperPilotRejected("postgresql_required")
+    with Session(engine) as session, session.begin():
+        try:
+            rules, account, positions, _events = _locked_state(session)
+        except PaperExecutionRejected as exc:
+            raise PaperPilotRejected("paper_ledger_not_healthy") from exc
+        setting = session.get(TradingSettingsRow, 1)
+        if setting is None or account.settings_version != setting.version:
+            raise PaperPilotRejected("account_settings_version_mismatch")
+        if (
+            rules.mode != "paper"
+            or rules.market_type != "spot"
+            or account.initial_capital_usdt != 1000
+            or rules.spot_capital_usdt != 1000
+            or rules.max_leverage != 1
+            or ALLOWED_SYMBOL not in rules.allowed_symbols
+            or not rules.stop_loss_required
+        ):
+            return "BLOCKED_INCOMPATIBLE_PAPER_CONFIGURATION"
+        if any(position.status == "open" for position in positions):
+            return "BLOCKED_OPEN_PAPER_POSITION"
+        if rules.bot_enabled and not rules.manual_approval:
+            return "READY_AUTOMATIC_PAPER_PERMISSION"
+        if not rules.bot_enabled and rules.manual_approval:
+            return "READY_MANUAL_PAPER_MODE"
+        return "BLOCKED_INCONSISTENT_PAPER_PERMISSION"
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Isolated preview PAPER automation; default OFF")
     parser.add_argument(
-        "--action", choices=["status", "enable", "disable", "run"], default="status"
+        "--action", choices=["status", "preflight", "enable", "disable", "run"], default="status"
     )
     parser.add_argument("--confirm-paper-only", action="store_true")
+    parser.add_argument("--max-ticks", type=int, choices=range(1, 11), default=3)
     args = parser.parse_args(argv)
 
     # A database operation is not even attempted if the environment isn't
     # a private preview. No local developer DB, real DB or Cloudflare action.
-    if args.action != "status" and not args.confirm_paper_only:
+    if args.action not in ("status", "preflight") and not args.confirm_paper_only:
         print("REJECTED: explicit PAPER-only confirmation required", file=sys.stderr)
         return 2
     try:
@@ -162,18 +201,47 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"PAPER_MODE_UPDATED version={version} (no ledger reset or exchange order)")
             elif args.action == "status":
                 print("PAPER_STATUS " + paper_pilot_status(engine))
+            elif args.action == "preflight":
+                verdict = paper_pilot_preflight(engine)
+                print("PAPER_PREFLIGHT " + verdict)
+                return 0 if verdict.startswith("READY_") else 2
             else:
-                if paper_pilot_status(engine) != "AUTO_PAPER_PERMITTED_NOT_RUNNING_VERIFIED":
+                if paper_pilot_preflight(engine) != "READY_AUTOMATIC_PAPER_PERMISSION":
                     raise PaperPilotRejected("explicit_account_mode_enable_required")
+                stop = Event()
+
+                def request_stop(_signum: int, _frame: object) -> None:
+                    stop.set()
+
+                signal.signal(signal.SIGINT, request_stop)
+                signal.signal(signal.SIGTERM, request_stop)
+
+                def safe_report(result: object) -> None:
+                    from binance_ai_trader.paper_worker import PaperWorkerReport
+
+                    assert isinstance(result, PaperWorkerReport)
+                    print(
+                        f"PAPER_CANARY_TICK status={result.status.value} "
+                        f"reason={result.reason} checked_at_ms={result.checked_at_ms}",
+                        flush=True,
+                    )
+
                 result = run_paper_scheduler(
                     engine,
                     enabled=True,
                     symbol=ALLOWED_SYMBOL,
                     interval=ALLOWED_INTERVAL,
+                    max_ticks=args.max_ticks,
+                    stop_event=stop,
+                    report=safe_report,
                 )
                 print(f"PAPER_PILOT_ENDED status={result.status.value} ticks={result.ticks}")
                 return (
-                    0 if result.status in (SchedulerStatus.STOPPED, SchedulerStatus.DISABLED) else 1
+                    0 if result.status in (
+                        SchedulerStatus.STOPPED,
+                        SchedulerStatus.DISABLED,
+                        SchedulerStatus.LIMIT_REACHED,
+                    ) else 1
                 )
         finally:
             engine.dispose()

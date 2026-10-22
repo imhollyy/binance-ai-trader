@@ -14,6 +14,7 @@ from binance_ai_trader.preview_autopilot import (
     change_paper_pilot_mode,
     main,
     validate_preview_pilot,
+    paper_pilot_preflight,
 )
 from binance_ai_trader.staging_auth import password_hash
 
@@ -35,6 +36,7 @@ GOOD: Mapping[str, str] = {
 
 def test_autopilot_off_without_all_explicit_gates() -> None:
     assert validate_preview_pilot(GOOD, action="status") == GOOD["DATABASE_URL"]
+    assert validate_preview_pilot(GOOD, action="preflight") == GOOD["DATABASE_URL"]
     with pytest.raises(PaperPilotRejected, match="scheduler_opt_in_required"):
         validate_preview_pilot(GOOD, action="run")
     with pytest.raises(PaperPilotRejected, match="local_control_opt_in_required"):
@@ -84,3 +86,8 @@ def test_pilot_rejects_non_postgresql_and_requires_action_confirmation(
     assert "confirmation required" in capsys.readouterr().err
     assert main(["--action", "run", "--confirm-paper-only"]) == 2
     assert "isolated PAPER pilot" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as bad_ticks:
+        main(["--action", "run", "--confirm-paper-only", "--max-ticks", "11"])
+    assert bad_ticks.value.code == 2
+    with pytest.raises(PaperPilotRejected, match="postgresql"):
+        paper_pilot_preflight(create_engine("sqlite+pysqlite:///:memory:"))
