@@ -23,7 +23,11 @@ from binance_ai_trader.ai_paper_bot_controls_test import (
     read_disposable_bot_control,
     update_disposable_bot_control,
 )
-from binance_ai_trader.ai_position_protection import BotControlRejected, StopBehavior
+from binance_ai_trader.ai_position_protection import (
+    BotControlRejected,
+    BotControlSnapshot,
+    StopBehavior,
+)
 from binance_ai_trader.models import (
     PaperBotControlEventRow,
     PaperBotControlRow,
@@ -78,7 +82,7 @@ def _write(
     behavior: StopBehavior = StopBehavior.MONITOR_ONLY,
     confirmed: bool = False,
     clock: int = CLOCK,
-):
+) -> BotControlSnapshot:
     return update_disposable_bot_control(
         db,
         actor_session_hash=actor,
