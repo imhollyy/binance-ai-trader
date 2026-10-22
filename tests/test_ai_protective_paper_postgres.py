@@ -243,7 +243,7 @@ def test_mock_stop_then_take_profit_with_locked_control_fee_pnl_and_audit(
         _close(engine, clock, revision=2)
     with pytest.raises(PaperExecutionRejected, match="protective_trigger_not_present"):
         _close(engine, clock, ticker="102")
-    with pytest.raises(PaperExecutionRejected, match="protective_test_approval_or_source_required"):
+    with pytest.raises(PaperExecutionRejected, match="protective_costs_invalid"):
         _close(engine, clock, costs=PaperCosts(-1, 5))
     assert _count(engine) == (1, 2, 0)
 
