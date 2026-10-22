@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -259,7 +259,7 @@ def test_forged_mismatched_and_stale_dataclasses_block() -> None:
         assert check(mismatched).status is CoherenceStatus.SYMBOL_MISMATCH
     for source in (
         replace(a, source="forged"),
-        replace(a, exchange_price_event_time_ms=123),  # type: ignore[arg-type]
+        replace(a, exchange_price_event_time_ms=123),
     ):
         assert check((source, b, c, now)).status is CoherenceStatus.INVALID_INPUT
     for invalid in (
@@ -290,10 +290,10 @@ def test_missing_fields_and_untrusted_wrapper_never_contact_network() -> None:
     assert check((None, None, None, -1)).status is CoherenceStatus.INVALID_INPUT
     assert (
         observe_public_spot_coherence_once(
-            object(),
-            object(),
-            object(),
-            symbol="BTCUSDT",  # type: ignore[arg-type]
+            cast(PublicSpotObservationClient, object()),
+            cast(PublicSpotCostClient, object()),
+            cast(PublicSpotDepthClient, object()),
+            symbol="BTCUSDT",
         ).status
         is CoherenceStatus.INVALID_INPUT
     )
