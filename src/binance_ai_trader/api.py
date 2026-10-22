@@ -309,14 +309,17 @@ def create_app(
                                 raise HTTPException(
                                     status_code=409, detail="PAPER account settings mismatch"
                                 )
-                            if session.scalar(
-                                select(PaperSpotPositionRow.id)
-                                .where(
-                                    PaperSpotPositionRow.account_id == account.id,
-                                    PaperSpotPositionRow.status == "open",
+                            if (
+                                session.scalar(
+                                    select(PaperSpotPositionRow.id)
+                                    .where(
+                                        PaperSpotPositionRow.account_id == account.id,
+                                        PaperSpotPositionRow.status == "open",
+                                    )
+                                    .limit(1)
                                 )
-                                .limit(1)
-                            ) is not None:
+                                is not None
+                            ):
                                 raise HTTPException(
                                     status_code=409,
                                     detail="Close open PAPER position before editing risk",
