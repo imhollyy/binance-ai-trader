@@ -255,3 +255,38 @@ birden çok paralel sembolde açık risk, restart/kill-switch,
 kurumsal state worker entegrasyonu, manuel operatör onayı ve
 uzun süreli paper forward-run; bunlar tamamlanmadan otomatik
 koruma etkinleştirilemez.
+
+## BT-019: herkese açık Spot order-book / exchangeInfo maliyet provası
+
+- `public_spot_cost_review.py` tek sembol için iki **PUBLIC** GET
+  çağırır: `/api/v3/exchangeInfo` ve `/api/v3/ticker/bookTicker`.
+  Sabit `data-api.binance.vision`, en çok üç saniye,
+  yönlendirme/ortam proxy/otomatik tekrar yok, API key yok.
+- Kontrol: çift sembol/crossed book, pozitif bid/ask/miktarlar,
+  PRICE_FILTER tick aralıkları, sadece TRADING/SPOT/MARKET,
+  LOT_SIZE, MARKET_LOT_SIZE, markete uygulanabilen
+  MIN_NOTIONAL/NOTIONAL, üst seviye likidite, maliyet ve spread.
+  Borsanın ortalama fiyatı gerektiğinde veya anlamı eksik kalan
+  **başka herhangi bir filtre** bulunduğunda açıkça
+  `UNEVALUATED_FILTER` ile reddeder. Borsanın filtrelerinin
+  tam karşılanması için daha fazla kapsam gerekecektir.
+- bookTicker tek başına **borsadan imzalı quote zamanı, gerçek emir
+  defteri derinliği, gelecekteki fill ya da slippage** kanıtlamaz.
+  `requested_at_ms` ve `received_at_ms` yalnız yerel ölçümdür,
+  3 saniyeden sonra sonuç stale kabul edilir.
+- **Hesaba özel maker/taker ücret doğrulaması henüz YOK.**
+  `/sapi/v1/asset/tradeFee` USER_DATA yetkisi gerektirir; hiçbir
+  private Binance anahtarı açılmadı/eklenmedi. Komisyon girilmezse
+  `ACCOUNT_FEE_UNKNOWN`; girilmiş bir tutar sadece
+  `hypothetical_taker_fee_bps` olarak, komisyon+spread+olumsuz
+  kayma stres testinde kullanılabilir.
+- `SIMULATION_ONLY` dâhil **tüm sonuçlar**
+  `trade_authorized=False`. Mevcut PAPER ledger/worker/staging
+  API, kaldıraç/Futures, gerçek emir motoru ve kullanıcı hesapları
+  değişmedi. Net kârı doğrulanmış gibi göstermez.
+- Sıradaki dilim: kimliği doğrulanmış account fee tier'i
+  sunucu kontrolünde elde etme, public book derinliği ve
+  volatilitede likidite hassasiyeti, ortalama fiyat ile market
+  notional filtre doğrulaması, filtrelerin tam kapsamı,
+  sürümlü maliyet kanıtı/audit ve izole end-to-end maliyet gate.
+  Bunlardan önce üretim işlem yetkisi yok.
