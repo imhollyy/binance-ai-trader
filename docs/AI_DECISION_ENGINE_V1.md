@@ -503,3 +503,36 @@ birleştirilmesi, sınırlı ve açık onaylı PAPER forward-run.
   ücret/spread/fiyat-kayması gözlemleri ve ileriye dönük çoklu
   walk-forward değerlendirme. Bunlar olmadan üretim AI güven
   skoru ya da otomatik emir yetkisi açılamaz.
+
+## BT-023D — İzole PostgreSQL'e önceden tahmin kaydetme (ilk dilim)
+
+- Alembic `0008_ai_forecast_receipts` migration'ı boş
+  `ai_research_forecast_receipts` araştırma tablosunu oluşturur;
+  hiçbir varsayılan kullanıcı, tahmin, worker ya da PAPER
+  işlem/pozisyon kaydı oluşturmaz. `received_at_ms`, uygulamanın
+  gönderdiği değer yerine yalnız PostgreSQL `clock_timestamp()`
+  ile atanır. Tahmin kapanmış mum sonrasında ama sonucu oluşturan
+  ileri hedef mum kapanışından **önce** girilmiş olmalıdır.
+- Veritabanı CHECK kısıtları sembol/zaman dilimi, kapanmış
+  mum grid'i, ufuk sınırı ve Decimal WIN/LOSS/FLAT
+  toplamını korur. UNIQUE `signal_id` eşzamanlı tekrarı
+  engeller. UPDATE/DELETE/TRUNCATE, DB trigger'larıyla
+  **append-only** reddedilir. Yetkili DB sahibi / superuser
+  tablo ve trigger'ları değiştirebildiğinden bu yapı tek başına
+  kriptografik bağımsız denetim değildir.
+- `ai_research_forecast_receipts_test.py` kayıt eklemeyi/okumayı
+  sadece yerel `trader_ai_forecast_test` ve
+  `AI_FORECAST_TEST_ISOLATED=1` altında açar. Ne prod API
+  ne bot worker bu kodu kullanır; dışarıdan kullanıcı oturum
+  kontrolü iddiası yoktur. Geçerli kayıt bile
+  `trade_authorized=False`, `no_trade=True`,
+  `qualifies_as_calibrated_model=False` kalır.
+- Sentetik PostgreSQL testleri sunucu saatini, değişmezliği,
+  eşzamanlı idempotent retleri, bozuk model olasılığı retlerini,
+  yeniden başlatmada kayıt okunmasını ve PAPER bilançosunun
+  hiç etkilenmemesini denetler.
+- BT-023D'nin sonraki kapısı: güvenilir model/operatör
+  doğrulaması, kapalı mumların bağımsız kaynak/dış zaman
+  delili, yalnız kayıt olgunlaştıktan sonra yeni immutable
+  adjudication kaydı, dış zincir başı referansı ve
+  uzun dönem PAPER ölçümü. Bu PR hiçbir canlı işlem açmaz.
