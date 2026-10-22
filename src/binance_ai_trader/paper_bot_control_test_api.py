@@ -47,12 +47,12 @@ class ControlSnapshotResponse(BaseModel):
 
 
 class ChangeControlRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="forbid")
 
-    expected_revision: int = Field(ge=1)
+    expected_revision: int = Field(ge=1, strict=True)
     next_state: BotState
     stop_behavior: StopBehavior
-    confirm_reduce_only_review: bool
+    confirm_reduce_only_review: bool = Field(strict=True)
 
 
 def register_bot_control_test_routes(

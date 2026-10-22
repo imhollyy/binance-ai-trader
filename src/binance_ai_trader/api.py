@@ -19,7 +19,6 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from binance_ai_trader.ai_paper_bot_controls_test import is_disposable_control_http_test
 from binance_ai_trader.api_config import ApiConfig
-from binance_ai_trader.paper_bot_control_test_api import register_bot_control_test_routes
 from binance_ai_trader.manual_paper_api import register_manual_paper_route
 from binance_ai_trader.models import (
     AuditRow,
@@ -28,6 +27,7 @@ from binance_ai_trader.models import (
     SpotCandleRow,
     TradingSettingsRow,
 )
+from binance_ai_trader.paper_bot_control_test_api import register_bot_control_test_routes
 from binance_ai_trader.paper_dashboard_api import register_paper_dashboard_route
 from binance_ai_trader.paper_read_api import register_paper_spot_read_route
 from binance_ai_trader.preview_preflight import verify_preview_environment
