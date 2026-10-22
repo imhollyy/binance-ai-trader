@@ -398,3 +398,42 @@ birleştirilmesi, sınırlı ve açık onaylı PAPER forward-run.
   kullanıcının/hesabın yetki sınırı, ücret yenilemesi,
   rate-limit durdurması, filtrelerin tam kapsamı,
   ileri PAPER testleri. Bunlardan önce otomatik emir yoktur.
+
+## BT-023: AI olasılıkları için çevrimdışı walk-forward kanıt denetimi (ilk dilim)
+
+- `ai_offline_model_review.py` model üretmez, eğitmez, internete
+  bağlanmaz; `ProbabilityEstimate` tipindeki üçlü WIN / LOSS /
+  FLAT önerilerini ve sonradan gözlendiği **iddia edilen** etiketleri
+  sadece çevrimdışı gözden geçirir. Model/etiketlerin gerçek Binance
+  kaynaklı olduğunu, model dosyasının değişmediğini veya eğitim
+  aralığının gerçekten ilan edildiğini **kanıtlamaz**.
+- Model sürümü, eğitim bitişi, kronolojik validation/test aralıkları,
+  etiket olgunlaşma ufku ve değerlendirme anı açıkça beyan edilir.
+  Model ufku kadar eğitim→validation ve validation→test ambargosu,
+  aynı signal_id'nin tekrar kullanılmaması, tam sıralı tekil
+  mum kapanışları, ileri etiketlerin testten önce olgunlaşması,
+  aynı sembol, aynı model sürümü ve sentetik sahte olasılık
+  doğrulaması gerekir. Veri yoksa veya sızıntı görülürse `NO_TRADE`.
+- Bir validasyon ve bir test bölümünde en az 120 örnek ve
+  her WIN / LOSS / FLAT etiketinden en az 10 gerekir. Üç sınıflı
+  Brier skoru ve en yüksek sınıf güveni için kalibrasyon hatası
+  (top-label ECE) raporlanır. Test Brier skoru, yalnız validation
+  etiketlerinden hesaplanan sabit sınıf taban oranı ile karşılaştırılır.
+  `MAX_ECE=0.08` ve `MIN_BRIER_IMPROVEMENT=0.01` değerleri
+  **yalnız araştırma göstergesidir**, yatırım performansı
+  kanıtı veya kullanıcı risk ayarı değildir.
+- Veri sentetik de olsa olumlu rapor sadece
+  `UNVERIFIED_OFFLINE_RESEARCH_ONLY` üretir.
+  `qualifies_as_calibrated_model=False`,
+  `trade_authorized=False`, `no_trade=True` **her zaman**.
+  Sistemdeki `IndependentRiskPolicy.calibrated_model_versions`
+  listesi ve `AI_TRADING_CONSTITUTION_V1.md` değiştirilmedi,
+  model yetkilendirilmedi; PAPER/Spot gerçek işleyici, Futures,
+  Binance API anahtarı ve çalışan bot etkilenmedi.
+- Sıradaki BT-023 dilimleri: SHA-256'lı, yeniden üretilebilir
+  model/veri manifestleri ve saklanan tahmin kayıtları;
+  bağımsız exchange-timestamp temelli etiket doğrulaması,
+  train/test müdahale koruması, walk-forward çok dönem
+  değerlendirme, işlem maliyetlerine göre etiket oluşturma,
+  güvenilirlik diyagramı ve kör forward-PAPER testi.
+  Bunlar olmadan yüksek güven skoru üretim kararına giremez.
