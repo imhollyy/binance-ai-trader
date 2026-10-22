@@ -404,3 +404,64 @@ class PaperBotControlEventRow(Base):
     settings_version: Mapped[int] = mapped_column(Integer, nullable=False)
     actor_session_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     recorded_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class AiResearchForecastReceiptRow(Base):
+    """Test-captured, DB-clocked and append-only research forecast only.
+
+    An entry does NOT prove exchange data or authorize a trade or calibrated model.
+    """
+
+    __tablename__ = "ai_research_forecast_receipts"
+    __table_args__ = (
+        CheckConstraint(
+            "symbol IN ('BTCUSDT', 'ETHUSDT') AND interval IN ('1m', '5m', '15m')",
+            name="ck_ai_receipt_spot_scope",
+        ),
+        CheckConstraint(
+            "length(signal_id) BETWEEN 8 AND 128 AND length(model_version) BETWEEN 1 AND 64",
+            name="ck_ai_receipt_names",
+        ),
+        CheckConstraint(
+            "observed_close_at_ms > 0 AND observed_close_at_ms < received_at_ms "
+            "AND received_at_ms < outcome_due_at_ms",
+            name="ck_ai_receipt_causal_order",
+        ),
+        CheckConstraint(
+            "outcome_due_at_ms - observed_close_at_ms BETWEEN 60000 AND 86400000",
+            name="ck_ai_receipt_horizon",
+        ),
+        CheckConstraint(
+            "prob_win BETWEEN 0 AND 1 AND prob_loss BETWEEN 0 AND 1 "
+            "AND prob_flat BETWEEN 0 AND 1 AND prob_win + prob_loss + prob_flat = 1 "
+            "AND prob_win <> 'NaN'::numeric AND prob_loss <> 'NaN'::numeric "
+            "AND prob_flat <> 'NaN'::numeric",
+            name="ck_ai_receipt_probabilities",
+        ).ddl_if(dialect="postgresql"),
+        CheckConstraint(
+            "CASE interval "
+            "WHEN '1m' THEN MOD(observed_close_at_ms + 1, 60000) = 0 "
+            "AND MOD(outcome_due_at_ms - observed_close_at_ms, 60000) = 0 "
+            "WHEN '5m' THEN MOD(observed_close_at_ms + 1, 300000) = 0 "
+            "AND MOD(outcome_due_at_ms - observed_close_at_ms, 300000) = 0 "
+            "WHEN '15m' THEN MOD(observed_close_at_ms + 1, 900000) = 0 "
+            "AND MOD(outcome_due_at_ms - observed_close_at_ms, 900000) = 0 "
+            "ELSE FALSE END",
+            name="ck_ai_receipt_closed_candle_grid",
+        ),
+        Index("ix_ai_receipt_symbol_due", "symbol", "outcome_due_at_ms"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    signal_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    model_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    interval: Mapped[str] = mapped_column(String(5), nullable=False)
+    observed_close_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    outcome_due_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    received_at_ms: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
+    prob_win: Mapped[Decimal] = mapped_column(Numeric(38, 30), nullable=False)
+    prob_loss: Mapped[Decimal] = mapped_column(Numeric(38, 30), nullable=False)
+    prob_flat: Mapped[Decimal] = mapped_column(Numeric(38, 30), nullable=False)
