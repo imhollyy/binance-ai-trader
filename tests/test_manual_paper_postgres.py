@@ -17,6 +17,7 @@ from sqlalchemy import Engine, create_engine, func, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
+from binance_ai_trader.market_data import MarketDataError
 from binance_ai_trader.manual_paper_execution import (
     ManualPaperRequest,
     run_manual_paper_once,
@@ -137,7 +138,7 @@ def test_manual_paper_account_consent_replay_quote_audit_and_close(engine: Engin
     # create a position, journal row or a misleading quote audit.
     now = 1_800_000_000_200
     for price, status in (("200", 200), ("100", 429)):
-        with pytest.raises(ValueError):
+        with pytest.raises((MarketDataError, ValueError)):
             run_manual_paper_once(
                 engine, _request(), observer=_mock_observer(now=now, ticker=price, status=status)
             )
