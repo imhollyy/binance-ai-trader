@@ -81,6 +81,36 @@ services:
     # Local private CA; not a publicly trusted cert.
     # Do NOT tunnel to this port without approved Access/TLS configuration.
 
+  # Explicit PAPER pilot, NOT part of the default "preview" profile.
+  preview-paper-pilot:
+    profiles: ["paper-pilot"]
+    build: .
+    restart: "no"
+    depends_on:
+      preview-db:
+        condition: service_healthy
+    environment:
+      TRADING_MODE: paper
+      DATABASE_URL: ${STAGING_DATABASE_URL:?Isolated preview DB required}
+      PRIVATE_PREVIEW_OPT_IN: ${PRIVATE_PREVIEW_OPT_IN:?Private preview opt-in required}
+      API_AUTH_MODE: staging
+      STAGING_WEB_ORIGIN: ${STAGING_WEB_ORIGIN:?Preview origin required}
+      STAGING_API_HOST: ${PREVIEW_HOST:?Preview host required}
+      STAGING_VIEWER_PASSWORD_HASH: ${STAGING_VIEWER_PASSWORD_HASH:?Viewer hash required}
+      STAGING_OPERATOR_PASSWORD_HASH: ${STAGING_OPERATOR_PASSWORD_HASH:?Operator hash required}
+      PAPER_SCHEDULER_OPT_IN: ${PAPER_SCHEDULER_OPT_IN:-}
+      PAPER_AUTOPILOT_CONTROL_OPT_IN: ${PAPER_AUTOPILOT_CONTROL_OPT_IN:-}
+    command:
+      - python
+      - -m
+      - binance_ai_trader.preview_autopilot
+      - --action
+      - run
+      - --confirm-paper-only
+    networks:
+      - preview_private
+    # No exposed ports, real keys, exchange orders or startup by default.
+
 networks:
   preview_private:
     ipam:

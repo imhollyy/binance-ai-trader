@@ -205,3 +205,200 @@ def test_manual_paper_account_consent_replay_quote_audit_and_close(engine: Engin
         assert row is not None
         settings = RiskSettings.model_validate(row.data)
         assert settings.bot_enabled is False
+
+
+def test_preview_risk_change_ledger_consistency_and_subsequent_paper_trades(
+    engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fresh staging roles and PAPER journal must survive approved risk edit."""
+    from fastapi.testclient import TestClient
+
+    from binance_ai_trader.api import create_app
+    from binance_ai_trader.api_config import ApiConfig
+    from binance_ai_trader.models import AuditRow
+    from binance_ai_trader.staging_auth import password_hash
+
+    # Only a disposable migrated localhost trader_manual_test DB is accepted
+    # by this module's fixture; NEVER point this test at an owner's preview DB.
+    assert SAFE and URL is not None
+    monkeypatch.setenv("PRIVATE_PREVIEW_OPT_IN", "isolated-paper-only")
+    origin = "https://preview.staging.example"
+    view_password = "synthetic-viewer-password-for-bt010b"
+    operator_password = "synthetic-operator-password-for-bt010b"
+    app = create_app(
+        config=ApiConfig(
+            database_url=URL,
+            admin_token=None,
+            auth_mode="staging",
+            staging_origin=origin,
+            staging_host="preview.staging.example",
+            viewer_password_hash=password_hash(view_password, salt=b"paper-view-010bx"),
+            operator_password_hash=password_hash(operator_password, salt=b"paper-oper-010bx"),
+        ),
+        engine=engine,
+    )
+    before = _totals(engine)
+    assert before[:3] == (1, 3, 2)
+    with Session(engine) as db:
+        account = db.get(PaperSpotAccountRow, 1)
+        assert account is not None and account.settings_version == 1
+
+    with (
+        TestClient(app, base_url=origin) as viewer,
+        TestClient(app, base_url=origin) as operator,
+    ):
+        headers = {"Origin": origin}
+        viewer_login = viewer.post(
+            "/api/v1/auth/login",
+            headers=headers,
+            json={"username": "viewer", "password": view_password},
+        )
+        assert viewer_login.status_code == 200
+        view_csrf = viewer_login.json()["csrf_token"]
+        oper_login = operator.post(
+            "/api/v1/auth/login",
+            headers=headers,
+            json={"username": "operator", "password": operator_password},
+        )
+        assert oper_login.status_code == 200
+        oper_csrf = oper_login.json()["csrf_token"]
+        approval = {
+            **headers,
+            "X-CSRF-Token": oper_csrf,
+            "X-Paper-Settings-Approval": "PAPER_SETTINGS_ONLY",
+        }
+        view_approval = {**approval, "X-CSRF-Token": view_csrf}
+        settings_snapshot = operator.get("/api/v1/settings", headers=headers).json()
+        assert settings_snapshot["version"] == 1
+        data = settings_snapshot["settings"]
+        desired = {**data, "risk_per_trade_pct": 0.35}
+        request = {"expected_version": 1, "settings": desired}
+
+        assert (
+            viewer.put("/api/v1/settings", headers=view_approval, json=request).status_code == 403
+        )
+        assert (
+            operator.put(
+                "/api/v1/settings",
+                headers={**approval, "Origin": "https://evil.example"},
+                json=request,
+            ).status_code
+            == 403
+        )
+        assert operator.put("/api/v1/settings", headers=headers, json=request).status_code == 403
+        assert (
+            operator.put(
+                "/api/v1/settings",
+                headers=approval,
+                json={**request, "settings": {**desired, "bot_enabled": True}},
+            ).status_code
+            == 409
+        )
+        assert (
+            operator.put(
+                "/api/v1/settings",
+                headers=approval,
+                json={**request, "settings": {**desired, "spot_capital_usdt": 2000}},
+            ).status_code
+            == 409
+        )
+        assert _totals(engine) == before
+
+        saved = operator.put("/api/v1/settings", headers=approval, json=request)
+        assert saved.status_code == 200
+        assert saved.json()["version"] == 2
+        assert saved.json()["settings"]["bot_enabled"] is False
+        assert operator.put("/api/v1/settings", headers=approval, json=request).status_code == 409
+
+        with Session(engine) as db:
+            account = db.get(PaperSpotAccountRow, 1)
+            assert account is not None and account.settings_version == 2
+            assert account.cash_usdt == before[3]
+            assert db.scalar(select(func.count()).select_from(AuditRow)) == 1
+        assert _totals(engine) == before
+
+        # The next real PAPER request against a fresh mocked public quote works,
+        # rather than failing because settings version drifted from the ledger.
+        now = 1_800_000_600_200
+        newer = _request(request_id=UUID("00000000-0000-4000-8000-000000000014"), budget="50")
+        created = run_manual_paper_once(engine, newer, observer=_mock_observer(now=now))
+        assert created.receipt.event_type == "spot_buy"
+        assert created.receipt.cash_after_usdt < before[3]
+        assert _totals(engine)[:3] == (2, 4, 3)
+
+        # Do not silently change risk while an open PAPER position exists.
+        proposed = {**desired, "risk_per_trade_pct": 0.4}
+        assert (
+            operator.put(
+                "/api/v1/settings",
+                headers=approval,
+                json={"expected_version": 2, "settings": proposed},
+            ).status_code
+            == 409
+        )
+        with Session(engine) as db:
+            account = db.get(PaperSpotAccountRow, 1)
+            assert account is not None and account.settings_version == 2
+
+        closed = run_manual_paper_once(
+            engine,
+            _request("sell", UUID("00000000-0000-4000-8000-000000000015"), budget=None, stop=None),
+            observer=_mock_observer(now=now + 60_000),
+        )
+        assert closed.receipt.event_type == "spot_sell"
+        assert _totals(engine)[:3] == (2, 5, 4)
+
+    # Independent engine restart persists both ledger and settings version.
+    fresh = create_engine(URL, pool_pre_ping=True)
+    try:
+        with Session(fresh) as db:
+            account = db.get(PaperSpotAccountRow, 1)
+            assert account is not None
+            assert account.settings_version == 2
+            assert account.cash_usdt == closed.receipt.cash_after_usdt
+            assert db.scalar(select(func.count()).select_from(PaperSpotJournalRow)) == 5
+    finally:
+        fresh.dispose()
+
+
+def test_autopilot_enable_disable_carries_unchanged_virtual_money(engine: Engine) -> None:
+    """Separate user-consented PAPER pilot transition, never a Binance trade."""
+    from binance_ai_trader.paper_scheduler import SchedulerStatus, run_paper_scheduler
+    from binance_ai_trader.preview_autopilot import (
+        PaperPilotRejected,
+        change_paper_pilot_mode,
+        paper_pilot_status,
+    )
+
+    before = _totals(engine)
+    with Session(engine) as db:
+        prior = db.get(PaperSpotAccountRow, 1)
+        assert prior is not None and prior.settings_version == 2
+    assert paper_pilot_status(engine) == "MANUAL_PAPER_ONLY_SCHEDULER_OFF"
+    new_version = change_paper_pilot_mode(engine, enable=True)
+    assert new_version == 3
+    assert paper_pilot_status(engine) == "AUTO_PAPER_PERMITTED_NOT_RUNNING_VERIFIED"
+    assert _totals(engine) == before
+    # Persisted mode consent is NOT enough to start a process, HTTP, or trade.
+    assert run_paper_scheduler(engine, enabled=False).status is SchedulerStatus.DISABLED
+    assert _totals(engine) == before
+    with pytest.raises(PaperPilotRejected, match="pilot_not_in_manual_off_state"):
+        change_paper_pilot_mode(engine, enable=True)
+    assert _totals(engine) == before
+
+    # Emergency revert restores manual-only without resetting the journal.
+    version = change_paper_pilot_mode(engine, enable=False)
+    assert version == 4
+    assert change_paper_pilot_mode(engine, enable=False) == 4
+    assert paper_pilot_status(engine) == "MANUAL_PAPER_ONLY_SCHEDULER_OFF"
+    with Session(engine) as db:
+        settings = db.get(TradingSettingsRow, 1)
+        account = db.get(PaperSpotAccountRow, 1)
+        assert settings is not None and account is not None
+        assert settings.version == account.settings_version == 4
+        stored = RiskSettings.model_validate(settings.data)
+        assert stored.bot_enabled is False and stored.manual_approval is True
+        assert stored.spot_capital_usdt == 1000
+        assert db.scalar(select(func.count()).select_from(PaperSpotJournalRow)) == 5
+    assert _totals(engine) == before
