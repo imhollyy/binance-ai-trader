@@ -238,7 +238,11 @@ def evaluate_constitution_spot_proposal(
         or settings.spot_capital_usdt <= 0
     ):
         return _no_trade(proposal, "USER_HARD_LIMIT")
-    if policy.bot_state is not BotState.RUNNING or not settings.bot_enabled or settings.manual_approval:
+    if (
+        policy.bot_state is not BotState.RUNNING
+        or not settings.bot_enabled
+        or settings.manual_approval
+    ):
         return _no_trade(proposal, "BOT_NOT_RUNNING")
     if evidence is None or not evidence.exchange_constraints_ok:
         return _no_trade(proposal, "EXCHANGE_CONSTRAINT")
@@ -269,7 +273,12 @@ def evaluate_constitution_spot_proposal(
         or evidence.symbol != proposal.symbol
         or evidence.interval != proposal.execution_timeframe
         or evidence.last_closed_at_ms != proposal.observed_close_at_ms
-        or not evidence.last_closed_at_ms <= evidence.received_at_ms <= proposal.created_at_ms <= now_ms
+        or not (
+            evidence.last_closed_at_ms
+            <= evidence.received_at_ms
+            <= proposal.created_at_ms
+            <= now_ms
+        )
         or now_ms >= proposal.valid_until_ms
         or type(policy.max_market_age_ms) is not int
         or policy.max_market_age_ms <= 0
