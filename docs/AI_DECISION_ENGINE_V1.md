@@ -467,3 +467,39 @@ birleştirilmesi, sınırlı ve açık onaylı PAPER forward-run.
   etiketleri, ayrı model artefakt deposu / imzalı referans,
   birden çok ileri yürüyüş dönemi ve canlı olmayan
   forward-PAPER performans kabulü.
+
+## BT-023C — Sentetik kapanmış mumdan bağımsız label ve hash-zinciri provası
+
+- `ai_offline_candle_outcomes.py` yalnızca açıkça verilen kapanmış
+  Spot 1m/5m/15m OHLCV mumları ve model tahminlerini kullanır;
+  gerçek Binance ağ çağrısı, saklanan forecast kaydı, DB migrasyonu,
+  işlem API'si veya emir yürütmesi eklemez.
+- Kronolojik, kesintisiz ve geçerli OHLCV, tam mum/horizon zamanı,
+  önceden beyan edilmiş `recorded_at_ms`, tekil signal id,
+  model/symbol tutarlılığı ve henüz oluşmamış gelecek mumu
+  kullanmama koşulları kontrol edilir. Kapanmış mumun fiyatına göre
+  **yalnız varsayımsal LONG, close-to-close** net getiri hesaplanır:
+  `(future_close/entry_close - 1) * 10000 - hypothetical_roundtrip_cost_bps`.
+  Varsayımsal fiyat kayması, ücret ve flat eşiği ayrı girdilerdir;
+  hesap gerçek emir gerçekleşmesini veya gerçek ücretleri KANITLAMAZ.
+- Üretilen `ForecastOutcome` kayıtları önceki kayıt SHA-256'sını,
+  fiyatları, varsayımsal maliyet girdisini ve bütün mum dizisinin
+  SHA-256 değerini içeren deterministik zincirle bağlanır.
+  `verify_offline_candle_label_ledger` tüm sonuçları yeniden
+  hesaplar, değişmiş etiket, tahmin, zaman, mum, maliyet veya
+  bağlantıları reddeder; isteğe bağlı detached hash referansını
+  kontrol eder. Bu **sadece bellek içi provadır**;
+  güvenilir dış hash deposu/kalıcı append-only veritabanı yoktur.
+- Offline forecast `recorded_at_ms` kullanıcı beyanıdır, bağımsız
+  güvenilir saat/kalıcı kayıt değildir. SHA-256 zinciri de dışarıdan
+  doğrulanmış exchange etiketi veya gerçek model kalibrasyonu
+  **değildir**. `SELF_REPORTED_REPLAY_ONLY` dahil her durumda
+  `trade_authorized=False`, `qualifies_as_calibrated_model=False`
+  ve `no_trade=True`. Anayasa, kullanıcı PAPER bakiyesi ve canlı
+  Binance işlemleri değişmez.
+- Sonraki kabul gereksinimi: güvenilir kaynaktan kapanmış mum
+  kanıtı, tahminleri sonuçlardan önce bağımsız salt-eklemeli
+  PostgreSQL'e yazma, değiştirilemeyen onaylı referans,
+  ücret/spread/fiyat-kayması gözlemleri ve ileriye dönük çoklu
+  walk-forward değerlendirme. Bunlar olmadan üretim AI güven
+  skoru ya da otomatik emir yetkisi açılamaz.
