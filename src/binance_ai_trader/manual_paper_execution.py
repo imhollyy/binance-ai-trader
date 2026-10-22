@@ -57,9 +57,7 @@ class ManualPaperRequest(BaseModel):
     request_id: UUID
     confirmation: Literal["CONFIRM_MANUAL_PAPER_ONLY"]
     budget_usdt: Decimal | None = Field(default=None, ge=10, le=100, decimal_places=2)
-    stop_distance_pct: Decimal | None = Field(
-        default=None, ge=1, le=3, decimal_places=2
-    )
+    stop_distance_pct: Decimal | None = Field(default=None, ge=1, le=3, decimal_places=2)
 
     @model_validator(mode="after")
     def validate_action(self) -> ManualPaperRequest:
@@ -89,9 +87,7 @@ def _canonical(request: ManualPaperRequest) -> str:
         "nonce": str(request.request_id),
         "budget": str(request.budget_usdt) if request.budget_usdt is not None else None,
         "stop_pct": (
-            str(request.stop_distance_pct)
-            if request.stop_distance_pct is not None
-            else None
+            str(request.stop_distance_pct) if request.stop_distance_pct is not None else None
         ),
     }
     return hashlib.sha256(
@@ -217,8 +213,11 @@ def run_manual_paper_once(
 
             sample = price_source.observe(symbol=request.symbol, interval="1m", limit=100)
             validate_public_observation(sample, now_ms=price_source.now_ms())
-            with localcontext(Context(prec=64, traps=[Inexact])):
-                reference = sample.reference_price.quantize(PRICE_SCALE)
+            try:
+                with localcontext(Context(prec=64, traps=[Inexact])):
+                    reference = sample.reference_price.quantize(PRICE_SCALE)
+            except Inexact as exc:
+                raise PaperExecutionRejected("unsupported_public_reference_precision") from exc
             reference = _money(reference)
 
             def locked_verify(
