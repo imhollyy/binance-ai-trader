@@ -24,26 +24,15 @@ for (const width of [360, 390, 768, 1280]) {
 
     if (width <= 780) await page.getByRole("button", { name: "Menüyü aç" }).click();
     await page.getByRole("button", { name: "Risk Yönetimi" }).click();
-    const labels = [
-      "Spot bütçesi (USDT)", "Futures bütçesi (USDT)", "İşlem başına risk (%)",
-      "Günlük zarar sınırı (%)", "Maksimum düşüş (%)", "Açık pozisyon sayısı",
-      "Maksimum kaldıraç (×)",
-    ];
-    for (const label of labels) {
-      await expect(page.getByRole("spinbutton", { name: label, exact: true })).toHaveCount(1);
-    }
+    await expect(page.getByRole("combobox", { name: "Risk seviyesi" })).toBeDisabled();
+    await expect(page.getByText("Risk profili değiştirilemiyor.")).toBeVisible();
     const riskSize = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(riskSize).toBeLessThanOrEqual(1);
 
     if (width <= 780) await page.getByRole("button", { name: "Menüyü aç" }).click();
     await page.getByRole("button", { name: "Bot Yönetimi" }).click();
-    const spot = page.getByRole("button", { name: "Spot", exact: true });
-    const futures = page.getByRole("button", { name: "Futures (Sanal)" });
-    await expect(spot).toHaveAttribute("aria-pressed", "true");
-    await expect(futures).toHaveAttribute("aria-pressed", "false");
-    await futures.click();
-    await expect(spot).toHaveAttribute("aria-pressed", "false");
-    await expect(futures).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Botu başlat" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Botu durdur" })).toBeDisabled();
     const botSize = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(botSize).toBeLessThanOrEqual(1);
   });
@@ -55,7 +44,7 @@ test("reduced motion removes decorative transitions", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Menüyü aç" }).click();
   await page.getByRole("button", { name: "Bot Yönetimi" }).click();
-  const duration = await page.locator(".switch span").first().evaluate(
+  const duration = await page.locator(".nav-item").first().evaluate(
     element => getComputedStyle(element).transitionDuration
   );
   expect(duration).toBe("1e-05s");

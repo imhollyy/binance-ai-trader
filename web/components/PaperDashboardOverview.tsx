@@ -127,7 +127,7 @@ export default function PaperDashboardOverview({connected, apiAddress, token}: {
         <div className="paper-overview-metrics">
           <div><span>Başlangıç sermayesi (sanal)</span><strong>{amount(snapshot.account.initial_capital_usdt)}</strong></div>
           <div><span>Kaydedilmiş nakit (sanal)</span><strong>{amount(snapshot.account.cash_usdt)}</strong></div>
-          <div><span>Gerçekleşmiş PnL (sanal)</span><strong>{amount(snapshot.account.realized_pnl_usdt)}</strong></div>
+          <div><span>Net gerçekleşmiş PnL (sanal)</span><strong>{amount(snapshot.account.realized_pnl_usdt)}</strong></div>
           <div><span>Ödenen komisyon (sanal)</span><strong>{amount(snapshot.account.paid_fees_usdt)}</strong></div>
         </div>
         <p className="paper-overview-note">Açık pozisyon: {snapshot.open_positions} · Toplam pozisyon: {snapshot.total_positions} · İşlem olayı: {snapshot.total_events}.</p>
