@@ -118,3 +118,42 @@ PAPER üretim hesabına bağlamadan önce doğrulanmış source adapter, gerçek
 fee/slippage konfigürasyonu, stop/TP/PAUSED/EMERGENCY davranış motoru,
 ayrı gate yönetimi, model kalibrasyonu, tekrar/çakışma/saat testleri ve
 kullanıcının kontrollü test onayı zorunludur.
+
+## BT-015: açık pozisyon için veri doğrulamalı, işlem yapmayan koruma
+
+- `ai_position_protection.py`, **yalnız salt-okunur karar/uyarıdır**. Ne
+  `stop_price` alanı ne de stop seviyesinin aşılması gerçek veya PAPER bir
+  emrin gerçekleştiğini gösterir. Bu modül DB'ye, API'ye, scheduler'a, worker'a,
+  Futures'a veya Binance private endpoints'e yazmaz; mevcut PAPER owner ledger
+  ve `main` değişmez.
+- `BotControlSnapshot` sürümlü **hafızadaki** durum geçişlerini test eder;
+  kalıcı ayar tablosu veya eşzamanlı DB CAS değildir. Durumlar RUNNING, PAUSED,
+  STOPPED, EMERGENCY_FLATTEN. STOPPED'dan doğrudan RUNNING yasak; PAUSED'dan
+  RUNNING'e ancak kullanıcı açıkça yetkilendirirse ve PAPER settings uygun
+  ise geçilir. EMERGENCY_FLATTEN adı kendi başına pozisyon kapatmaz.
+- Operatörün açıkça seçebileceği `MONITOR_ONLY` ve `REVIEW_REDUCE_ONLY`
+  davranışları bile emir göndermez. `REDUCE_ONLY_REVIEW` ancak kayıtlı
+  açık pozisyon için inceleme talebidir; **otomatik reduce-only icra değildir**.
+  Kullanıcı henüz stop_behavior tercihinde bulunmadığından otomatik
+  emir varsayılmaz.
+- Bir kerelik `observe_public_paper_position_once`, mevcut
+  `PublicSpotObservationClient` ile Binance PUBLIC Spot 1m mumları ve
+  `ticker/price` verisini GET olarak alır, mevcut kalite doğrulayıcısından
+  geçirir. 3 saniyeyi aşan lokal alıntı, geçersiz OHLCV, 429, fiyat
+  uyuşmazlığı veya config versiyon uyuşmazlığı halinde işlem veya
+  pozitif koruma sonucu üretmez. Bu ticker fiyatı **borsanın emir
+  gerçekleştirme fiyatı veya emir defteri spread ölçümü DEĞİLDİR**.
+- STOPPED sırasında açık pozisyon `ALERT_STOPPED_POSITION_OPEN` uyarısı
+  verir. PAUSED sırasında stop aşılırsa `ALERT_STOP_BREACH` veya açık
+  yetkiyle `REDUCE_ONLY_REVIEW` alınır. EMERGENCY_FLATTEN sırasında
+  `EMERGENCY_NOT_EXECUTED` açıkça bildirilir. İsteğe bağlı kullanıcı
+  tanımlı take-profit seviyesi sadece `ALERT_TAKE_PROFIT` verir.
+- Testler tamamen sentetik `httpx.MockTransport` ile çalışır; Binance
+  işleminin sonucunu veya canlı veri doğruluğunu kanıtlamaz.
+
+**Sonraki güvenlik kapısı:** BotState ile stop_behavior'ın yetkili kullanıcı
+CAS sürümüyle kalıcı PostgreSQL'de tutulması, gerçek server-owned quote
+kanıtı, birden çok pozisyonda bağımsız koruma, fee/spread doğrulaması,
+stop/TP emir motoru, cron/worker idempotency/rate-limit, kontrollü owner
+PAPER kabulü ve gerçek model kalibrasyonu. Bunlar tamamlanmadan bot
+aktif/korumalı gibi tanıtılamaz.
