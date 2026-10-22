@@ -17,11 +17,11 @@ from sqlalchemy import Engine, create_engine, func, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from binance_ai_trader.market_data import MarketDataError
 from binance_ai_trader.manual_paper_execution import (
     ManualPaperRequest,
     run_manual_paper_once,
 )
+from binance_ai_trader.market_data import MarketDataError
 from binance_ai_trader.models import (
     PaperSpotAccountRow,
     PaperSpotJournalRow,
@@ -61,7 +61,9 @@ def engine() -> Iterator[Engine]:
     db.dispose()
 
 
-def _mock_observer(*, now: int, ticker: str = "100", status: int = 200) -> PublicSpotObservationClient:
+def _mock_observer(
+    *, now: int, ticker: str = "100", status: int = 200
+) -> PublicSpotObservationClient:
     start = now // 60_000 * 60_000
     klines = [
         [
