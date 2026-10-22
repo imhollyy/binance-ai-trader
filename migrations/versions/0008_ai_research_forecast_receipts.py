@@ -1,6 +1,6 @@
 """BT-023D: inert append-only FORECAST receipt table; no order or account writes.
 
-Revision ID: 0008_ai_research_forecast_receipts
+Revision ID: 0008_ai_forecast_receipts
 Revises: 0007_paper_bot_controls
 No forecast is seeded, activated or promoted.
 """
@@ -10,7 +10,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0008_ai_research_forecast_receipts"
+revision: str = "0008_ai_forecast_receipts"
 down_revision: str | None = "0007_paper_bot_controls"
 branch_labels: str | None = None
 depends_on: str | None = None
@@ -114,7 +114,10 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
-    if bind.execute(sa.text("SELECT EXISTS (SELECT 1 FROM ai_research_forecast_receipts)")).scalar_one():
+    has_history = bind.execute(
+        sa.text("SELECT EXISTS (SELECT 1 FROM ai_research_forecast_receipts)")
+    ).scalar_one()
+    if has_history:
         raise RuntimeError("Refusing to drop historical AI research forecast receipts")
     op.drop_index("ix_ai_receipt_symbol_due", table_name="ai_research_forecast_receipts")
     op.drop_table("ai_research_forecast_receipts")

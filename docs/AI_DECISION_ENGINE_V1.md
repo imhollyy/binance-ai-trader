@@ -506,7 +506,7 @@ birleştirilmesi, sınırlı ve açık onaylı PAPER forward-run.
 
 ## BT-023D — İzole PostgreSQL'e önceden tahmin kaydetme (ilk dilim)
 
-- Alembic `0008_ai_research_forecast_receipts` migration'ı boş
+- Alembic `0008_ai_forecast_receipts` migration'ı boş
   `ai_research_forecast_receipts` araştırma tablosunu oluşturur;
   hiçbir varsayılan kullanıcı, tahmin, worker ya da PAPER
   işlem/pozisyon kaydı oluşturmaz. `received_at_ms`, uygulamanın
