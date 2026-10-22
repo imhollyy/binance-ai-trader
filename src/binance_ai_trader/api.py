@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 from hmac import compare_digest
+from os import environ
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -17,9 +18,11 @@ from sqlalchemy.orm import Session
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from binance_ai_trader.api_config import ApiConfig
+from binance_ai_trader.manual_paper_api import register_manual_paper_route
 from binance_ai_trader.models import AuditRow, SpotCandleRow, TradingSettingsRow
 from binance_ai_trader.paper_dashboard_api import register_paper_dashboard_route
 from binance_ai_trader.paper_read_api import register_paper_spot_read_route
+from binance_ai_trader.preview_preflight import verify_preview_environment
 from binance_ai_trader.risk_schemas import RiskSettings, SettingsSnapshot, SettingsUpdate
 from binance_ai_trader.staging_auth import StagingAccess
 from binance_ai_trader.staging_observability import StagingObservabilityMiddleware
@@ -294,6 +297,21 @@ def create_app(
 
     register_paper_spot_read_route(app, require_admin, db_engine)
     register_paper_dashboard_route(app, require_admin, db_engine)
+    # Never expose a write route in local development or generic staging.
+    # Registration requires exact isolated preview ENV *and* matching config;
+    # invalid or missing flags fail closed rather than enabling trade routes.
+    if staging_access is not None and environ.get("PRIVATE_PREVIEW_OPT_IN") == "isolated-paper-only":
+        try:
+            verify_preview_environment(environ)
+        except ValueError:
+            pass
+        else:
+            if (
+                settings.database_url == environ.get("DATABASE_URL")
+                and settings.staging_origin == environ.get("STAGING_WEB_ORIGIN")
+                and settings.staging_host == environ.get("STAGING_API_HOST")
+            ):
+                register_manual_paper_route(app, require_write, db_engine)
     return app
 
 
