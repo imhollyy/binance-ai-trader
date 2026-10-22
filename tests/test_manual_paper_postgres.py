@@ -343,3 +343,45 @@ def test_preview_risk_change_ledger_consistency_and_subsequent_paper_trades(
             assert db.scalar(select(func.count()).select_from(PaperSpotJournalRow)) == 5
     finally:
         fresh.dispose()
+
+
+def test_autopilot_enable_disable_carries_unchanged_virtual_money(engine: Engine) -> None:
+    """Separate user-consented PAPER pilot transition, never a Binance trade."""
+    from binance_ai_trader.paper_scheduler import SchedulerStatus, run_paper_scheduler
+    from binance_ai_trader.preview_autopilot import (
+        PaperPilotRejected,
+        change_paper_pilot_mode,
+        paper_pilot_status,
+    )
+
+    before = _totals(engine)
+    with Session(engine) as db:
+        prior = db.get(PaperSpotAccountRow, 1)
+        assert prior is not None and prior.settings_version == 2
+    assert paper_pilot_status(engine) == "MANUAL_PAPER_ONLY_SCHEDULER_OFF"
+    new_version = change_paper_pilot_mode(engine, enable=True)
+    assert new_version == 3
+    assert paper_pilot_status(engine) == "AUTO_PAPER_PERMITTED_NOT_RUNNING_VERIFIED"
+    assert _totals(engine) == before
+    # Persisted mode consent is NOT enough to start a process, HTTP, or trade.
+    assert run_paper_scheduler(engine, enabled=False).status is SchedulerStatus.DISABLED
+    assert _totals(engine) == before
+    with pytest.raises(PaperPilotRejected, match="pilot_not_in_manual_off_state"):
+        change_paper_pilot_mode(engine, enable=True)
+    assert _totals(engine) == before
+
+    # Emergency revert restores manual-only without resetting the journal.
+    version = change_paper_pilot_mode(engine, enable=False)
+    assert version == 4
+    assert change_paper_pilot_mode(engine, enable=False) == 4
+    assert paper_pilot_status(engine) == "MANUAL_PAPER_ONLY_SCHEDULER_OFF"
+    with Session(engine) as db:
+        settings = db.get(TradingSettingsRow, 1)
+        account = db.get(PaperSpotAccountRow, 1)
+        assert settings is not None and account is not None
+        assert settings.version == account.settings_version == 4
+        stored = RiskSettings.model_validate(settings.data)
+        assert stored.bot_enabled is False and stored.manual_approval is True
+        assert stored.spot_capital_usdt == 1000
+        assert db.scalar(select(func.count()).select_from(PaperSpotJournalRow)) == 5
+    assert _totals(engine) == before
