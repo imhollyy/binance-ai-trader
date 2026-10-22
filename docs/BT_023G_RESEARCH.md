@@ -54,5 +54,3 @@ Artifacts and the complete per-fold metrics are in
 calibration or stable predictive gain: BTC underperforms the baseline, ETH's
 test improvement is negligible and all ETH walk-forward folds underperform.
 Both artifacts remain `UNVERIFIED` and `RESEARCH_ONLY_NOT_APPROVED`.
-
-
