@@ -31,6 +31,7 @@ from binance_ai_trader.paper_bot_control_test_api import register_bot_control_te
 from binance_ai_trader.paper_dashboard_api import register_paper_dashboard_route
 from binance_ai_trader.paper_read_api import register_paper_spot_read_route
 from binance_ai_trader.preview_preflight import verify_preview_environment
+from binance_ai_trader.risk_capabilities_api import register_risk_capabilities_route
 from binance_ai_trader.risk_schemas import RiskSettings, SettingsSnapshot, SettingsUpdate
 from binance_ai_trader.staging_auth import StagingAccess
 from binance_ai_trader.staging_observability import StagingObservabilityMiddleware
@@ -371,6 +372,7 @@ def create_app(
                 raise HTTPException(status_code=503, detail="Database unavailable") from exc
         return SettingsSnapshot(version=payload.expected_version + 1, settings=payload.settings)
 
+    register_risk_capabilities_route(app, require_admin)
     register_paper_spot_read_route(app, require_admin, db_engine)
     register_paper_dashboard_route(app, require_admin, db_engine)
     # Never expose a write route in local development or generic staging.
