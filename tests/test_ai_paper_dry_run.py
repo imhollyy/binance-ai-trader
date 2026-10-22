@@ -8,7 +8,10 @@ from decimal import Decimal
 import pytest
 
 from binance_ai_trader.ai_constitution import (
-    AiSpotProposal, BotState, IndependentRiskPolicy, TrustedSpotEvidence,
+    AiSpotProposal,
+    BotState,
+    IndependentRiskPolicy,
+    TrustedSpotEvidence,
 )
 from binance_ai_trader.ai_market_regime import TimeframeHistory
 from binance_ai_trader.ai_paper_dry_run import AiPaperDryRun, simulate_reviewed_ai_spot
