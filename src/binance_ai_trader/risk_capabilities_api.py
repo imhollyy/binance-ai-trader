@@ -23,9 +23,7 @@ class RiskProfileCapabilities(BaseModel):
     reason: str = "risk_profile_application_contract_not_implemented"
 
 
-def register_risk_capabilities_route(
-    app: FastAPI, require_admin: Callable[..., None]
-) -> None:
+def register_risk_capabilities_route(app: FastAPI, require_admin: Callable[..., None]) -> None:
     """Authenticated capability discovery only; never install/activate profiles."""
 
     @app.get(
