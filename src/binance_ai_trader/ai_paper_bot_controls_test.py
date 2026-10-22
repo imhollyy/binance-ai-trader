@@ -1,7 +1,7 @@
 """BT-016: disposable PostgreSQL-only bot-state compare-and-swap rehearsal.
 
 A server-internal isolated integration fixture, not an authorized HTTP API.
-Only two EXPLICIT localhost disposable databases are writable, each with
+Only three EXPLICIT localhost disposable databases are writable, each with
 its own test-only environment sentinel. No worker activation, PAPER account
 mutations, execution or exchange calls. Cookie/CSRF trust belongs exclusively
 to the guarded staging HTTP entrypoint; this service still accepts only an
@@ -51,10 +51,14 @@ def _disposable_only(engine: Engine) -> None:
         engine.url.database == "trader_bot_controls_test"
         and os.environ.get("BOT_CONTROLS_TEST_ISOLATED") == "1"
     )
+    protective_fixture = (
+        engine.url.database == "trader_protective_close_test"
+        and os.environ.get("PROTECTIVE_CLOSE_TEST_ISOLATED") == "1"
+    )
     if (
         engine.dialect.name != "postgresql"
         or engine.url.host not in ("localhost", "127.0.0.1")
-        or not (original_fixture or is_disposable_control_http_test(engine))
+        or not (original_fixture or is_disposable_control_http_test(engine) or protective_fixture)
     ):
         raise BotControlRejected("isolated_bot_control_database_only")
 
