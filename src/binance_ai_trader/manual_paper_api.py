@@ -51,12 +51,12 @@ def register_manual_paper_route(
             result = run_manual_paper_once(engine, request)
         except MarketRateLimited as exc:
             raise HTTPException(429, "Public price source is rate limited") from exc
+        except PaperExecutionRejected as exc:
+            raise HTTPException(409, "PAPER manual request rejected by safeguards") from exc
         except (MarketDataError, ValueError) as exc:
             raise HTTPException(503, "Verified public PAPER reference unavailable") from exc
         except SQLAlchemyError as exc:
             raise HTTPException(503, "PAPER ledger temporarily unavailable") from exc
-        except PaperExecutionRejected as exc:
-            raise HTTPException(409, "PAPER manual request rejected by safeguards") from exc
         receipt = result.receipt
         return ManualPaperReceiptView(
             action=request.action,
