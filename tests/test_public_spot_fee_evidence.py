@@ -21,8 +21,8 @@ from binance_ai_trader.public_spot_depth_review import DepthLevel, PublicSpotDep
 from binance_ai_trader.public_spot_fee_evidence import (
     FeeCostReview,
     FeeCostStatus,
-    OfflineCommissionInvalid,
     OfflineCommissionFixture,
+    OfflineCommissionInvalid,
     parse_offline_account_commission_fixture,
     review_offline_fee_adjusted_spot_depth,
 )
