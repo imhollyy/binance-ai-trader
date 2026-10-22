@@ -108,7 +108,8 @@ def test_manual_route_requires_operator_cookie_csrf_and_separate_confirmation(
         assert stage.post(endpoint, headers=bad, json=REQUEST).status_code == 403
     invalid = {**REQUEST, "confirmation": "CONFIRM_REAL_ORDER"}
     assert stage.post(endpoint, headers=elevated, json=invalid).status_code == 422
-    assert stage.post(endpoint, headers=elevated, json={**REQUEST, "reference_price": "100"}).status_code == 422
+    tampered = {**REQUEST, "reference_price": "100"}
+    assert stage.post(endpoint, headers=elevated, json=tampered).status_code == 422
     assert stage.post(endpoint, headers=elevated, json=REQUEST).status_code == 409
     # The injected SQLite DB is rejected by the PostgreSQL-only executor.
     # No simulated trade, worker, or Binance call can occur in this test.
@@ -128,4 +129,5 @@ def test_manual_endpoint_not_exposed_without_explicit_preview_flag(
     )
     new_app = create_app(config=config, engine=None)
     with TestClient(new_app, base_url=ORIGIN) as client:
-        assert client.post("/api/v1/paper/manual", headers={"Origin": ORIGIN}, json=REQUEST).status_code == 404
+        response = client.post("/api/v1/paper/manual", headers={"Origin": ORIGIN}, json=REQUEST)
+        assert response.status_code == 404
