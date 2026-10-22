@@ -23,6 +23,11 @@ from binance_ai_trader.public_spot_cost_review import (
 
 D = Decimal
 CLOCK = 1_800_000_000_000
+DEFAULT_SIZE = Decimal("0.2")
+DEFAULT_EDGE = Decimal("50")
+DEFAULT_FEE = Decimal("10")
+DEFAULT_SLIPPAGE = Decimal("5")
+DEFAULT_MINIMUM = Decimal("5")
 
 
 def exchange_info() -> dict[str, object]:
@@ -119,11 +124,11 @@ def observer(
 def review(
     sample: PublicBookCostSample,
     *,
-    size: Decimal = D("0.2"),
-    edge: Decimal = D("50"),
-    fee: Decimal | None = D("10"),
-    slip: Decimal = D("5"),
-    minimum: Decimal = D("5"),
+    size: Decimal = DEFAULT_SIZE,
+    edge: Decimal = DEFAULT_EDGE,
+    fee: Decimal | None = DEFAULT_FEE,
+    slip: Decimal = DEFAULT_SLIPPAGE,
+    minimum: Decimal = DEFAULT_MINIMUM,
     now: int = CLOCK,
 ) -> CostReview:
     return review_hypothetical_spot_cost(
