@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN, Decimal
 
 from binance_ai_trader.ai_constitution import (
     AiSpotProposal,
@@ -144,7 +144,7 @@ def simulate_reviewed_ai_spot(
     if proposal.decision is ConstitutionAction.BUY:
         if assessment.regime not in (MarketRegime.UPTREND, MarketRegime.STRONG_UPTREND):
             return _deny(proposal, book, "REGIME_STRATEGY_MISMATCH")
-        if book.positions or book.closed and any(p.trade_id == proposal.signal_id for p in book.closed):
+        if book.positions or any(p.trade_id == proposal.signal_id for p in book.closed):
             return _deny(proposal, book, "PAPER_EXPOSURE_OR_REPLAY")
         if (
             book.cash_usdt != policy.account_state.equity_usdt
@@ -227,7 +227,9 @@ def simulate_reviewed_ai_spot(
         except (PaperSpotRejected, ArithmeticError, ValueError):
             return _deny(proposal, book, "PAPER_EXIT_REJECTED")
         return AiPaperDryRun(
-            ConstitutionVerdict(proposal.signal_id, ConstitutionAction.SELL, "PAPER_EXIT_SIMULATED"),
+            ConstitutionVerdict(
+                proposal.signal_id, ConstitutionAction.SELL, "PAPER_EXIT_SIMULATED"
+            ),
             after,
             "PAPER_SELL",
         )
