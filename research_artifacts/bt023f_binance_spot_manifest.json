@@ -1,0 +1,98 @@
+{
+  "scope": "BT-023F real public Spot candle artifact; data only, no historical AI predictions or performance claims",
+  "source": "https://data-api.binance.vision/api/v3/klines",
+  "documentation": [
+    "https://github.com/binance/binance-spot-api-docs/blob/master/faqs/market_data_only.md",
+    "https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md#klinecandlestick-data"
+  ],
+  "symbol": "BTCUSDT",
+  "interval": "5m",
+  "sha256_spec": "SHA-256 over compact ASCII JSON array of ordered candle rows [symbol, interval, open_ms, close_ms, open, high, low, close, volume]; prices are exact Decimal strings",
+  "provenance_limit": "HTTPS public endpoint and local retrieval time are recorded. Binance does not sign this response; hash proves data identity, not publisher attestation or executable fills.",
+  "windows": [
+    {
+      "start_open_ms": 1710460800000,
+      "end_open_ms": 1710546900000,
+      "start_utc": "2024-03-15T00:00:00+00:00",
+      "end_utc": "2024-03-15T23:55:00+00:00",
+      "retrieved_at_ms_local": 1792696456520,
+      "candle_count": 288,
+      "candle_sha256": "e325617b35bb052539fdb2e105b4bb608a9d0f4891d2bebc8956d255256c5e25",
+      "artifact_path": "research_artifacts/bt023f_BTCUSDT_5m_2024-03-15.json",
+      "artifact_file_sha256": "f0243500426dd760f27b5cc17e0156f1be7af6ea15dd8b2b07a205ab45a40cfa",
+      "first_close": "71521.11000000",
+      "last_close": "69499.85000000",
+      "whole_window_close_change_bps_descriptive_only": "-282.6102670945683029807563110",
+      "rolling_20_bar_regime_counts_descriptive_only": {
+        "UPTREND": 55,
+        "DOWNTREND": 73,
+        "RANGE": 140,
+        "UNCERTAIN": 0
+      },
+      "historical_ai_forecasts_present": false
+    },
+    {
+      "start_open_ms": 1723680000000,
+      "end_open_ms": 1723766100000,
+      "start_utc": "2024-08-15T00:00:00+00:00",
+      "end_utc": "2024-08-15T23:55:00+00:00",
+      "retrieved_at_ms_local": 1792696458194,
+      "candle_count": 288,
+      "candle_sha256": "0696c0674d1258253ee9a6dee12a04571a4e31eec2fd54fe2c8e1ad1baeb2470",
+      "artifact_path": "research_artifacts/bt023f_BTCUSDT_5m_2024-08-15.json",
+      "artifact_file_sha256": "688e509ae4bc032aff22c17c06243bcaedd8063a4a8dd36c6b3d6e2a38ba0a3d",
+      "first_close": "58712.38000000",
+      "last_close": "57541.06000000",
+      "whole_window_close_change_bps_descriptive_only": "-199.5013658107540522118163150",
+      "rolling_20_bar_regime_counts_descriptive_only": {
+        "UPTREND": 27,
+        "DOWNTREND": 42,
+        "RANGE": 199,
+        "UNCERTAIN": 0
+      },
+      "historical_ai_forecasts_present": false
+    },
+    {
+      "start_open_ms": 1744675200000,
+      "end_open_ms": 1744761300000,
+      "start_utc": "2025-04-15T00:00:00+00:00",
+      "end_utc": "2025-04-15T23:55:00+00:00",
+      "retrieved_at_ms_local": 1792696459848,
+      "candle_count": 288,
+      "candle_sha256": "17a80d2b694df924b10f46bf1f9becd884e57fb2d17d915facf919561f4f7380",
+      "artifact_path": "research_artifacts/bt023f_BTCUSDT_5m_2025-04-15.json",
+      "artifact_file_sha256": "f1b8194d99e9a4f3a969a88fe3fbf0f9399e4f0dc2d01cfc001fe53c1c69973d",
+      "first_close": "84502.19000000",
+      "last_close": "83643.99000000",
+      "whole_window_close_change_bps_descriptive_only": "-101.5594980437785103557671110",
+      "rolling_20_bar_regime_counts_descriptive_only": {
+        "UPTREND": 0,
+        "DOWNTREND": 2,
+        "RANGE": 266,
+        "UNCERTAIN": 0
+      },
+      "historical_ai_forecasts_present": false
+    },
+    {
+      "start_open_ms": 1760486400000,
+      "end_open_ms": 1760572500000,
+      "start_utc": "2025-10-15T00:00:00+00:00",
+      "end_utc": "2025-10-15T23:55:00+00:00",
+      "retrieved_at_ms_local": 1792696461497,
+      "candle_count": 288,
+      "candle_sha256": "120010e3b18086c838d60a7fce8a83deb7e346118bc61de34ae439ec9e4ab2ba",
+      "artifact_path": "research_artifacts/bt023f_BTCUSDT_5m_2025-10-15.json",
+      "artifact_file_sha256": "70f6d1a3ac3898b07b6eb7b9cfaee79621545e414f3d4160266a63bd3283257e",
+      "first_close": "112941.92000000",
+      "last_close": "110763.28000000",
+      "whole_window_close_change_bps_descriptive_only": "-192.8991467472839137142347150",
+      "rolling_20_bar_regime_counts_descriptive_only": {
+        "UPTREND": 0,
+        "DOWNTREND": 6,
+        "RANGE": 262,
+        "UNCERTAIN": 0
+      },
+      "historical_ai_forecasts_present": false
+    }
+  ]
+}
