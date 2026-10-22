@@ -134,9 +134,15 @@ def _valid_probabilities(p: object) -> bool:
 
 def _candle_payload(item: Candle) -> list[str | int]:
     return [
-        item.symbol, item.interval, item.open_time_ms, item.close_time_ms,
-        _dec(item.open), _dec(item.high), _dec(item.low),
-        _dec(item.close), _dec(item.volume),
+        item.symbol,
+        item.interval,
+        item.open_time_ms,
+        item.close_time_ms,
+        _dec(item.open),
+        _dec(item.high),
+        _dec(item.low),
+        _dec(item.close),
+        _dec(item.volume),
     ]
 
 
@@ -258,7 +264,9 @@ def build_offline_candle_label_ledger(
                 "target_close_ms": target.close_time_ms,
                 "recorded_at_ms": row.recorded_at_ms,
                 "probabilities": [
-                    _dec(row.forecast.win), _dec(row.forecast.loss), _dec(row.forecast.flat)
+                    _dec(row.forecast.win),
+                    _dec(row.forecast.loss),
+                    _dec(row.forecast.flat),
                 ],
                 "source_price": _dec(source.close),
                 "target_price": _dec(target.close),
@@ -271,8 +279,14 @@ def build_offline_candle_label_ledger(
         )
         entries.append(
             CandleLabelEntry(
-                previous, digest, labeled, row.recorded_at_ms,
-                source.close, target.close, hypothetical_roundtrip_cost_bps, net_bps
+                previous,
+                digest,
+                labeled,
+                row.recorded_at_ms,
+                source.close,
+                target.close,
+                hypothetical_roundtrip_cost_bps,
+                net_bps,
             )
         )
         previous = digest
@@ -301,7 +315,11 @@ def verify_offline_candle_label_ledger(
     if type(ledger) is not OfflineCandleLabelLedger:
         return OfflineCandleLabelLedger(LabelStatus.INVALID_INPUT)
     rebuilt = build_offline_candle_label_ledger(
-        candles, forecasts, symbol=symbol, interval=interval, model_version=model_version,
+        candles,
+        forecasts,
+        symbol=symbol,
+        interval=interval,
+        model_version=model_version,
         outcome_horizon_ms=outcome_horizon_ms,
         hypothetical_roundtrip_cost_bps=hypothetical_roundtrip_cost_bps,
         flat_band_bps=flat_band_bps,
@@ -322,5 +340,8 @@ def verify_offline_candle_label_ledger(
         return OfflineCandleLabelLedger(LabelStatus.DETACHED_REFERENCE_MISMATCH)
     return OfflineCandleLabelLedger(
         LabelStatus.SELF_REPORTED_REPLAY_ONLY,
-        ledger.symbol, ledger.candle_sha256, ledger.head_sha256, ledger.entries
+        ledger.symbol,
+        ledger.candle_sha256,
+        ledger.head_sha256,
+        ledger.entries,
     )

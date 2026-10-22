@@ -27,8 +27,15 @@ PRICES = ("100", "100", "101", "101", "99", "100", "103", "105")
 def candles() -> tuple[Candle, ...]:
     return tuple(
         Candle(
-            "BTCUSDT", "1m", START + i * STEP, START + (i + 1) * STEP - 1,
-            D(price), D(price) + D("2"), D(price) - D("2"), D(price), D("10"),
+            "BTCUSDT",
+            "1m",
+            START + i * STEP,
+            START + (i + 1) * STEP - 1,
+            D(price),
+            D(price) + D("2"),
+            D(price) - D("2"),
+            D(price),
+            D("10"),
         )
         for i, price in enumerate(PRICES)
     )
@@ -38,8 +45,13 @@ def forecasts() -> tuple[RecordedForecast, ...]:
     p = ProbabilityEstimate(win=D(".50"), loss=D(".30"), flat=D(".20"))
     return tuple(
         RecordedForecast(
-            f"forecast_{i:04d}", "offline_model_v1", "BTCUSDT", "1m",
-            START + (i + 1) * STEP - 1, START + (i + 1) * STEP, p,
+            f"forecast_{i:04d}",
+            "offline_model_v1",
+            "BTCUSDT",
+            "1m",
+            START + (i + 1) * STEP - 1,
+            START + (i + 1) * STEP,
+            p,
         )
         for i in (1, 2, 3)
     )
@@ -95,13 +107,17 @@ def test_reconstruct_forward_candle_labels_after_costs_and_hash_link() -> None:
     original = label()
     assert original.status is LabelStatus.UNANCHORED_RESEARCH_ONLY
     assert [e.forecast_outcome.realized_outcome for e in original.entries] == [
-        ObservedOutcome.WIN, ObservedOutcome.FLAT, ObservedOutcome.LOSS
+        ObservedOutcome.WIN,
+        ObservedOutcome.FLAT,
+        ObservedOutcome.LOSS,
     ]
     assert original.entries[0].hypothetical_net_return_bps == D("80")
     assert original.entries[1].hypothetical_net_return_bps == D("-20")
     assert original.entries[2].hypothetical_net_return_bps < D("-200")
-    assert all(entry.forecast_outcome.label_available_at_ms > entry.recorded_at_ms
-               for entry in original.entries)
+    assert all(
+        entry.forecast_outcome.label_available_at_ms > entry.recorded_at_ms
+        for entry in original.entries
+    )
     assert original.entries[0].previous_hash == "0" * 64
     assert original.entries[1].previous_hash == original.entries[0].entry_hash
     assert original.entries[-1].entry_hash == original.head_sha256
@@ -118,13 +134,16 @@ def test_detached_reference_replay_detects_changes_but_cannot_attest_real_market
     assert verified.entries == baseline.entries
     assert verified.no_trade and not verified.qualifies_as_calibrated_model
     assert replay(baseline).status is LabelStatus.UNANCHORED_RESEARCH_ONLY
-    assert replay(baseline, reference="f" * 64).status is (
-        LabelStatus.DETACHED_REFERENCE_MISMATCH
-    )
+    assert replay(baseline, reference="f" * 64).status is (LabelStatus.DETACHED_REFERENCE_MISMATCH)
     assert replay(baseline, cost=D("30")).status is LabelStatus.ALTERED_RESEARCH_CHAIN
     tampered = replace(baseline.entries[1], entry_hash="f" * 64)
-    assert replay(replace(baseline, entries=(baseline.entries[0], tampered, baseline.entries[2])),
-                  reference=baseline.head_sha256).status is LabelStatus.ALTERED_RESEARCH_CHAIN
+    assert (
+        replay(
+            replace(baseline, entries=(baseline.entries[0], tampered, baseline.entries[2])),
+            reference=baseline.head_sha256,
+        ).status
+        is LabelStatus.ALTERED_RESEARCH_CHAIN
+    )
     rows = forecasts()
     changed = replace(rows[0], recorded_at_ms=rows[0].recorded_at_ms + 1)
     assert replay(baseline, rows=(changed, *rows[1:])).status is (
@@ -146,9 +165,7 @@ def test_missing_future_candle_and_gaps_are_rejected() -> None:
     assert label(rows=(last,)).status is LabelStatus.MISSING_FUTURE_CANDLE
     data = candles()
     assert label(data=(*data[:3], *data[4:])).status is LabelStatus.INVALID_CANDLES
-    assert label(evaluation=data[-1].close_time_ms).status is (
-        LabelStatus.FUTURE_INFORMATION_RISK
-    )
+    assert label(evaluation=data[-1].close_time_ms).status is (LabelStatus.FUTURE_INFORMATION_RISK)
 
 
 def test_forged_timing_order_duplicates_and_probabilities_fail_closed() -> None:
@@ -162,9 +179,7 @@ def test_forged_timing_order_duplicates_and_probabilities_fail_closed() -> None:
     wrong = replace(rows[0], symbol="ETHUSDT")
     assert label(rows=(wrong,)).status is LabelStatus.INVALID_FORECAST
     forged = ProbabilityEstimate.model_construct(win=D("2"), loss=D("-1"), flat=D("0"))
-    assert label(rows=(replace(rows[0], forecast=forged),)).status is (
-        LabelStatus.INVALID_FORECAST
-    )
+    assert label(rows=(replace(rows[0], forecast=forged),)).status is (LabelStatus.INVALID_FORECAST)
 
 
 def test_bad_candle_ohlc_cost_and_horizon_are_rejected() -> None:
