@@ -8,7 +8,11 @@ from decimal import Decimal
 import httpx
 import pytest
 
-from binance_ai_trader.market_data import MarketDataInvalid, MarketDataUnavailable, MarketRateLimited
+from binance_ai_trader.market_data import (
+    MarketDataInvalid,
+    MarketDataUnavailable,
+    MarketRateLimited,
+)
 from binance_ai_trader.public_spot_cost_review import (
     CostReview,
     CostReviewStatus,
@@ -202,8 +206,21 @@ def test_public_rate_limit_respected_without_retry(which: str, status: int) -> N
         {"symbol": "BTCUSDT", "bidPrice": "100", "askPrice": "NaN", "bidQty": "2", "askQty": "2"},
         {"symbol": "BTCUSDT", "bidPrice": "100", "askPrice": "101", "bidQty": 2, "askQty": "2"},
         {"symbol": "BTCUSDT", "bidPrice": "100", "askPrice": "101", "bidQty": "0", "askQty": "2"},
-        {"symbol": "BTCUSDT", "bidPrice": "100.001", "askPrice": "101", "bidQty": "2", "askQty": "2"},
-        {"symbol": "BTCUSDT", "bidPrice": "100", "askPrice": "101", "bidQty": "2", "askQty": "2", "time": 99},
+        {
+            "symbol": "BTCUSDT",
+            "bidPrice": "100.001",
+            "askPrice": "101",
+            "bidQty": "2",
+            "askQty": "2",
+        },
+        {
+            "symbol": "BTCUSDT",
+            "bidPrice": "100",
+            "askPrice": "101",
+            "bidQty": "2",
+            "askQty": "2",
+            "time": 99,
+        },
         [],
     ],
 )

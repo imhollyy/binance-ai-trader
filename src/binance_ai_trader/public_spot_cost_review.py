@@ -203,7 +203,9 @@ def _rules(raw: object, symbol: str) -> SymbolCostRules:
 
 def _http_response(response: httpx.Response) -> None:
     if response.status_code in (418, 429):
-        raise MarketRateLimited(response.status_code, _retry_after(response.headers.get("Retry-After")))
+        raise MarketRateLimited(
+            response.status_code, _retry_after(response.headers.get("Retry-After"))
+        )
     if response.status_code != 200:
         raise MarketDataUnavailable("public_spot_cost_http_failure")
 
