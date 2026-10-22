@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from binance_ai_trader.ai_constitution import ProbabilityEstimate
 from binance_ai_trader.ai_research_forecast_receipts_test import (
+    ForecastReceipt,
     ForecastReceiptInput,
     ForecastReceiptRejected,
     append_disposable_forecast,
@@ -42,6 +44,13 @@ pytestmark = pytest.mark.skipif(
 D = Decimal
 MINUTE = 60_000
 HORIZON = 30 * MINUTE
+RUN_PREFIX = "forecast_" + uuid.uuid4().hex[:8] + "_"
+
+
+def _test_receipts(db: Engine) -> tuple[ForecastReceipt, ...]:
+    return tuple(
+        item for item in read_disposable_forecasts(db) if item.signal_id.startswith(RUN_PREFIX)
+    )
 
 
 @pytest.fixture(scope="module")
@@ -49,7 +58,14 @@ def engine() -> Iterator[Engine]:
     assert DB_URL and ISOLATED and VALID_TARGET
     db = create_engine(DB_URL, pool_pre_ping=True)
     with Session(db) as session:
-        assert session.scalar(select(func.count()).select_from(AiResearchForecastReceiptRow)) == 0
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(AiResearchForecastReceiptRow)
+                .where(AiResearchForecastReceiptRow.signal_id.startswith(RUN_PREFIX))
+            )
+            == 0
+        )
         assert session.scalar(select(func.count()).select_from(PaperSpotAccountRow)) == 0
         assert session.scalar(select(func.count()).select_from(PaperSpotJournalRow)) == 0
     yield db
@@ -65,11 +81,11 @@ def _now(db: Engine) -> int:
         )
 
 
-def request(db: Engine, signal_id: str = "forecast_initial_0001") -> ForecastReceiptInput:
+def request(db: Engine, signal_id: str | None = None) -> ForecastReceiptInput:
     now = _now(db)
     closed = now // MINUTE * MINUTE - 1
     return ForecastReceiptInput(
-        signal_id=signal_id,
+        signal_id=signal_id or RUN_PREFIX + "initial_0001",
         model_version="research_model_v1",
         symbol="BTCUSDT",
         interval="1m",
@@ -88,15 +104,19 @@ def test_server_clocked_immutable_receipts_and_restart(engine: Engine) -> None:
     assert first.source == "disposable_postgres_offline_forecast"
     assert first.no_trade and not first.trade_authorized
     assert not first.qualifies_as_calibrated_model
-    assert read_disposable_forecasts(engine) == (first,)
+    assert _test_receipts(engine) == (first,)
     assert DB_URL is not None
     reopened = create_engine(DB_URL, pool_pre_ping=True)
     try:
-        assert read_disposable_forecasts(reopened) == (first,)
+        assert _test_receipts(reopened) == (first,)
     finally:
         reopened.dispose()
     with Session(engine) as session:
-        row = session.scalar(select(AiResearchForecastReceiptRow))
+        row = session.scalar(
+            select(AiResearchForecastReceiptRow).where(
+                AiResearchForecastReceiptRow.signal_id == first.signal_id
+            )
+        )
         assert row is not None
         assert (row.prob_win, row.prob_loss, row.prob_flat) == (D(".50"), D(".30"), D(".20"))
         assert session.scalar(select(func.count()).select_from(PaperSpotAccountRow)) == 0
@@ -130,11 +150,18 @@ def test_sql_ingest_server_clock_cannot_be_backdated(engine: Engine) -> None:
         )
         session.commit()
     with Session(engine) as session:
-        assert session.scalar(select(func.count()).select_from(AiResearchForecastReceiptRow)) == 1
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(AiResearchForecastReceiptRow)
+                .where(AiResearchForecastReceiptRow.signal_id.startswith(RUN_PREFIX))
+            )
+            == 1
+        )
 
 
 def test_duplicate_concurrent_writers_accept_exactly_one(engine: Engine) -> None:
-    item = request(engine, "forecast_concurrent")
+    item = request(engine, RUN_PREFIX + "concurrent")
 
     def race(_: int) -> str:
         try:
@@ -146,11 +173,11 @@ def test_duplicate_concurrent_writers_accept_exactly_one(engine: Engine) -> None
     with ThreadPoolExecutor(max_workers=3) as pool:
         outcomes = list(pool.map(race, range(3)))
     assert sorted(outcomes) == ["accepted", "rejected", "rejected"]
-    assert len(read_disposable_forecasts(engine)) == 2
+    assert len(_test_receipts(engine)) == 2
 
 
 def test_invalid_inputs_fail_before_database_mutation(engine: Engine) -> None:
-    item = request(engine, "forecast_invalid_0001")
+    item = request(engine, RUN_PREFIX + "invalid_0001")
     bad = (
         replace(item, symbol="XRPUSDT"),
         replace(item, signal_id="bad"),
@@ -165,7 +192,7 @@ def test_invalid_inputs_fail_before_database_mutation(engine: Engine) -> None:
     for candidate in bad:
         with pytest.raises(ForecastReceiptRejected):
             append_disposable_forecast(engine, forecast=candidate)
-    assert len(read_disposable_forecasts(engine)) == 2
+    assert len(_test_receipts(engine)) == 2
 
 
 def test_non_disposable_database_is_rejected_before_connection() -> None:
