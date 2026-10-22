@@ -14,6 +14,7 @@ import os
 import time
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, Decimal
+from typing import Never
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
@@ -111,7 +112,7 @@ def _identity(proposal: AiSpotProposal) -> tuple[str, str]:
     return "ai-review-" + digest[:48], "ai_" + digest[:40]
 
 
-def _fail(reason: str) -> None:
+def _fail(reason: str) -> Never:
     raise PaperExecutionRejected("ai_gate:" + reason)
 
 
