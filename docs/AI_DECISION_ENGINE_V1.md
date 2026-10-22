@@ -214,3 +214,44 @@ otomatik işlem başlatılmadı, piyasa kârlılığı kanıtlanmadı.
   intentionally cannot target production PostgreSQL, existing workers
   do not use the state and stop-loss/TP execution is not installed.
   Operator risk settings and fees still require separate acceptance.
+
+## BT-018: izolasyonlu, senaryolu PAPER stop / take-profit kapanışı
+
+- `ai_protective_paper_test.py` **sadece** PostgreSQL
+  `localhost/trader_protective_close_test` ve
+  `PROTECTIVE_CLOSE_TEST_ISOLATED=1` halinde çalışabilir; gerçek
+  kullanıcı PAPER veritabanına, runtime worker'a, otomatik scheduler'a,
+  HTTP uç noktasına, Futures'a veya canlı Binance emrine BAĞLANMAZ.
+- Piyasa kaynağı şartı gerçek `PublicSpotObservationClient` arayüzüdür,
+  ancak bu prova ayrıca `httpx.MockTransport` gerektirir. Bu nedenle
+  fiyat/1m kline verileri kesinlikle **SENTETİKTİR**: canlı borsa
+  fiyatı veya gerçekleşebilir emir fiyatı değildir.
+- Onaydan bağımsız `RUNNING`, `STOPPED` veya `MONITOR_ONLY`
+  otomatik pozisyon kapatamaz. Operatör tarafından önceden seçilmiş
+  `REVIEW_REDUCE_ONLY`, `operator_confirmed_reduce_only=true`,
+  `PAUSED` veya `EMERGENCY_FLATTEN`, doğru control revision ve
+  ayrıca her simülasyonda `explicit_test_exit_approval=true`
+  gerekir. Stop altı veya tanımlı TP üstü trigger'ı gösterilmeden
+  kapanış olmaz.
+- `close_paper_spot` içindeki account/settings/positions/journal
+  mutabakatı ve `_signal_preflight` kilit altında tekrarlanır;
+  kontrol revizyonu, stored 1m OHLCV, kaynak kalitesi ve tazeliği
+  tekrar doğrulanır. SELL reduce-only'dir, tek mevcut açık
+  pozisyonun tamamı kapatılır; anahtarlı idempotency ve
+  `PaperSpotObservedQuoteRow` append-only alıntı kaydı aynı
+  transaction'dadır.
+- Rakamlar mevcut PAPER defterinin komisyon ve olumsuz fiyat kayması
+  varsayımlarını kullanır. **Gerçek emir defteri spread verisi ve
+  exchange taker ücret katmanı henüz bulunmuyor**; net sonuçlar
+  gerçekte garantili kâr/zarar tahmini sayılmaz.
+- İzole CI: eşzamanlı stop kapanışı, gereksiz/yanlış tetikleyiciler,
+  yetkisiz revizyon, 429, kaynak aykırılığı, taker fee/slippage
+  hesabi, pozitif TP net P&L, negatif stop net P&L ve
+  audit flush hatasında tam rollback.
+
+**Sıradaki üretim kapıları:** Gerçek Spot best bid/ask
+kaynağı doğrulaması, gerçek ücret kademesi ve piyasa filtreleri,
+birden çok paralel sembolde açık risk, restart/kill-switch,
+kurumsal state worker entegrasyonu, manuel operatör onayı ve
+uzun süreli paper forward-run; bunlar tamamlanmadan otomatik
+koruma etkinleştirilemez.
