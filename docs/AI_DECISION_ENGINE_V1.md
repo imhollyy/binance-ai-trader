@@ -290,3 +290,36 @@ koruma etkinleştirilemez.
   notional filtre doğrulaması, filtrelerin tam kapsamı,
   sürümlü maliyet kanıtı/audit ve izole end-to-end maliyet gate.
   Bunlardan önce üretim işlem yetkisi yok.
+
+## BT-020: public Spot orderbook depth ve VWAP stres maliyeti (offline)
+
+- `public_spot_depth_review.py` sadece sabit public Spot host
+  `https://data-api.binance.vision/api/v3/depth` üzerindeki
+  `BTCUSDT` / `ETHUSDT` sembollerini, **20 seviye üst sınırı**
+  ile ve yalnız GET çağrısıyla inceler. API anahtarı, emir,
+  kullanıcının PAPER veritabanı, worker, scheduler, Cloudflare
+  veya kullanıcı risk ayarları değiştirilmedi.
+- Benzersiz ve fiyat sıralaması doğru bid/ask seviyelerini, pozitif
+  miktarı, crossed orderbook ve `lastUpdateId` bütünlüğünü
+  doğrular. `lastUpdateId` **borsa saat damgası DEĞİLDİR**.
+  İstek/yanıt süreleri yalnız yerel UTC saatiyle en çok
+  üç saniye; 418/429 durumlarında tekrar çağrı yapmaz.
+- Tamamı sentetik testlerde hesaplanan alış/satış ağırlıklı
+  ortalama fiyat (VWAP), yalnız mevcut 20 seviyenin gösterdiği
+  miktarla hesaplanır. Derinlik yetersizse
+  `INSUFFICIENT_VISIBLE_DEPTH`, aşırı fiyat etkisiyse
+  `DEPTH_IMPACT_LIMIT`, gerçek hesap komisyonu yoksa
+  `ACCOUNT_FEE_UNKNOWN`; sahte `projected_gross_edge_bps`
+  ile yapılan hesap bile sadece `SIMULATION_ONLY` döner.
+  `DepthCostReview.trade_authorized` **her zaman false**.
+- Alım ve satım tarafındaki aynı anlık depth snapshot'ının
+  kullanılması simülasyon varsayımıdır; gerçek alıştan
+  sonra defterin aynı kalacağını, piyasa emirlerinin tamamen
+  dolacağını veya slip tutarının sınırda kalacağını
+  garanti edemez. Ücret oranı hesap özelinde kimlik
+  doğrulanmadan bilinmez. Piyasada garanti kâr vaat edilmez.
+- Bir sonraki güvenlik katmanı: quote/derinlik/tick eşzamanlılığı,
+  gerçek maliyet kanıtı, borsa notional filtrelerinin yeterli
+  tarihsel ortalama fiyatı, fee-tier, iptal/yenileme ve uzun
+  süreli ileri PAPER denemeleri. **Hiçbir üretim işlem yetkisi
+  açılmadı.**
