@@ -1,7 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { Activity, LockKeyhole, LogOut, RefreshCw, ShieldCheck } from "lucide-react";
+import { useCallback, useState } from "react";
+import StagingConsoleSections, {type ConsoleSection} from "./StagingConsoleSections";
+import { Activity, LockKeyhole, LogOut, RefreshCw, ShieldCheck, Menu, BarChart3, Bot, Wallet, History, Layers3, ShieldAlert } from "lucide-react";
+
+const consoleMenu = [
+  {id:"dashboard",label:"Genel Bakış",Icon:BarChart3},
+  {id:"market",label:"Piyasa Verileri",Icon:Activity},
+  {id:"bot",label:"Bot Yönetimi",Icon:Bot},
+  {id:"risk",label:"Risk Yönetimi",Icon:ShieldCheck},
+  {id:"strategies",label:"Stratejiler",Icon:Layers3},
+  {id:"positions",label:"Pozisyonlar",Icon:Wallet},
+  {id:"logs",label:"Olay Kayıtları",Icon:History},
+] as const;
 
 type Summary = {
   mode: "paper"; source: "persisted_paper_spot";
@@ -122,6 +133,16 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
   const [manualStop, setManualStop] = useState("2");
   const [pendingManual, setPendingManual] = useState<PendingManual|null>(null);
   const [manualConfirmed, setManualConfirmed] = useState(false);
+  const [page, setPage] = useState<ConsoleSection>("dashboard");
+  const [navOpen, setNavOpen] = useState(false);
+  const onSessionExpired = useCallback(() => {
+    setSession(null); setSnapshot(null); setPendingManual(null);
+    setManualConfirmed(false); setNotice("Oturum süresi doldu; yeniden giriş yap.");
+  }, []);
+  function navigate(target: ConsoleSection) {
+    setPage(target); setNavOpen(false); setPendingManual(null);
+    setManualConfirmed(false); setNotice("");
+  }
 
   async function refresh() {
     if (!base) return;
@@ -272,8 +293,8 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
     }
   }
 
-  return <main className="staging-shell">
-    <div className="staging-panel">
+  return <main className={"staging-shell" + (session ? " staging-shell-auth" : "")}>
+    <div className={"staging-panel" + (session ? " staging-panel-auth" : "")}>
       <header className="staging-identity"><span><Activity size={22}/></span>
         <div><h1>TradePilot</h1><p>Güvenli PAPER test önizlemesi</p></div>
       </header>
@@ -296,20 +317,38 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
         </label>
         <button type="submit" disabled={busy}><LockKeyhole size={16}/>
           {busy?"Kontrol ediliyor...":"Giriş yap"}</button>
-      </form> : <div className="staging-details">
+      </form> : <div className="staging-workspace">
+      <button className="staging-menu-toggle" aria-expanded={navOpen} aria-controls="staging-console-nav"
+        onClick={()=>setNavOpen(value=>!value)}><Menu size={18}/> Yönetim menüsü</button>
+      <aside className={"staging-console-nav" + (navOpen ? " staging-nav-open" : "")} id="staging-console-nav">
+        <div className="staging-console-caption">PAPER YÖNETİM</div>
+        <nav aria-label="TradePilot bölümleri">{consoleMenu.map(item=><button
+          type="button" key={item.id} aria-current={page===item.id ? "page" : undefined}
+          className={page===item.id ? "selected" : ""}
+          onClick={()=>navigate(item.id)}><item.Icon size={17}/><span>{item.label}</span></button>)}</nav>
+        <p className="staging-console-foot"><ShieldAlert size={14}/> Yalnız sanal işlemler · Canlı emirler kapalı</p>
+      </aside>
+      <div className="staging-details">
         <div className="staging-actions">
           <strong>Oturum açık · {session.role === "viewer"?"Görüntüleyici":"Operatör"}</strong>
           <button onClick={()=>void refresh()} disabled={busy}><RefreshCw size={16}/> Yenile</button>
           <button onClick={()=>void signOut()} disabled={busy}><LogOut size={16}/> Çıkış</button>
         </div>
-        {!snapshot ? <p>Kayıtlı PAPER özeti henüz yüklenmedi.</p> : <>
-          {snapshot.initialized && snapshot.account ? <div className="staging-metrics">
+        {(page === "market" || page === "bot" || page === "risk" || page === "strategies") && base &&
+          <StagingConsoleSections section={page} base={base} role={session.role}
+            csrf={session.csrf} onExpired={onSessionExpired}/>}
+        {page !== "market" && page !== "bot" && page !== "risk" && page !== "strategies" &&
+          (!snapshot ? <p>Kayıtlı PAPER özeti henüz yüklenmedi.</p> : <>
+          {page === "logs" && base && <StagingConsoleSections section="logs" base={base}
+            role={session.role} csrf={session.csrf} onExpired={onSessionExpired}/>}
+
+          {page === "dashboard" && (snapshot.initialized && snapshot.account ? <div className="staging-metrics">
             <article><span>Başlangıç (sanal)</span><strong>{formatPaperUsdt(snapshot.account.initial_capital_usdt)} USDT</strong></article>
             <article><span>Kaydedilmiş nakit (sanal)</span><strong>{formatPaperUsdt(snapshot.account.cash_usdt)} USDT</strong></article>
             <article><span>Gerçekleşmiş PnL (sanal)</span><strong>{formatPaperUsdt(snapshot.account.realized_pnl_usdt)} USDT</strong></article>
             <article><span>Varsayımsal komisyon</span><strong>{formatPaperUsdt(snapshot.account.paid_fees_usdt)} USDT</strong></article>
-          </div> : <p>Henüz PAPER hesap verisi bulunmuyor; tutar uydurulmaz.</p>}
-          {session.role === "operator" && snapshot.initialized && snapshot.account &&
+          </div> : <p>Henüz PAPER hesap verisi bulunmuyor; tutar uydurulmaz.</p>)}
+          {(page === "dashboard" || page === "positions") && session.role === "operator" && snapshot.initialized && snapshot.account &&
             <section className="staging-manual" aria-labelledby="staging-manual-title">
               <h2 id="staging-manual-title">Manuel PAPER Spot simülasyonu</h2>
               <p>Gerçek Binance emri gönderilmez. Sunucu işlem sırasında yeni kamusal fiyat doğrular;
@@ -372,7 +411,7 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
                     yeni istek oluşturmadan önce işlem geçmişini kontrol et.</p>
                 </div>}
             </section>}
-          <section className="staging-history" aria-labelledby="staging-positions-title">
+          {(page === "dashboard" || page === "positions") && <section className="staging-history" aria-labelledby="staging-positions-title">
             <div className="staging-section-heading">
               <h2 id="staging-positions-title">PAPER pozisyonları</h2>
               <span>Toplam {snapshot.total_positions} · Açık {snapshot.open_positions}</span>
@@ -392,8 +431,8 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
               </div>}
             {snapshot.total_positions > snapshot.positions.length &&
               <p className="staging-muted">Yalnızca son {snapshot.positions.length} pozisyon gösteriliyor.</p>}
-          </section>
-          <section className="staging-history" aria-labelledby="staging-events-title">
+          </section>}
+          {(page === "dashboard" || page === "logs") && <section className="staging-history" aria-labelledby="staging-events-title">
             <div className="staging-section-heading">
               <h2 id="staging-events-title">Son PAPER olayları</h2>
               <span>Toplam {snapshot.total_events}</span>
@@ -413,8 +452,8 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
               </div>}
             {snapshot.total_events > snapshot.events.length &&
               <p className="staging-muted">Yalnızca son {snapshot.events.length} olay gösteriliyor.</p>}
-          </section>
-          <section className="staging-status" aria-labelledby="staging-worker-title">
+          </section>}
+          {page === "dashboard" && <section className="staging-status" aria-labelledby="staging-worker-title">
             <h2 id="staging-worker-title">Bot — Son bilinen durum</h2>
             <p>{snapshot.worker.requested_enabled === true
               ? "Bot ayarı açık; çalışan servis doğrulanmadı."
@@ -423,9 +462,9 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
             <p>Son deneme: {timeUTC(snapshot.worker.last_attempt_at_ms)}</p>
             <p>Bir sonraki izinli deneme: {timeUTC(snapshot.worker.next_allowed_at_ms)}</p>
             <p className="staging-muted">Bu kayıtlar canlı bot bağlantısı veya çalışan işlem motoru kanıtı değildir.</p>
-          </section>
-        </>}
-      </div>}
+          </section>}
+        </>)}
+      </div></div>}
       {notice && <p role="status" className="staging-notice">{notice}</p>}
       <footer>HTTPS + Secure HttpOnly cookie · 15 dakikalık oturum ·
         Yerel yönetici anahtarı kullanılmaz · Otomatik trade başlatılmaz</footer>

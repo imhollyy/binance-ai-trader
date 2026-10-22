@@ -215,3 +215,62 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .staging-confirm-check{display:flex;align-items:flex-start;gap:10px;font-size:12px;color:#314d72;line-height:1.6}
 .staging-confirm-check input{width:19px;height:19px;flex:none}
 @media(max-width:440px){.staging-manual-form{grid-template-columns:1fr}.staging-manual-buttons{flex-direction:column}}
+
+
+/* BT-009H: unified private console. Keep staging cookie/RBAC and local-dev token UI separate. */
+.staging-shell-auth{display:block;padding:clamp(10px,2vw,28px);min-height:100dvh}
+.staging-panel-auth{width:min(100%,1320px);margin-inline:auto;padding:clamp(16px,2vw,30px)}
+.staging-workspace{display:grid;grid-template-columns:205px minmax(0,1fr);gap:24px;margin-top:18px;align-items:start}
+.staging-workspace .staging-details{margin-top:0;min-width:0}
+.staging-console-nav{border:1px solid #dfe7f5;border-radius:14px;background:#f7f9fe;padding:14px;min-width:0}
+.staging-console-caption,.staging-module-kicker{letter-spacing:.12em;font-size:10px;font-weight:800;color:#7890b0}
+.staging-console-nav nav{display:flex;flex-direction:column;gap:5px;margin-top:14px}
+.staging-console-nav nav button{display:flex;gap:10px;align-items:center;text-align:left;padding:11px 10px;min-height:44px;border:0;border-radius:9px;background:transparent;color:#3c5476;cursor:pointer;font-size:12px;font-weight:600}
+.staging-console-nav nav button:hover{background:#e8effb}
+.staging-console-nav nav button.selected,.staging-console-nav nav button[aria-current="page"]{background:#3057b7;color:white}
+.staging-console-nav nav button:focus-visible,.staging-menu-toggle:focus-visible,.staging-module button:focus-visible{outline:3px solid #88aefa;outline-offset:2px}
+.staging-console-foot{display:flex;gap:8px;align-items:flex-start;margin-top:23px;border-top:1px solid #dfe7f5;padding-top:13px;font-size:11px;color:#6e81a0;line-height:1.6}
+.staging-console-foot svg{flex:none}
+.staging-menu-toggle{display:none}
+.staging-module{min-width:0;border:1px solid #e1e9f5;background:#fff;border-radius:13px;padding:clamp(12px,2.4vw,22px)}
+.staging-module-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px}
+.staging-module-heading h2{font-size:20px;color:#233b60;margin-top:4px}
+.staging-module h3{font-size:14px;color:#2b4269;margin:18px 0 10px}
+.staging-secondary{background:#eff4fc;border:1px solid #cbd9ef;color:#28436e;border-radius:8px;padding:10px 13px;min-height:44px;cursor:pointer}
+.staging-secondary:disabled,.staging-settings-action button:disabled{opacity:.55;cursor:not-allowed}
+.staging-data-warning{background:#f6f9fe;border:1px solid #e0e9f6;color:#5c7291;font-size:12px;line-height:1.7;padding:12px;border-radius:10px;margin:12px 0}
+.staging-market-controls,.staging-risk-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.staging-market-controls label,.staging-risk-grid label{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600;color:#405978}
+.staging-risk-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.staging-risk-grid label small{font-size:11px;font-weight:400;color:#7186a3}
+.staging-market-controls select,.staging-risk-grid input{width:100%;min-width:0;border:1px solid #bfcfe6;border-radius:9px;padding:11px;background:white;color:#263d61;min-height:44px}
+.staging-risk-grid input[readonly]{background:#f2f5fb;color:#627894}
+.staging-table-wrap{width:100%;max-width:100%;overflow-x:auto;border:1px solid #e1e9f5;border-radius:10px;margin-top:13px}
+.staging-table{width:100%;border-collapse:collapse;min-width:540px;font-size:11px;text-align:left}
+.staging-table th,.staging-table td{padding:12px 9px;border-bottom:1px solid #e7edf6;white-space:nowrap;color:#4a6283}
+.staging-table th{background:#f5f8fd;color:#2c4467}
+.staging-table tr:last-child td{border-bottom:0}
+.staging-keyvalues{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.staging-keyvalues>div{min-width:0;display:flex;flex-direction:column;gap:7px;padding:12px;border:1px solid #e1e9f5;border-radius:10px;background:#f9fbff}
+.staging-keyvalues span{font-size:11px;color:#7689a3}
+.staging-keyvalues strong{font-size:12px;color:#284263;overflow-wrap:anywhere}
+.staging-settings-action{margin-top:16px;border-top:1px solid #e0e9f6;padding-top:15px;display:flex;flex-direction:column;gap:12px}
+.staging-settings-action label{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#355176;line-height:1.6}
+.staging-settings-action input{min-width:20px;min-height:20px;flex:none}
+.staging-settings-action button{background:#3057b7;color:white;border:0;border-radius:9px;min-height:44px;padding:10px 14px;cursor:pointer;align-self:flex-start}
+.staging-module .recorded-chart{max-width:100%;min-width:0}
+@media(max-width:800px){
+ .staging-workspace{grid-template-columns:minmax(0,1fr);gap:10px}
+ .staging-console-nav{display:none}
+ .staging-console-nav.staging-nav-open{display:block}
+ .staging-menu-toggle{display:flex;gap:8px;align-items:center;justify-content:center;background:#eef3fc;color:#2d4d84;padding:10px 12px;border:1px solid #d7e4f4;border-radius:9px;min-height:44px;cursor:pointer;width:100%}
+ .staging-console-nav nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+ .staging-risk-grid{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:440px){
+ .staging-panel-auth{padding:14px}
+ .staging-module-heading{align-items:stretch;flex-direction:column}
+ .staging-market-controls,.staging-keyvalues{grid-template-columns:minmax(0,1fr)}
+ .staging-console-nav nav{grid-template-columns:minmax(0,1fr)}
+ .staging-settings-action button{width:100%}
+}
