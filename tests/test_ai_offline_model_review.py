@@ -107,6 +107,8 @@ def test_research_metrics_show_brier_gain_but_never_promote_model() -> None:
     assert report.test.samples == 120
     assert report.test.outcome_counts == (51, 51, 18)
     assert report.test.expected_calibration_error == D("0")
+    assert report.test.multiclass_log_loss.is_finite()
+    assert report.test.multiclass_log_loss > 0
     assert report.test_baseline_brier is not None
     assert report.test_brier_improvement is not None
     assert report.test_brier_improvement > D(".10")

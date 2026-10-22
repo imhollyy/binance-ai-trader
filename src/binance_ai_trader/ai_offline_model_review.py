@@ -68,14 +68,26 @@ class ForecastOutcome:
     label_available_at_ms: int
     forecast: ProbabilityEstimate
     realized_outcome: ObservedOutcome
+    forecast_recorded_at_ms: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ReliabilityBin:
+    lower_bound: Decimal
+    upper_bound: Decimal
+    samples: int
+    mean_confidence: Decimal
+    accuracy: Decimal
 
 
 @dataclass(frozen=True, slots=True)
 class SplitMetrics:
     samples: int
     multiclass_brier: Decimal
+    multiclass_log_loss: Decimal
     expected_calibration_error: Decimal
     outcome_counts: tuple[int, int, int]
+    reliability_bins: tuple[ReliabilityBin, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,12 +220,17 @@ def _forecast_vector(item: ForecastOutcome) -> tuple[Decimal, Decimal, Decimal]:
 def _metrics(items: Sequence[ForecastOutcome]) -> SplitMetrics:
     count = len(items)
     brier = ZERO
+    log_loss = ZERO
     bins: dict[int, list[tuple[Decimal, int]]] = {}
     labels = [0, 0, 0]
     for row in items:
         probabilities = _forecast_vector(row)
         truth = _event_vector(row.realized_outcome)
         brier += sum(((x - y) ** 2 for x, y in zip(probabilities, truth, strict=True)), ZERO)
+        log_loss -= sum(
+            (y * max(x, Decimal("1e-30")).ln() for x, y in zip(probabilities, truth, strict=True)),
+            ZERO,
+        )
         position = max(range(3), key=probabilities.__getitem__)
         confidence = probabilities[position]
         correct = int(truth[position] == ONE)
@@ -223,11 +240,28 @@ def _metrics(items: Sequence[ForecastOutcome]) -> SplitMetrics:
         bins.setdefault(bucket, []).append((confidence, correct))
         labels[THREE.index(row.realized_outcome.value)] += 1
     ece = ZERO
-    for group in bins.values():
+    reliability: list[ReliabilityBin] = []
+    for bucket, group in sorted(bins.items()):
         mean_conf = sum((entry[0] for entry in group), ZERO) / len(group)
         accuracy = Decimal(sum(entry[1] for entry in group)) / len(group)
         ece += Decimal(len(group)) / count * abs(mean_conf - accuracy)
-    return SplitMetrics(count, brier / count, ece, (labels[0], labels[1], labels[2]))
+        reliability.append(
+            ReliabilityBin(
+                Decimal(bucket) / 10,
+                Decimal(bucket + 1) / 10,
+                len(group),
+                mean_conf,
+                accuracy,
+            )
+        )
+    return SplitMetrics(
+        count,
+        brier / count,
+        log_loss / count,
+        ece,
+        (labels[0], labels[1], labels[2]),
+        tuple(reliability),
+    )
 
 
 def _baseline_brier(

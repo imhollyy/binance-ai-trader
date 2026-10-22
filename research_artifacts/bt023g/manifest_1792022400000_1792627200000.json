@@ -1,0 +1,74 @@
+{
+  "days": 7,
+  "end_exclusive_ms": 1792627200000,
+  "files": [
+    {
+      "count": 10080,
+      "first_open_ms": 1792022400000,
+      "interval": "1m",
+      "last_open_ms": 1792627140000,
+      "path": "BTCUSDT_1m_1792022400000_1792627200000.json",
+      "sha256": "c4a1cae559df6d37cce53a86bdab611819d7f9d7132e5b5f5c6190f04df29ddd",
+      "symbol": "BTCUSDT"
+    },
+    {
+      "count": 2016,
+      "first_open_ms": 1792022400000,
+      "interval": "5m",
+      "last_open_ms": 1792626900000,
+      "path": "BTCUSDT_5m_1792022400000_1792627200000.json",
+      "sha256": "2499f8e7528e50a0f916a3afefadae13e9e9cecc43ef22eaa92597f3c415228e",
+      "symbol": "BTCUSDT"
+    },
+    {
+      "count": 672,
+      "first_open_ms": 1792022400000,
+      "interval": "15m",
+      "last_open_ms": 1792626300000,
+      "path": "BTCUSDT_15m_1792022400000_1792627200000.json",
+      "sha256": "536699bf5debdfa65a768b33a05aac513183297c58e463d6905118b35f35904a",
+      "symbol": "BTCUSDT"
+    },
+    {
+      "count": 10080,
+      "first_open_ms": 1792022400000,
+      "interval": "1m",
+      "last_open_ms": 1792627140000,
+      "path": "ETHUSDT_1m_1792022400000_1792627200000.json",
+      "sha256": "724a349e906134315b606728540d5acbaa3f06cc99816857c5b0ceb147a2ea97",
+      "symbol": "ETHUSDT"
+    },
+    {
+      "count": 2016,
+      "first_open_ms": 1792022400000,
+      "interval": "5m",
+      "last_open_ms": 1792626900000,
+      "path": "ETHUSDT_5m_1792022400000_1792627200000.json",
+      "sha256": "8e14730d98aed316566d705415c1f098b449599fbec074080b940e636b9ce9f5",
+      "symbol": "ETHUSDT"
+    },
+    {
+      "count": 672,
+      "first_open_ms": 1792022400000,
+      "interval": "15m",
+      "last_open_ms": 1792626300000,
+      "path": "ETHUSDT_15m_1792022400000_1792627200000.json",
+      "sha256": "7698b0ccf06e5fd773fe6d3f24385f4531a64884a104c6962301cc54b8832b40",
+      "symbol": "ETHUSDT"
+    }
+  ],
+  "intervals": [
+    "1m",
+    "5m",
+    "15m"
+  ],
+  "retrieved_at_utc": "2026-10-22T19:54:45.420688+00:00",
+  "schema_version": "1.0",
+  "scope": "public_spot_ohlcv_research_only",
+  "source": "https://data-api.binance.vision/api/v3/klines",
+  "start_ms": 1792022400000,
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT"
+  ]
+}

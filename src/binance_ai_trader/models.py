@@ -465,3 +465,25 @@ class AiResearchForecastReceiptRow(Base):
     prob_win: Mapped[Decimal] = mapped_column(Numeric(38, 30), nullable=False)
     prob_loss: Mapped[Decimal] = mapped_column(Numeric(38, 30), nullable=False)
     prob_flat: Mapped[Decimal] = mapped_column(Numeric(38, 30), nullable=False)
+
+
+class AiResearchForecastOutcomeRow(Base):
+    """Immutable result for a forecast evaluated against persisted closed candles."""
+
+    __tablename__ = "ai_research_forecast_outcomes"
+    __table_args__ = (
+        CheckConstraint("outcome IN ('WIN', 'LOSS', 'FLAT')", name="ck_ai_outcome_label"),
+        CheckConstraint("entry_close > 0 AND target_close > 0", name="ck_ai_outcome_prices"),
+        CheckConstraint("flat_band_bps BETWEEN 0 AND 200", name="ck_ai_outcome_flat_band"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    receipt_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
+    outcome: Mapped[str] = mapped_column(String(8), nullable=False)
+    entry_close: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
+    target_close: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
+    flat_band_bps: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    source_url: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_candle_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_retrieved_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    evaluated_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)

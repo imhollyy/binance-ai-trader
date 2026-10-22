@@ -1,0 +1,246 @@
+{
+  "schema_version": "1.0",
+  "source_manifest": "manifest_1792022400000_1792627200000.json",
+  "source_manifest_sha256": "8d3301f2e7bc511025d307f680143cc074b7d8233cee318abdab8475d09a4a58",
+  "symbols": {
+    "BTCUSDT": {
+      "approval_status": "RESEARCH_ONLY_NOT_APPROVED",
+      "artifact": "model_BTCUSDT_v1.json",
+      "artifact_sha256": "a735140a551aff883839deeb9d2b4f315fca60d548cd7a62b01b28fe63680dcf",
+      "calibration": {
+        "brier": 0.5950228759788181,
+        "brier_improvement_vs_baseline": 0.08135154398431277,
+        "class_counts": {
+          "BUY": 141,
+          "HOLD": 115,
+          "SELL": 138
+        },
+        "log_loss": 0.9879270189466458,
+        "prevalence_baseline_brier": 0.6763744199631309,
+        "samples": 394,
+        "top_label_ece": 0.020846221915868875
+      },
+      "calibration_period": [
+        1792374779999,
+        1792502219999
+      ],
+      "calibration_status": "UNVERIFIED",
+      "feature_schema": [
+        "1m_trend",
+        "1m_volume",
+        "1m_volatility",
+        "1m_momentum",
+        "1m_regime",
+        "5m_trend",
+        "5m_volume",
+        "5m_volatility",
+        "5m_momentum",
+        "5m_regime",
+        "15m_trend",
+        "15m_volume",
+        "15m_volatility",
+        "15m_momentum",
+        "15m_regime"
+      ],
+      "label_definition": "15m ahead close direction; +/-5 bps flat band; not net trade return",
+      "period_end_ms": 1792620599999,
+      "period_start_ms": 1792067519999,
+      "rows": 2123,
+      "test": {
+        "brier": 0.7466653634194286,
+        "brier_improvement_vs_baseline": -0.06980605206340063,
+        "class_counts": {
+          "BUY": 144,
+          "HOLD": 120,
+          "SELL": 146
+        },
+        "log_loss": 1.195334653433445,
+        "prevalence_baseline_brier": 0.676859311356028,
+        "samples": 410,
+        "top_label_ece": 0.19544604961627923
+      },
+      "test_period": [
+        1792505939999,
+        1792620599999
+      ],
+      "train_class_counts": {
+        "BUY": 420,
+        "HOLD": 477,
+        "SELL": 360
+      },
+      "train_period": [
+        1792067519999,
+        1792372379999
+      ],
+      "training_manifest": "fit_manifest_BTCUSDT_v1.json",
+      "training_manifest_sha256": "3744defc6c9b340ef3ef6d150e3905678ae91cf9fe7f17dd680e93f278d94244",
+      "walk_forward": [
+        {
+          "brier": 0.7272585489995775,
+          "brier_improvement_vs_baseline": -0.064173817892072,
+          "class_counts": {
+            "BUY": 44,
+            "HOLD": 68,
+            "SELL": 57
+          },
+          "end_ms": 1792390079999,
+          "log_loss": 1.1595026451497252,
+          "prevalence_baseline_brier": 0.6630847311075055,
+          "samples": 169,
+          "start_ms": 1792354859999,
+          "top_label_ece": 0.23287872636793613
+        },
+        {
+          "brier": 0.5952048573793515,
+          "brier_improvement_vs_baseline": 0.0832640449393598,
+          "class_counts": {
+            "BUY": 87,
+            "HOLD": 45,
+            "SELL": 37
+          },
+          "end_ms": 1792447859999,
+          "log_loss": 0.9968049738439815,
+          "prevalence_baseline_brier": 0.6784689023187113,
+          "samples": 169,
+          "start_ms": 1792401779999,
+          "top_label_ece": 0.07853735231720967
+        },
+        {
+          "brier": 0.6908463747834712,
+          "brier_improvement_vs_baseline": -0.010694648012067542,
+          "class_counts": {
+            "BUY": 65,
+            "HOLD": 44,
+            "SELL": 60
+          },
+          "end_ms": 1792524539999,
+          "log_loss": 1.1807892727204488,
+          "prevalence_baseline_brier": 0.6801517267714037,
+          "samples": 169,
+          "start_ms": 1792470179999,
+          "top_label_ece": 0.10496584773139471
+        }
+      ]
+    },
+    "ETHUSDT": {
+      "approval_status": "RESEARCH_ONLY_NOT_APPROVED",
+      "artifact": "model_ETHUSDT_v1.json",
+      "artifact_sha256": "ad4e86d4efa8db2f217f5ee3949977479c8faa32029c138c8ce99f94f05e49cf",
+      "calibration": {
+        "brier": 0.6102964753927772,
+        "brier_improvement_vs_baseline": 0.029699528555794275,
+        "class_counts": {
+          "BUY": 161,
+          "HOLD": 79,
+          "SELL": 168
+        },
+        "log_loss": 1.0163758630505717,
+        "prevalence_baseline_brier": 0.6399960039485715,
+        "samples": 408,
+        "top_label_ece": 0.07105759841871484
+      },
+      "calibration_period": [
+        1792375739999,
+        1792503839999
+      ],
+      "calibration_status": "UNVERIFIED",
+      "feature_schema": [
+        "1m_trend",
+        "1m_volume",
+        "1m_volatility",
+        "1m_momentum",
+        "1m_regime",
+        "5m_trend",
+        "5m_volume",
+        "5m_volatility",
+        "5m_momentum",
+        "5m_regime",
+        "15m_trend",
+        "15m_volume",
+        "15m_volatility",
+        "15m_momentum",
+        "15m_regime"
+      ],
+      "label_definition": "15m ahead close direction; +/-5 bps flat band; not net trade return",
+      "period_end_ms": 1792626239999,
+      "period_start_ms": 1792052459999,
+      "rows": 2193,
+      "test": {
+        "brier": 0.6503480224028829,
+        "brier_improvement_vs_baseline": 0.0006413835108872723,
+        "class_counts": {
+          "BUY": 132,
+          "HOLD": 93,
+          "SELL": 199
+        },
+        "log_loss": 1.0719656889051012,
+        "prevalence_baseline_brier": 0.6509894059137702,
+        "samples": 424,
+        "top_label_ece": 0.0630587799206242
+      },
+      "test_period": [
+        1792506059999,
+        1792626239999
+      ],
+      "train_class_counts": {
+        "BUY": 514,
+        "HOLD": 299,
+        "SELL": 486
+      },
+      "train_period": [
+        1792052459999,
+        1792373879999
+      ],
+      "training_manifest": "fit_manifest_ETHUSDT_v1.json",
+      "training_manifest_sha256": "0eb62e22252af8491d8d27fc75be82d02f3c373d1dce15552d5a5b8b6bbcfc3e",
+      "walk_forward": [
+        {
+          "brier": 0.6705200163710304,
+          "brier_improvement_vs_baseline": -0.027786235714951646,
+          "class_counts": {
+            "BUY": 72,
+            "HOLD": 35,
+            "SELL": 68
+          },
+          "end_ms": 1792389299999,
+          "log_loss": 1.0892587909956697,
+          "prevalence_baseline_brier": 0.6427337806560788,
+          "samples": 175,
+          "start_ms": 1792363799999,
+          "top_label_ece": 0.14379960828196153
+        },
+        {
+          "brier": 0.6276899256341768,
+          "brier_improvement_vs_baseline": -0.0014945688210914465,
+          "class_counts": {
+            "BUY": 88,
+            "HOLD": 26,
+            "SELL": 61
+          },
+          "end_ms": 1792444919999,
+          "log_loss": 1.0355411649102308,
+          "prevalence_baseline_brier": 0.6261953568130854,
+          "samples": 175,
+          "start_ms": 1792395779999,
+          "top_label_ece": 0.11688806252620812
+        },
+        {
+          "brier": 0.6433305337252313,
+          "brier_improvement_vs_baseline": -0.02728983836831056,
+          "class_counts": {
+            "BUY": 92,
+            "HOLD": 23,
+            "SELL": 60
+          },
+          "end_ms": 1792518899999,
+          "log_loss": 1.0628242073156846,
+          "prevalence_baseline_brier": 0.6160406953569207,
+          "samples": 175,
+          "start_ms": 1792479239999,
+          "top_label_ece": 0.0748955461821316
+        }
+      ]
+    }
+  },
+  "trade_costs": "NOT_INCLUDED; no fill profitability claim"
+}
