@@ -5,10 +5,13 @@ import os
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
+from threading import Barrier
+from uuid import uuid4
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import DBAPIError
@@ -16,6 +19,9 @@ from sqlalchemy.exc import DBAPIError
 from binance_ai_trader.ai_constitution import BotState
 from binance_ai_trader.ai_shadow_preflight import ShadowPreflightResult
 from binance_ai_trader.ai_trainable_model import ModelAction, ResearchPrediction
+from binance_ai_trader.api import create_app
+from binance_ai_trader.api_config import ApiConfig
+from binance_ai_trader.paper_supervisor import claim_worker, release_worker
 from binance_ai_trader.risk_guard import RiskProfile, RiskRequest
 from binance_ai_trader.risk_store import (
     RiskStoreRejected,
@@ -225,7 +231,7 @@ def test_confirmed_profile_atomic_concurrency_audit_and_restart(engine: Engine) 
         )
         assert not denied.allowed
         with restarted.connect() as conn:
-            assert conn.execute(text("SELECT count(*) FROM ai_risk_audit")).scalar_one() == 19
+            assert conn.execute(text("SELECT count(*) FROM ai_risk_audit")).scalar_one() == 21
             assert (
                 conn.execute(
                     text(
@@ -238,6 +244,103 @@ def test_confirmed_profile_atomic_concurrency_audit_and_restart(engine: Engine) 
         restarted.dispose()
     with pytest.raises(RiskStoreRejected):
         install_profile(engine, _profile(3), user_confirmed=False, expected_runtime_revision=16)
+
+
+def test_user_confirmed_profile_api_persists_version_and_rejects_stale_revision(
+    engine: Engine,
+) -> None:
+    token = "r" * 40
+    app = create_app(
+        config=ApiConfig(database_url=None, admin_token=token), engine=engine, risk_engine=engine
+    )
+    payload = {
+        "expected_revision": 16,
+        "risk_level": 5,
+        "max_positions": 1,
+        "risk_per_trade_pct": "0.5",
+        "max_open_capital": "250",
+        "spot_budget": "300",
+        "daily_loss_pct": "1",
+        "max_drawdown_pct": "5",
+        "max_consecutive_losses": 2,
+        "user_hard_limits": {"manual_cap": "250"},
+        "user_confirmed": True,
+    }
+    with TestClient(app) as client:
+        unauthorized = client.get("/api/v1/risk/profiles")
+        before = client.get("/api/v1/risk/profiles", headers={"X-Admin-Token": token})
+        no_approval = client.put(
+            "/api/v1/risk/profiles", json=payload, headers={"X-Admin-Token": token}
+        )
+        stale = client.put(
+            "/api/v1/risk/profiles",
+            json={**payload, "expected_revision": 15},
+            headers={
+                "X-Admin-Token": token,
+                "X-Risk-Profile-Approval": "I_CONFIRM_RISK_LIMITS",
+            },
+        )
+        active_worker = str(uuid4())
+        claim_worker(engine, active_worker)
+        worker_running = client.put(
+            "/api/v1/risk/profiles",
+            json=payload,
+            headers={
+                "X-Admin-Token": token,
+                "X-Risk-Profile-Approval": "I_CONFIRM_RISK_LIMITS",
+            },
+        )
+        release_worker(engine, active_worker)
+        updated = client.put(
+            "/api/v1/risk/profiles",
+            json=payload,
+            headers={
+                "X-Admin-Token": token,
+                "X-Risk-Profile-Approval": "I_CONFIRM_RISK_LIMITS",
+            },
+        )
+        concurrent_payload = {**payload, "expected_revision": 17, "risk_level": 4}
+        concurrent_headers = {
+            "X-Admin-Token": token,
+            "X-Risk-Profile-Approval": "I_CONFIRM_RISK_LIMITS",
+        }
+        barrier = Barrier(2)
+
+        def concurrent_update() -> int:
+            barrier.wait()
+            return int(
+                client.put(
+                    "/api/v1/risk/profiles",
+                    json=concurrent_payload,
+                    headers=concurrent_headers,
+                ).status_code
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            concurrent_statuses = list(pool.map(lambda _index: concurrent_update(), range(2)))
+    assert unauthorized.status_code == 401
+    assert before.json()["active_profile_version"] == 2
+    assert before.json()["bot_state"] == "STOPPED"
+    assert no_approval.status_code == 403
+    assert stale.status_code == 409
+    assert worker_running.status_code == 409
+    assert updated.status_code == 200
+    assert updated.json()["active_risk_level"] == 5
+    assert updated.json()["active_profile_version"] == 3
+    assert updated.json()["bot_state"] == "STOPPED"
+    assert sorted(concurrent_statuses) == [200, 409]
+    with engine.connect() as conn:
+        audit: str = conn.execute(
+            text("SELECT decision_json->>'action' FROM ai_risk_audit WHERE event_id='profile_5_3'")
+        ).scalar_one()
+        assert audit == "PROFILE_INSTALLED"
+        actor: str = conn.execute(
+            text(
+                "SELECT decision_json->>'actor_sha256' FROM ai_risk_audit "
+                "WHERE event_id='profile_5_3'"
+            )
+        ).scalar_one()
+        assert actor != token and len(actor) == 64
 
 
 def test_append_only_risk_tables_reject_update_delete_and_truncate(engine: Engine) -> None:
@@ -288,12 +391,12 @@ def test_migration_downgrade_preserves_append_only_history(engine: Engine) -> No
             )
         )
 
-    with pytest.raises(RuntimeError, match="append-only TRUNCATE protections must not be removed"):
+    with pytest.raises(RuntimeError, match="worker supervisor history must not be dropped"):
         command.downgrade(Config("alembic.ini"), "0015_bt024_risk_store")
 
     with engine.connect() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "0017_paper_spread_cost"
+            "0018_bt027_worker_supervisor"
         )
         assert (
             conn.execute(
@@ -306,7 +409,8 @@ def test_migration_downgrade_preserves_append_only_history(engine: Engine) -> No
                 "SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal AND tgname IN "
                 "('bt023_prediction_no_truncate','bt023_outcome_no_truncate',"
                 "'bt024_profile_no_truncate','bt024_reservation_no_truncate',"
-                "'bt024_snapshot_no_truncate','bt024_audit_no_truncate')"
+                "'bt024_snapshot_no_truncate','bt024_audit_no_truncate',"
+                "'bt027_worker_events_no_truncate')"
             )
         ).scalar_one()
-        assert guards == 6
+        assert guards == 7

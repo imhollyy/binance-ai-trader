@@ -13,6 +13,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
+from uuid import uuid4
 
 import httpx
 from pydantic import ValidationError
@@ -35,6 +36,12 @@ from binance_ai_trader.paper_observed_execution import (
     run_observed_paper_spot_once,
 )
 from binance_ai_trader.paper_strategy import SmaCrossParameters
+from binance_ai_trader.paper_supervisor import (
+    claim_worker,
+    heartbeat_worker,
+    release_worker,
+    stop_requested,
+)
 from binance_ai_trader.public_spot_observation import PublicSpotObservationClient
 from binance_ai_trader.risk_schemas import RiskSettings
 
@@ -202,8 +209,14 @@ def run_paper_worker_once(
         lease.commit()
         if not acquired:
             return _result(PaperWorkerStatus.READY, "another_worker_holds_lock", stamp)
+        worker_id = str(uuid4())
+        claimed = False
         try:
             try:
+                claim_worker(engine, worker_id)
+                claimed = True
+                if stop_requested(engine, worker_id):
+                    return _result(PaperWorkerStatus.DISABLED, "worker_stop_requested", stamp)
                 denied = _configured(engine, symbol)
                 if denied is not None:
                     return _result(PaperWorkerStatus.DISABLED, denied, stamp)
@@ -240,7 +253,11 @@ def run_paper_worker_once(
                     )
                     if ingest.missing_open_times_ms:
                         raise MarketDataInvalid("stored_spot_candle_gap")
+                    if not heartbeat_worker(engine, worker_id):
+                        return _result(PaperWorkerStatus.DISABLED, "worker_stop_requested", stamp)
                     observer = PublicSpotObservationClient(transport=transport, clock_ms=now)
+                    if stop_requested(engine, worker_id):
+                        return _result(PaperWorkerStatus.DISABLED, "worker_stop_requested", stamp)
                     executed = run_observed_paper_spot_once(
                         engine,
                         observer,
@@ -301,8 +318,15 @@ def run_paper_worker_once(
                 # public status. Error is a fail-closed terminal one-shot result.
                 return _result(PaperWorkerStatus.ERROR, "paper_worker_internal_error", stamp)
         finally:
-            lease.execute(
-                text("SELECT pg_advisory_unlock(:lock_id)"),
-                {"lock_id": ADVISORY_LOCK_KEY},
-            )
-            lease.commit()
+            try:
+                if claimed:
+                    release_worker(engine, worker_id)
+            except Exception:
+                # A failed close is detected as a stale lease by database time.
+                pass
+            finally:
+                lease.execute(
+                    text("SELECT pg_advisory_unlock(:lock_id)"),
+                    {"lock_id": ADVISORY_LOCK_KEY},
+                )
+                lease.commit()

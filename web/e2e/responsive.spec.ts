@@ -15,7 +15,7 @@ for (const width of [360, 390, 768, 1280]) {
     }
     await page.getByRole("button", { name: "Risk Yönetimi" }).click();
     await expect(page.getByRole("heading", { name: "Risk Yönetimi", level: 1 })).toBeVisible();
-    await expect(page.getByRole("combobox")).toBeDisabled();
+    await expect(page.getByText(/RiskGuard profili/)).toBeVisible();
     const riskSize = await page.evaluate(() => ({
       content: document.documentElement.scrollWidth,
       viewport: document.documentElement.clientWidth,
@@ -42,7 +42,6 @@ test("mobile historical market page never invents live prices", async ({ page })
   await expect(page.getByRole("heading", { name: "Piyasa Verileri", level: 1 })).toBeVisible();
   await expect(page.getByText("Yerel API bağlantısı gerekiyor")).toBeVisible();
   await expect(page.getByRole("button", { name: "Geçmişi Göster" })).toBeDisabled();
-  await page.getByRole("combobox", { name: "Spot paritesi" }).selectOption("ETHUSDT");
   const layout = await page.evaluate(() => ({
     content: document.documentElement.scrollWidth,
     viewport: document.documentElement.clientWidth,
@@ -56,13 +55,13 @@ for (const width of [360, 390, 768, 1280]) {
     await page.goto("/");
     if (width <= 780) await page.getByRole("button", { name: /Men/ }).click();
     await page.getByRole("button", { name: /Bot Y/ }).click();
-    await expect(page.getByRole("button", { name: "Botu başlat" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Botu durdur" })).toBeDisabled();
-    await expect(page.getByText(/heartbeat doğrulaması yok/)).toBeVisible();
+    await expect(page.getByRole("button", { name: /Ba\u015flatma kapal\u0131/ })).toBeDisabled();
+    await expect(page.getByRole("button", { name: /G\u00fcvenli durdurma iste/ })).toBeDisabled();
+    await expect(page.locator(".worker-supervisor").getByText(/Yerel API/)).toBeVisible();
     if (width <= 780) await page.getByRole("button", { name: /Men/ }).click();
     await page.getByRole("button", { name: "AI Araştırma" }).click();
-    await expect(page.getByText("RESEARCH ONLY — NOT APPROVED")).toBeVisible();
-    await expect(page.getByText(/doğrulanmış araştırma tahmini yok/)).toBeVisible();
+    await expect(page.locator(".ai-research-badge")).toHaveText("RESEARCH ONLY — NOT APPROVED");
+    await expect(page.getByText(/Prospektif/)).toBeVisible();
     const layout = await page.evaluate(() => ({
       content: document.documentElement.scrollWidth,
       viewport: document.documentElement.clientWidth,

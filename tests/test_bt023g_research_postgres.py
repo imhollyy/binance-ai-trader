@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import DBAPIError
@@ -16,6 +17,8 @@ from binance_ai_trader.ai_research_store import (
     pending_predictions,
 )
 from binance_ai_trader.ai_trainable_model import ModelAction, ResearchPrediction
+from binance_ai_trader.api import create_app
+from binance_ai_trader.api_config import ApiConfig
 
 URL = os.environ.get("DATABASE_URL", "")
 ISOLATED = (
@@ -73,6 +76,29 @@ def test_prediction_restart_duplicate_clock_and_pending(engine: Engine) -> None:
         assert any(x[0] == row.signal_id for x in pending_predictions(restarted))
     finally:
         restarted.dispose()
+
+
+def test_authenticated_research_api_returns_only_recorded_unapproved_predictions(
+    engine: Engine,
+) -> None:
+    token = "a" * 40
+    app = create_app(config=ApiConfig(database_url=None, admin_token=token), research_engine=engine)
+    with TestClient(app) as client:
+        assert client.get("/api/v1/ai/research/predictions").status_code == 401
+        response = client.get(
+            "/api/v1/ai/research/predictions?limit=10",
+            headers={"X-Admin-Token": token},
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["available"] is True
+    assert body["source"] == "isolated_ai_research_store"
+    assert body["metrics_available"] is False
+    row = next(item for item in body["predictions"] if item["signal_id"] == "bt023g_signal_0001")
+    assert row["model_version"] == "model-v1"
+    assert row["approval_status"] == "RESEARCH_ONLY_NOT_APPROVED"
+    assert row["probabilities"] is None
+    assert row["outcome"] is None
 
 
 def test_concurrent_duplicate_prediction_is_recorded_once(engine: Engine) -> None:

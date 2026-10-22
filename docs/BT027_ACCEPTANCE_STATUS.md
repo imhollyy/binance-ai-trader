@@ -1,42 +1,46 @@
 # BT-027 acceptance status
 
-This branch exposes only verified PAPER records already stored in the application
-database. Unknown values remain absent; the dashboard does not infer prices,
-unrealized P&L, spread costs, or a live worker state.
+This branch adds guarded research and control APIs while keeping automatic
+PAPER execution unavailable. All unknown information is represented as
+unavailable rather than inferred.
 
 ## Risk profiles (BT-027A)
 
-`GET /api/v1/risk/profiles/capabilities` is authenticated and returns an explicit
-unavailable response. The BT-024 RiskGuard uses a separate isolated research
-store and has no application-facing, user-approved profile write contract. The
-dashboard therefore keeps levels 1–5 unselectable and does not write PAPER
-settings as a substitute. Enabling selection requires a separate versioned
-profile service with user approval, optimistic concurrency, immutable audit,
-and fail-closed integration with RiskGuard.
+`GET/PUT /api/v1/risk/profiles` reads and writes complete, versioned RiskGuard
+profiles in the separately isolated RiskGuard database. A write requires the
+normal authorized write path, an explicit confirmation field and confirmation
+header, the current runtime revision, and a stopped worker. Every install is
+audited with a hashed actor identifier. A PostgreSQL advisory lock serializes
+profile changes with worker claims. Missing profile values are never filled in.
+This configures RiskGuard; it does not authorize or activate trading.
 
-## Worker control (BT-027B)
+## Worker status and stop (BT-027B)
 
-The dashboard shows persisted last-attempt metadata only. It does not treat that
-metadata as a heartbeat. No worker identity/lease supervisor or verified
-heartbeat API is integrated, so start and stop controls remain disabled and
-`process_verified_running` remains false. Enabling controls requires a
-restart-safe lease/heartbeat contract, authorized commands, audit, and
-concurrency tests.
+`GET /api/v1/paper/worker` reports database-backed worker identity, heartbeat,
+lease, revision and stale state. Authorized, idempotent STOP requests record an
+append-only audit event and remain `STOP_REQUESTED` until the worker observes
+the request and releases its lease. An expired lease is reported as stale.
+There is deliberately no START endpoint or scheduler activation. A heartbeat
+does not grant trading authority.
 
 ## AI research API (BT-027C)
 
-Model artifacts and prospective receipts are kept in a dedicated isolated
-research database. The application API has no configured, read-only connection
-to that database; the application PAPER database is not used as a fallback.
-The dashboard accurately labels models `RESEARCH ONLY — NOT APPROVED` and
-shows no fabricated predictions or metrics. A future endpoint must use an
-explicitly configured read-only research connection, preserve receipt/outcome
-provenance, and expose no execution capability.
+`GET /api/v1/ai/research/predictions` reads only prospective receipts and
+persisted outcomes from the configured isolated research database. It returns
+stored provenance and keeps every model `RESEARCH_ONLY_NOT_APPROVED`. If the
+database is absent, the endpoint returns an unavailable empty result. No
+performance metric is reported unless persisted evaluation evidence exists;
+the current response explicitly reports metrics unavailable where it does not.
+This API has no execution capability.
 
-## Acceptance boundary
+## Web integration and remaining acceptance
 
-The dashboard's stored PAPER ledger views, closed-candle history, cost evidence,
-responsive UI, and fail-closed empty states are implemented. BT-027A profile
-selection, BT-027B worker controls, and BT-027C research records are deliberately
-not enabled because their required backend contracts are absent. This PR is not
-ready to merge until those acceptance items and required CI checks are complete.
+The dashboard contains an explicit user-confirmed profile form, verified worker
+status with STOP request, and stored research receipt view. These views fail
+closed when their APIs or isolated stores are unavailable. START remains
+disabled because a complete safe start contract is not implemented. The
+research database currently has no persisted performance metric evidence.
+PostgreSQL integration tests must run in their disposable CI services; they are
+not claimed as local passes when those services are absent. BT-027 must remain
+unmerged until the disposable PostgreSQL, required CI, and browser checks all
+pass and the remaining acceptance decision is reviewed.

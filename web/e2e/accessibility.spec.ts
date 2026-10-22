@@ -24,15 +24,14 @@ for (const width of [360, 390, 768, 1280]) {
 
     if (width <= 780) await page.getByRole("button", { name: "Menüyü aç" }).click();
     await page.getByRole("button", { name: "Risk Yönetimi" }).click();
-    await expect(page.getByRole("combobox", { name: "Risk seviyesi" })).toBeDisabled();
-    await expect(page.getByText("Risk profili değiştirilemiyor.")).toBeVisible();
+    await expect(page.getByText(/RiskGuard profili/)).toBeVisible();
     const riskSize = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(riskSize).toBeLessThanOrEqual(1);
 
     if (width <= 780) await page.getByRole("button", { name: "Menüyü aç" }).click();
     await page.getByRole("button", { name: "Bot Yönetimi" }).click();
-    await expect(page.getByRole("button", { name: "Botu başlat" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Botu durdur" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: /Ba\u015flatma kapal\u0131/ })).toBeDisabled();
+    await expect(page.getByRole("button", { name: /G\u00fcvenli durdurma iste/ })).toBeDisabled();
     const botSize = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(botSize).toBeLessThanOrEqual(1);
   });

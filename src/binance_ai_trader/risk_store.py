@@ -90,20 +90,27 @@ def install_profile(
     *,
     user_confirmed: bool,
     expected_runtime_revision: int,
+    actor_sha256: str | None = None,
     state: BotState = BotState.STOPPED,
 ) -> int:
     """Store explicitly confirmed profile without enabling the bot."""
     _isolated(engine)
     if state is not BotState.STOPPED:
         raise RiskStoreRejected("initial_profile_must_start_stopped")
-    if type(user_confirmed) is not bool or not user_confirmed or not validate_profile(profile):
+    if (
+        type(user_confirmed) is not bool
+        or not user_confirmed
+        or not validate_profile(profile)
+        or (actor_sha256 is not None and _HASH.fullmatch(actor_sha256) is None)
+    ):
         raise RiskStoreRejected("explicitly_confirmed_complete_profile_required")
     with Session(engine) as session, session.begin():
         session.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": _LOCK_ID})
         runtime = (
             session.execute(
                 text(
-                    "SELECT revision,active_profile_version FROM ai_risk_runtime WHERE id=1 FOR UPDATE"
+                    "SELECT revision,active_profile_version,bot_state "
+                    "FROM ai_risk_runtime WHERE id=1 FOR UPDATE"
                 )
             )
             .mappings()
@@ -132,9 +139,32 @@ def install_profile(
                     "state": state.value,
                 },
             )
+            session.execute(
+                text(
+                    "INSERT INTO ai_risk_audit(event_id,signal_id,profile_version,bot_revision,decision_json) "
+                    "VALUES(:event,:signal,:version,1,CAST(:payload AS json))"
+                ),
+                {
+                    "event": f"profile_{profile.risk_level}_{profile.profile_version}",
+                    "signal": f"profile_{profile.risk_level}_{profile.profile_version}",
+                    "version": profile.profile_version,
+                    "payload": json.dumps(
+                        {
+                            "action": "PROFILE_INSTALLED",
+                            "risk_level": profile.risk_level,
+                            "profile_version": profile.profile_version,
+                            "user_confirmed": True,
+                            "actor_sha256": actor_sha256,
+                            "bot_state": state.value,
+                        }
+                    ),
+                },
+            )
             return 1
         current_revision = int(runtime["revision"])
         active_profile_version = int(runtime["active_profile_version"])
+        if BotState(str(runtime["bot_state"])) is not BotState.STOPPED:
+            raise RiskStoreRejected("profile_changes_require_stopped_bot")
         if (
             current_revision != expected_runtime_revision
             or profile.profile_version != active_profile_version + 1
@@ -162,7 +192,53 @@ def install_profile(
         ).scalar_one_or_none()
         if updated_revision is None:
             raise RiskStoreRejected("stale_profile_revision")
+        session.execute(
+            text(
+                "INSERT INTO ai_risk_audit(event_id,signal_id,profile_version,bot_revision,decision_json) "
+                "VALUES(:event,:signal,:version,:revision,CAST(:payload AS json))"
+            ),
+            {
+                "event": f"profile_{profile.risk_level}_{profile.profile_version}",
+                "signal": f"profile_{profile.risk_level}_{profile.profile_version}",
+                "version": profile.profile_version,
+                "revision": int(updated_revision),
+                "payload": json.dumps(
+                    {
+                        "action": "PROFILE_INSTALLED",
+                        "risk_level": profile.risk_level,
+                        "profile_version": profile.profile_version,
+                        "user_confirmed": True,
+                        "actor_sha256": actor_sha256,
+                        "bot_state": BotState.STOPPED.value,
+                    }
+                ),
+            },
+        )
         return int(updated_revision)
+
+
+def active_profile(engine: Engine) -> tuple[RiskProfile, BotState, int] | None:
+    """Return the currently selected, validated profile from the isolated store."""
+    _isolated(engine)
+    with Session(engine) as session:
+        row = (
+            session.execute(
+                text(
+                    "SELECT p.profile_json,r.bot_state,r.revision "
+                    "FROM ai_risk_runtime r JOIN ai_risk_profiles p "
+                    "ON p.risk_level=r.active_risk_level "
+                    "AND p.profile_version=r.active_profile_version WHERE r.id=1"
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+    if row is None:
+        return None
+    profile = _profile(row["profile_json"])
+    if not validate_profile(profile):
+        raise RiskStoreRejected("stored_profile_invalid")
+    return profile, BotState(str(row["bot_state"])), int(row["revision"])
 
 
 def set_bot_state(engine: Engine, *, state: BotState, expected_revision: int) -> int:

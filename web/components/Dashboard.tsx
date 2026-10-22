@@ -10,6 +10,8 @@ import type { KeyboardEvent, ReactNode } from "react";
 import PaperSpotLedger from "./PaperSpotLedger";
 import PaperDashboardOverview from "./PaperDashboardOverview";
 import RiskCapabilitiesPanel from "./RiskCapabilitiesPanel";
+import AiResearchPanel from "./AiResearchPanel";
+import PaperWorkerSupervisor from "./PaperWorkerSupervisor";
 import { StoredCloseChart } from "./RecordedPaperCharts";
 
 type Section = "dashboard" | "market" | "bot" | "risk" | "ai" | "positions" | "logs";
@@ -322,27 +324,24 @@ export default function Dashboard() {
             </div>}
         </section>}
         {section==="bot"&&<section className="surface form" aria-label="Bot yönetimi">
-          <div className="section-title"><div><h2>Bot Yönetimi</h2><p>Bu arayüz çalışan worker başlatma veya durdurma API'sine bağlı değildir.</p></div></div>
-          <div className="warning"><CirclePause size={19}/><div><strong>Başlatma ve durdurma devre dışı.</strong> API yalnız kayıtlı ayar ve son deneme bilgisini verir; çalışan worker heartbeat doğrulaması yoktur. Buradaki durum “çalışıyor” olarak gösterilmez.</div></div>
-          <div className="field-grid"><button className="button primary" disabled title="Güvenli worker kontrol sözleşmesi mevcut değil">Botu başlat</button><button className="button outline" disabled title="Güvenli worker kontrol sözleşmesi mevcut değil">Botu durdur</button></div>
+          <div className="section-title"><div><h2>Bot Yönetimi</h2><p>Worker durumu kalıcı lease ve güncel heartbeat ile doğrulanır.</p></div></div>
+          <div className="warning"><CirclePause size={19}/><div><strong>Başlatma devre dışı.</strong> Supervisor emir yetkisi vermez. Durdurma isteği, worker yanıt verene kadar tamamlanmış sayılmaz.</div></div>
+          <PaperWorkerSupervisor connected={connected} apiAddress={address} token={secret}/>
           <PaperDashboardOverview connected={connected} apiAddress={address} token={secret}/>
         </section>}
         {section==="risk"&&<section className="surface form" aria-label="Risk yönetimi">
           <div className="section-title"><div><h2>Risk Yönetimi</h2><p>RiskGuard bağımsız koruma katmanıdır; arayüzdeki seçim onun denetimini değiştiremez.</p></div></div>
-          <label>Risk seviyesi<select aria-label="Risk seviyesi" value="" disabled><option value="">Bu API'de sürümlü profil seçimi yok</option>
-            <option value="1">1 · Çok düşük</option><option value="2">2 · Düşük</option><option value="3">3 · Dengeli</option><option value="4">4 · Yüksek</option><option value="5">5 · Agresif</option></select></label>
-          <div className="warning"><ShieldAlert size={19}/><div><strong>Risk profili değiştirilemiyor.</strong> Mevcut BT-024 profil deposu bu API'nin PAPER ayar veritabanına bağlı değil. Profil limiti veya kullanıcı onayı varsayılmıyor; profil endpoint'i ve audit bağlantısı sağlanana kadar yeni risk ayarı burada kaydedilemez.</div></div>
           <RiskCapabilitiesPanel connected={connected} apiAddress={address} token={secret}/>
           <h3>PAPER bütçe ve defter kaynağı</h3><p>Başlangıç sermayesi ve kullanılabilir nakit yalnızca kaydedilmiş PAPER ledger üzerinden okunur. Bu ekran sermaye değerini değiştirmez.</p>
           <PaperDashboardOverview connected={connected} apiAddress={address} token={secret}/>
           <p>Spot dışındaki yürütme ve Futures ayarları bu arayüzde pasiftir.</p>
         </section>}
-        {section==="ai"&&<section className="surface form" aria-label="AI araştırma analizleri">
-          <div className="section-title"><div><h2>AI Araştırma Analizleri</h2><p>Model tahminleri işlem garantisi veya onaylı sinyal değildir.</p></div></div>
-          <div className="warning"><BrainCircuit size={19}/><div><strong>RESEARCH ONLY — NOT APPROVED</strong><br/>Mevcut modeller işlem için onaylanmamıştır. Scheduler kapalıdır; PAPER emir bağlantısı bu ekrandan açılamaz.</div></div>
-          <p>Bu API sürümü prospektif AI tahminlerini veya doğrulanmış kalibrasyon metriklerini sunmuyor. Bu nedenle BTCUSDT / ETHUSDT ve 1m / 5m / 15m için yön ya da olasılık dağılımı gösterilmiyor.</p>
-          <div className="empty"><BrainCircuit size={30}/><strong>Gösterilecek doğrulanmış araştırma tahmini yok</strong><span>Sentetik veya geçmişe dönük tahmin üretilmez. Model sürümü, veri güncelliği, Brier ve log loss ancak güvenli araştırma API'si bunları kaydettiğinde gösterilebilir.</span></div>
-        </section>}        {section==="logs"&&<section className="surface form">
+        {section==="ai"&&<section className="surface form" aria-label="AI araştırma kayıtları">
+          <div className="section-title"><div><h2>AI Araştırma Kayıtları</h2><p>Model tahminleri araştırma verisidir; işlem garantisi veya onaylı sinyal değildir.</p></div></div>
+          <div className="warning"><BrainCircuit size={19}/><div>Scheduler kapalıdır. Bu ekran emir yürütmesini etkinleştiremez.</div></div>
+          <AiResearchPanel connected={connected} apiAddress={address} token={secret}/>
+        </section>}
+        {section==="logs"&&<section className="surface form">
           <div className="section-title"><div><h2>Kaydedilmiş Ayar Değişiklikleri</h2>
             <p>Veritabanındaki işlem geçmişi; gerçek piyasa işlemi değildir.</p></div>
             <button className="button outline" disabled={!connected||auditBusy}
