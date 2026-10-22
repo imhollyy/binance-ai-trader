@@ -95,11 +95,7 @@ def review_public_spot_coherence(
     An independently supplied dataclass does NOT prove public REST provenance.
     Use `observe_public_spot_coherence_once` for server-owned REST acquisition.
     """
-    if (
-        expected_symbol not in SUPPORTED_SYMBOLS
-        or type(now_ms) is not int
-        or now_ms <= 0
-    ):
+    if expected_symbol not in SUPPORTED_SYMBOLS or type(now_ms) is not int or now_ms <= 0:
         return SpotCoherenceReview(CoherenceStatus.INVALID_INPUT)
     if observation is None or book is None or depth is None:
         return SpotCoherenceReview(CoherenceStatus.INPUT_UNAVAILABLE)
@@ -203,10 +199,9 @@ def review_public_spot_coherence(
             max_book_depth_deviation_bps=divergence,
         )
     reference = observation.reference_price
-    if (
-        reference < book.bid * (Decimal(1) - MAX_TICKER_BOOK_DEVIATION_BPS / BPS)
-        or reference > book.ask * (Decimal(1) + MAX_TICKER_BOOK_DEVIATION_BPS / BPS)
-    ):
+    if reference < book.bid * (
+        Decimal(1) - MAX_TICKER_BOOK_DEVIATION_BPS / BPS
+    ) or reference > book.ask * (Decimal(1) + MAX_TICKER_BOOK_DEVIATION_BPS / BPS):
         return SpotCoherenceReview(CoherenceStatus.TICKER_BOOK_DIVERGENCE, expected_symbol)
     return SpotCoherenceReview(
         CoherenceStatus.COHERENT_RESEARCH_ONLY,

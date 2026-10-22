@@ -29,8 +29,18 @@ NOW = START + 50
 
 def kline(ms: int) -> list[object]:
     return [
-        ms, "100", "101", "99", "100", "20", ms + 59_999,
-        "0", 1, "0", "0", "0",
+        ms,
+        "100",
+        "101",
+        "99",
+        "100",
+        "20",
+        ms + 59_999,
+        "0",
+        1,
+        "0",
+        "0",
+        "0",
     ]
 
 
@@ -111,9 +121,7 @@ def clients(
             assert request.url.params["interval"] == "1m"
             return httpx.Response(200, json=history)
         if path == "/api/v3/ticker/price":
-            return httpx.Response(
-                200, json={"symbol": "BTCUSDT", "price": last_price}
-            )
+            return httpx.Response(200, json={"symbol": "BTCUSDT", "price": last_price})
         if path == "/api/v3/exchangeInfo":
             return httpx.Response(200, json=symbol_rules() if rules is None else rules)
         if path == "/api/v3/ticker/bookTicker":
@@ -140,6 +148,7 @@ def clients(
         )
 
     transport = httpx.MockTransport(handler)
+
     def clock_ms() -> int:
         return clock[0]
 
@@ -168,7 +177,9 @@ def check(
 ) -> SpotCoherenceReview:
     observation, book, depth, time_ms = sample
     return review_public_spot_coherence(
-        observation, book, depth,
+        observation,
+        book,
+        depth,
         expected_symbol=expected_symbol,
         now_ms=time_ms if now is None else now,
     )
@@ -176,9 +187,7 @@ def check(
 
 def test_one_shot_collected_only_from_fixed_public_endpoints() -> None:
     candle, book, depth, seen, _ = clients()
-    result = observe_public_spot_coherence_once(
-        candle, book, depth, symbol="BTCUSDT"
-    )
+    result = observe_public_spot_coherence_once(candle, book, depth, symbol="BTCUSDT")
     assert result.status is CoherenceStatus.COHERENT_RESEARCH_ONLY
     assert result.symbol == "BTCUSDT"
     assert result.latest_closed_candle_ms == START - 1
@@ -226,8 +235,7 @@ def test_filter_average_or_unevaluated_filter_fail_closed() -> None:
     rules = element["filters"]
     assert isinstance(rules, list)
     modified = [
-        {**item, "avgPriceMins": 5} if item["filterType"] == "NOTIONAL" else item
-        for item in rules
+        {**item, "avgPriceMins": 5} if item["filterType"] == "NOTIONAL" else item for item in rules
     ]
     for filters in (
         modified,
@@ -235,9 +243,7 @@ def test_filter_average_or_unevaluated_filter_fail_closed() -> None:
     ):
         raw: dict[str, object] = {"symbols": [{**element, "filters": filters}]}
         candle, book, depth, _, _ = clients(rules=raw)
-        result = observe_public_spot_coherence_once(
-            candle, book, depth, symbol="BTCUSDT"
-        )
+        result = observe_public_spot_coherence_once(candle, book, depth, symbol="BTCUSDT")
         assert result.status is CoherenceStatus.RULES_UNVERIFIED
 
 
@@ -271,9 +277,10 @@ def test_forged_mismatched_and_stale_dataclasses_block() -> None:
     assert check((a, b, replace(c, bids=(DepthLevel(D(0), D(1)),)), now)).status is (
         CoherenceStatus.DEPTH_INVALID
     )
-    assert check(
-        (a, b, replace(c, bids=(DepthLevel(D("99.905"), D(1)),)), now)
-    ).status is CoherenceStatus.RULES_UNVERIFIED
+    assert (
+        check((a, b, replace(c, bids=(DepthLevel(D("99.905"), D(1)),)), now)).status
+        is CoherenceStatus.RULES_UNVERIFIED
+    )
     assert check(original, expected_symbol="ETHUSDT").status is CoherenceStatus.SYMBOL_MISMATCH
 
 
@@ -285,7 +292,10 @@ def test_missing_fields_and_untrusted_wrapper_never_contact_network() -> None:
     assert check((None, None, None, -1)).status is CoherenceStatus.INVALID_INPUT
     assert (
         observe_public_spot_coherence_once(
-            object(), object(), object(), symbol="BTCUSDT"  # type: ignore[arg-type]
+            object(),
+            object(),
+            object(),
+            symbol="BTCUSDT",  # type: ignore[arg-type]
         ).status
         is CoherenceStatus.INVALID_INPUT
     )
