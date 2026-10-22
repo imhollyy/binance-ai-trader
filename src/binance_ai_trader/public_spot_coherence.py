@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
 
-from binance_ai_trader.market_data import MarketDataError, SUPPORTED_SYMBOLS
+from binance_ai_trader.market_data import SUPPORTED_SYMBOLS, MarketDataError
 from binance_ai_trader.public_spot_cost_review import (
     PublicBookCostSample,
     PublicSpotCostClient,
@@ -151,7 +151,9 @@ def review_public_spot_coherence(
     ):
         return SpotCoherenceReview(CoherenceStatus.RULES_UNVERIFIED, expected_symbol)
     if (
-        not all(_valid_decimal(p) for p in (book.bid, book.ask, book.bid_quantity, book.ask_quantity))
+        not all(
+            _valid_decimal(p) for p in (book.bid, book.ask, book.bid_quantity, book.ask_quantity)
+        )
         or book.bid >= book.ask
         or book.bid % rules.tick != 0
         or book.ask % rules.tick != 0

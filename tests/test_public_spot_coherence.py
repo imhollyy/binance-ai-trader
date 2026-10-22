@@ -140,7 +140,9 @@ def clients(
         )
 
     transport = httpx.MockTransport(handler)
-    clock_ms = lambda: clock[0]
+    def clock_ms() -> int:
+        return clock[0]
+
     return (
         PublicSpotObservationClient(transport=transport, clock_ms=clock_ms),
         PublicSpotCostClient(transport=transport, clock_ms=clock_ms),
