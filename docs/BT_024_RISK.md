@@ -21,12 +21,12 @@ explicit `order_intent_created: false` marker.
 
 Risk profiles, account snapshots, bot state, reservation events and audit
 records now have append-only/versioned PostgreSQL storage in migration 0015.
-The local integration test targets only an ephemeral tmpfs
-`trader_ai_bt023_test` DB. Research/risk stores fail closed unless configured
-for local allowlisted database names with explicit opt-in variables. Account
+The integration tests target only the isolated `trader_ai_bt023_test` database.
+Research/risk stores fail closed unless configured for local allowlisted
+database names with explicit opt-in variables. Account
 snapshots include an external source digest, but this change does not attest
 that digest against the production PAPER ledger. A tested closure engine and
 any PAPER execution path remain absent. The isolated research database itself
 is not deployed or auto-created; operators must provision the separate local
 allowlisted database and opt-in environment flags. Automatic scheduling stays
-off.\n
+off.

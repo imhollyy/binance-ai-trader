@@ -25,7 +25,7 @@ ISOLATED = (
     and make_url(URL).database == "trader_ai_bt023_test"
 )
 pytestmark = pytest.mark.skipif(
-    not ISOLATED, reason="requires ephemeral tmpfs PostgreSQL on localhost:55444"
+    not ISOLATED, reason="requires isolated PostgreSQL on localhost:55444"
 )
 
 
