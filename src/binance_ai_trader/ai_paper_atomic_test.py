@@ -44,7 +44,6 @@ from binance_ai_trader.paper_execution import (
     close_paper_spot,
     open_paper_spot,
 )
-from binance_ai_trader.paper_risk import PaperRiskState
 from binance_ai_trader.paper_spot import SpotBuyIntent
 from binance_ai_trader.risk_schemas import RiskSettings
 
@@ -272,10 +271,8 @@ def execute_disposable_reviewed_ai_once(
                 or opening[0].symbol != proposal.symbol
             ):
                 _fail("POSITION_NOT_OPEN_OR_MISMATCH")
-            # No equity/risk budget calculated from an unmarked open position.
+            # No equity/risk budget is inferred from an unmarked open position.
             # This is an isolated reduction, not an autonomous stop engine.
-            if not isinstance(policy.calibrated_model_versions, frozenset):
-                _fail("INVALID_POLICY_TYPE")
 
     if proposal.decision is ConstitutionAction.BUY:
         assert proposal.stop_price is not None
