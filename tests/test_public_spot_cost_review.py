@@ -237,14 +237,15 @@ def test_exchange_permissions_and_unverified_filters_block() -> None:
     assert isinstance(symbols, list)
     base = symbols[0]
     assert isinstance(base, dict)
-    for patch in (
+    bad_settings: tuple[dict[str, object], ...] = (
         {"status": "HALT"},
         {"isSpotTradingAllowed": False},
         {"permissionSets": [["MARGIN"]]},
         {"permissionSets": [["SPOT"], ["TRD_GRP_01"]]},
         {"orderTypes": ["LIMIT"]},
         {"filters": []},
-    ):
+    )
+    for patch in bad_settings:
         with pytest.raises(MarketDataInvalid):
             observer(info={"symbols": [{**base, **patch}]})[0].observe(symbol="BTCUSDT")
     filters = base["filters"]
