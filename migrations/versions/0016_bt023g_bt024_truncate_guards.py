@@ -34,12 +34,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    for table, trigger in (
-        ("ai_research_prediction_log", "bt023_prediction_no_truncate"),
-        ("ai_research_prediction_outcomes", "bt023_outcome_no_truncate"),
-        ("ai_risk_profiles", "bt024_profile_no_truncate"),
-        ("ai_risk_reservation_events", "bt024_reservation_no_truncate"),
-        ("ai_risk_account_snapshots", "bt024_snapshot_no_truncate"),
-        ("ai_risk_audit", "bt024_audit_no_truncate"),
-    ):
-        op.execute(f"DROP TRIGGER {trigger} ON {table}")
+    raise RuntimeError("BT-023G/BT-024 append-only TRUNCATE protections must not be removed")

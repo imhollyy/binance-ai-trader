@@ -7,6 +7,8 @@ from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import DBAPIError
@@ -275,3 +277,36 @@ def test_append_only_risk_tables_reject_update_delete_and_truncate(engine: Engin
         for statement in (f"UPDATE {table} SET id=id", f"DELETE FROM {table}", f"TRUNCATE {table}"):
             with pytest.raises(DBAPIError, match="append only"), engine.begin() as conn:
                 conn.execute(text(statement))
+
+
+def test_migration_downgrade_preserves_append_only_history(engine: Engine) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO ai_risk_audit(event_id,signal_id,profile_version,bot_revision,decision_json) "
+                "VALUES('downgrade_audit_01','downgrade_signal_01',1,1,'{}')"
+            )
+        )
+
+    with pytest.raises(RuntimeError, match="append-only TRUNCATE protections must not be removed"):
+        command.downgrade(Config("alembic.ini"), "0015_bt024_risk_store")
+
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            "0016_bt023g_risk_trunc"
+        )
+        assert (
+            conn.execute(
+                text("SELECT count(*) FROM ai_risk_audit WHERE event_id='downgrade_audit_01'")
+            ).scalar_one()
+            == 1
+        )
+        guards: int = conn.execute(
+            text(
+                "SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal AND tgname IN "
+                "('bt023_prediction_no_truncate','bt023_outcome_no_truncate',"
+                "'bt024_profile_no_truncate','bt024_reservation_no_truncate',"
+                "'bt024_snapshot_no_truncate','bt024_audit_no_truncate')"
+            )
+        ).scalar_one()
+        assert guards == 6
