@@ -178,9 +178,7 @@ def test_offline_fee_breakdown_includes_side_taxes_and_special_without_discount(
 
     raw = fake_fee_payload()
     raw["discount"]["discount"] = "0.90"
-    discounted = parse_offline_account_commission_fixture(
-        raw, symbol="BTCUSDT", received_at_ms=NOW
-    )
+    discounted = parse_offline_account_commission_fixture(raw, symbol="BTCUSDT", received_at_ms=NOW)
     assert discounted.hypothetical_buy_taker_bps == fee.hypothetical_buy_taker_bps
     assert discounted.hypothetical_sell_taker_bps == fee.hypothetical_sell_taker_bps
     assert cost(fee=discounted).conservative_roundtrip_cost_bps == (
@@ -244,9 +242,7 @@ def test_missing_mismatched_stale_corrupted_and_zero_fees_all_block() -> None:
     for category in ("standardCommission", "taxCommission", "specialCommission"):
         for side in ("maker", "taker", "buyer", "seller"):
             all_zero[category][side] = "0"
-    fee = parse_offline_account_commission_fixture(
-        all_zero, symbol="BTCUSDT", received_at_ms=NOW
-    )
+    fee = parse_offline_account_commission_fixture(all_zero, symbol="BTCUSDT", received_at_ms=NOW)
     assert cost(fee=fee).status is FeeCostStatus.FEE_EXCESSIVE_OR_ZERO
     too_expensive = replace(snapshot(), special=replace(snapshot().special, taker=D("0.2")))
     assert cost(fee=too_expensive).status is FeeCostStatus.FEE_EXCESSIVE_OR_ZERO

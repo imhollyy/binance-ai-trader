@@ -201,9 +201,7 @@ def _rates_intact(components: object) -> bool:
     )
 
 
-def _quantity_fits(
-    amount: Decimal, rules: SymbolCostRules, bid: Decimal, ask: Decimal
-) -> bool:
+def _quantity_fits(amount: Decimal, rules: SymbolCostRules, bid: Decimal, ask: Decimal) -> bool:
     lot = rules.lot
     if (
         not _decimal_ok(lot.step, positive=True)
@@ -219,20 +217,16 @@ def _quantity_fits(
         )
     ):
         return False
-    if (
-        not (lot.minimum <= amount <= lot.maximum and amount % lot.step == ZERO)
-        or (
-            rules.market_lot is not None
-            and not (
-                rules.market_lot.minimum <= amount <= rules.market_lot.maximum
-                and amount % rules.market_lot.step == ZERO
-            )
+    if not (lot.minimum <= amount <= lot.maximum and amount % lot.step == ZERO) or (
+        rules.market_lot is not None
+        and not (
+            rules.market_lot.minimum <= amount <= rules.market_lot.maximum
+            and amount % rules.market_lot.step == ZERO
         )
     ):
         return False
-    return (
-        amount * bid >= rules.minimum_notional
-        and (rules.maximum_notional is None or amount * ask <= rules.maximum_notional)
+    return amount * bid >= rules.minimum_notional and (
+        rules.maximum_notional is None or amount * ask <= rules.maximum_notional
     )
 
 
