@@ -50,9 +50,7 @@ def inputs(*, higher_trend: int = 1) -> tuple[TimeframeHistory, ...]:
     )
 
 
-def analyze(
-    feeds: tuple[TimeframeHistory, ...], *, as_of: int = NOW
-) -> MultiTimeframeAssessment:
+def analyze(feeds: tuple[TimeframeHistory, ...], *, as_of: int = NOW) -> MultiTimeframeAssessment:
     return analyze_spot_timeframes(
         feeds,
         symbol="BTCUSDT",
