@@ -8,7 +8,11 @@ from decimal import Decimal
 import pytest
 
 from binance_ai_trader.ai_constitution import MarketRegime
-from binance_ai_trader.ai_market_regime import TimeframeHistory, analyze_spot_timeframes
+from binance_ai_trader.ai_market_regime import (
+    MultiTimeframeAssessment,
+    TimeframeHistory,
+    analyze_spot_timeframes,
+)
 from binance_ai_trader.market_data import INTERVAL_MS, Candle
 
 D = Decimal
@@ -46,7 +50,9 @@ def inputs(*, higher_trend: int = 1) -> tuple[TimeframeHistory, ...]:
     )
 
 
-def analyze(feeds: tuple[TimeframeHistory, ...], *, as_of: int = NOW):
+def analyze(
+    feeds: tuple[TimeframeHistory, ...], *, as_of: int = NOW
+) -> MultiTimeframeAssessment:
     return analyze_spot_timeframes(
         feeds,
         symbol="BTCUSDT",

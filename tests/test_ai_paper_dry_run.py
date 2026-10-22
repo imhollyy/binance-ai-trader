@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from decimal import Decimal
+from typing import Any
 
 import pytest
 
@@ -75,7 +76,7 @@ def policy(*, bot_state: BotState = BotState.RUNNING) -> IndependentRiskPolicy:
     )
 
 
-def evidence(**updates: object) -> TrustedSpotEvidence:
+def evidence(**updates: Any) -> TrustedSpotEvidence:
     return replace(
         TrustedSpotEvidence(
             symbol="BTCUSDT",
@@ -93,7 +94,7 @@ def evidence(**updates: object) -> TrustedSpotEvidence:
     )
 
 
-def signal(action: str = "BUY", **updates: object) -> AiSpotProposal:
+def signal(action: str = "BUY", **updates: Any) -> AiSpotProposal:
     data: dict[str, object] = {
         "schema_version": "1.0",
         "signal_id": "dry_run_signal_01" if action == "BUY" else "dry_run_exit_01",
@@ -188,9 +189,9 @@ def test_ai_buy_then_sell_books_net_realized_pnl_after_fee_slip_spread() -> None
     ],
 )
 def test_unsafe_ai_entries_never_change_book(
-    bad_signal: dict[str, object],
-    bad_policy: dict[str, object],
-    bad_evidence: dict[str, object],
+    bad_signal: dict[str, Any],
+    bad_policy: dict[str, Any],
+    bad_evidence: dict[str, Any],
     expected: str,
 ) -> None:
     proposal = signal(**bad_signal)
