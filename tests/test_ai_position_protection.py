@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -54,20 +54,39 @@ def control(
 
 def position(*, stop: str = "99", symbol: str = "BTCUSDT") -> PaperSpotPosition:
     return PaperSpotPosition(
-        "bt015_test_trade", symbol, D("1"), D("104"), D("104"), D("0.1"),
-        D(stop), D("6"),
+        "bt015_test_trade",
+        symbol,
+        D("1"),
+        D("104"),
+        D("104"),
+        D("0.1"),
+        D(stop),
+        D("6"),
     )
 
 
 def kline(ms: int) -> list[object]:
     return [
-        ms, "100", "110", "90", "100", "20", ms + 59_999, "0", 1,
-        "0", "0", "0",
+        ms,
+        "100",
+        "110",
+        "90",
+        "100",
+        "20",
+        ms + 59_999,
+        "0",
+        1,
+        "0",
+        "0",
+        "0",
     ]
 
 
 def observer(
-    *, price: str = "100.5", status: int = 200, damaged: bool = False,
+    *,
+    price: str = "100.5",
+    status: int = 200,
+    damaged: bool = False,
     clock_skew: int = 0,
 ) -> tuple[PublicSpotObservationClient, list[str], list[int]]:
     seen: list[str] = []
@@ -107,8 +126,12 @@ def check(
     owner: RiskSettings | None = None,
 ) -> ProtectionDecision:
     return observe_public_paper_position_once(
-        source, owner or settings(), control_state or control(), held or position(),
-        settings_version=version, take_profit_price=target,
+        source,
+        owner or settings(),
+        control_state or control(),
+        held or position(),
+        settings_version=version,
+        take_profit_price=target,
     )
 
 
@@ -116,50 +139,77 @@ def test_state_machine_is_optimistic_versioned_and_never_starts_by_default() -> 
     original = control(BotState.STOPPED)
     with pytest.raises(BotControlRejected, match="explicit_paper_start"):
         change_paper_bot_state(
-            settings(), original, expected_revision=3,
-            next_state=BotState.RUNNING, operator_authorized=True,
+            settings(),
+            original,
+            expected_revision=3,
+            next_state=BotState.RUNNING,
+            operator_authorized=True,
         )
     paused = change_paper_bot_state(
-        settings(), original, expected_revision=3,
-        next_state=BotState.PAUSED, operator_authorized=False,
+        settings(),
+        original,
+        expected_revision=3,
+        next_state=BotState.PAUSED,
+        operator_authorized=False,
     )
     assert paused.revision == 4
     assert paused.state is BotState.PAUSED
     assert original.state is BotState.STOPPED
     with pytest.raises(BotControlRejected, match="invalid_or_stale"):
         change_paper_bot_state(
-            settings(), paused, expected_revision=3,
-            next_state=BotState.RUNNING, operator_authorized=True,
+            settings(),
+            paused,
+            expected_revision=3,
+            next_state=BotState.RUNNING,
+            operator_authorized=True,
         )
     with pytest.raises(BotControlRejected, match="explicit_paper_start"):
         change_paper_bot_state(
-            settings(), paused, expected_revision=4,
-            next_state=BotState.RUNNING, operator_authorized=False,
+            settings(),
+            paused,
+            expected_revision=4,
+            next_state=BotState.RUNNING,
+            operator_authorized=False,
         )
     with pytest.raises(BotControlRejected, match="explicit_paper_start"):
         change_paper_bot_state(
-            settings(bot_enabled=False), paused, expected_revision=4,
-            next_state=BotState.RUNNING, operator_authorized=True,
+            settings(bot_enabled=False),
+            paused,
+            expected_revision=4,
+            next_state=BotState.RUNNING,
+            operator_authorized=True,
         )
     started = change_paper_bot_state(
-        settings(), paused, expected_revision=4,
-        next_state=BotState.RUNNING, operator_authorized=True,
+        settings(),
+        paused,
+        expected_revision=4,
+        next_state=BotState.RUNNING,
+        operator_authorized=True,
     )
     assert started.revision == 5
     assert started.state is BotState.RUNNING
     with pytest.raises(BotControlRejected, match="emergency_requires_operator"):
         change_paper_bot_state(
-            settings(), started, expected_revision=5,
-            next_state=BotState.EMERGENCY_FLATTEN, operator_authorized=False,
+            settings(),
+            started,
+            expected_revision=5,
+            next_state=BotState.EMERGENCY_FLATTEN,
+            operator_authorized=False,
         )
     emergency = change_paper_bot_state(
-        settings(), started, expected_revision=5,
-        next_state=BotState.EMERGENCY_FLATTEN, operator_authorized=True,
+        settings(),
+        started,
+        expected_revision=5,
+        next_state=BotState.EMERGENCY_FLATTEN,
+        operator_authorized=True,
     )
     assert emergency.state is BotState.EMERGENCY_FLATTEN
     stopped = change_paper_bot_state(
-        settings(), emergency, expected_revision=6,
-        next_state=BotState.STOPPED, operator_authorized=False,
+        settings(),
+        emergency,
+        expected_revision=6,
+        next_state=BotState.STOPPED,
+        operator_authorized=False,
     )
     assert stopped.state is BotState.STOPPED
 
@@ -195,9 +245,7 @@ def test_pause_requires_explicit_review_authorization_and_no_execution() -> None
     assert not accepted.would_execute
     client, _, _ = observer(price="98")
     not_approved = check(
-        client, control_state=control(
-            BotState.PAUSED, behavior=StopBehavior.REVIEW_REDUCE_ONLY
-        )
+        client, control_state=control(BotState.PAUSED, behavior=StopBehavior.REVIEW_REDUCE_ONLY)
     )
     assert not_approved.action is ProtectionAction.ALERT_STOP_BREACH
 
@@ -216,7 +264,8 @@ def test_stopped_and_emergency_exposure_do_not_pretend_exit() -> None:
         client,
         control_state=control(
             BotState.EMERGENCY_FLATTEN,
-            behavior=StopBehavior.REVIEW_REDUCE_ONLY, authorized=True,
+            behavior=StopBehavior.REVIEW_REDUCE_ONLY,
+            authorized=True,
         ),
     )
     assert authorized.action is ProtectionAction.REDUCE_ONLY_REVIEW
@@ -245,7 +294,8 @@ def test_take_profit_is_explicit_alert_not_marketing_pnl() -> None:
     ],
 )
 def test_bad_or_rate_limited_public_source_never_emits_an_exit(
-    source_kwargs: dict[str, Any], reason: str,
+    source_kwargs: dict[str, Any],
+    reason: str,
 ) -> None:
     client, _, _ = observer(**source_kwargs)
     denied = check(client)
@@ -258,8 +308,12 @@ def test_freshness_provenance_and_version_fail_closed() -> None:
     sample = client.observe(symbol="BTCUSDT", interval="1m", limit=50)
     clock[0] += 4_000
     stale = evaluate_paper_position_protection(
-        settings(), control(), position(), sample,
-        settings_version=7, now_ms=clock[0],
+        settings(),
+        control(),
+        position(),
+        sample,
+        settings_version=7,
+        now_ms=clock[0],
     )
     assert stale.action is ProtectionAction.OBSERVATION_BLOCKED
     assert stale.reason_code == "PUBLIC_QUOTE_STALE_OR_INVALID"
@@ -270,8 +324,12 @@ def test_freshness_provenance_and_version_fail_closed() -> None:
         replace(sample, reference_price=D("500")),
     ):
         result = evaluate_paper_position_protection(
-            settings(), control(), position(), bad,
-            settings_version=7, now_ms=NOW,
+            settings(),
+            control(),
+            position(),
+            bad,
+            settings_version=7,
+            now_ms=NOW,
         )
         assert result.action is ProtectionAction.OBSERVATION_BLOCKED
 
@@ -292,7 +350,11 @@ def test_no_position_skips_exchange_and_untrusted_adapter_is_rejected() -> None:
     assert no_open.action is ProtectionAction.NO_POSITION
     assert paths == []
     denied = observe_public_paper_position_once(
-        object(), settings(), control(), position(), settings_version=7  # type: ignore[arg-type]
+        cast(PublicSpotObservationClient, object()),
+        settings(),
+        control(),
+        position(),
+        settings_version=7,
     )
     assert denied.reason_code == "TRUSTED_PUBLIC_OBSERVER_REQUIRED"
     assert paths == []

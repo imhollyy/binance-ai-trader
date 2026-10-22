@@ -181,10 +181,10 @@ def evaluate_paper_position_protection(
         or not _positive(position.stop_price)
         or position.stop_price >= position.entry_fill_price
         or not position.trade_id
-        or (take_profit_price is not None and (
-            not _positive(take_profit_price)
-            or take_profit_price <= position.entry_fill_price
-        ))
+        or (
+            take_profit_price is not None
+            and (not _positive(take_profit_price) or take_profit_price <= position.entry_fill_price)
+        )
     ):
         return _blocked("INVALID_POSITION_OR_TARGET")
     if sample is None or type(sample) is not PublicSpotObservation:
@@ -205,7 +205,8 @@ def evaluate_paper_position_protection(
     if control.state is BotState.STOPPED:
         # STOPPED does not promise an automated protective exit.
         return ProtectionDecision(
-            ProtectionAction.ALERT_STOPPED_POSITION_OPEN, "STOPPED_HAS_UNPROTECTED_EXPOSURE",
+            ProtectionAction.ALERT_STOPPED_POSITION_OPEN,
+            "STOPPED_HAS_UNPROTECTED_EXPOSURE",
             **base,
         )
     if control.state is BotState.EMERGENCY_FLATTEN:
@@ -214,7 +215,8 @@ def evaluate_paper_position_protection(
             and control.operator_confirmed_reduce_only
         ):
             return ProtectionDecision(
-                ProtectionAction.REDUCE_ONLY_REVIEW, "EMERGENCY_EXIT_REQUIRES_REVIEW",
+                ProtectionAction.REDUCE_ONLY_REVIEW,
+                "EMERGENCY_EXIT_REQUIRES_REVIEW",
                 **base,
             )
         return ProtectionDecision(
@@ -256,7 +258,10 @@ def observe_public_paper_position_once(
         return _blocked("TRUSTED_PUBLIC_OBSERVER_REQUIRED")
     if position is None:
         return evaluate_paper_position_protection(
-            settings, control, None, None,
+            settings,
+            control,
+            None,
+            None,
             settings_version=settings_version,
             now_ms=observer.now_ms(),
             take_profit_price=take_profit_price,
@@ -269,7 +274,10 @@ def observe_public_paper_position_once(
     except (MarketDataError, ValueError, TypeError):
         return _blocked("PUBLIC_QUOTE_UNAVAILABLE", position.trade_id)
     return evaluate_paper_position_protection(
-        settings, control, position, sample,
+        settings,
+        control,
+        position,
+        sample,
         settings_version=settings_version,
         now_ms=now_ms,
         take_profit_price=take_profit_price,
