@@ -142,7 +142,6 @@ def paper_pilot_status(engine: Engine) -> str:
         raise PaperPilotRejected("inconsistent_paper_mode")
 
 
-
 def paper_pilot_preflight(engine: Engine) -> str:
     """Non-mutating full ledger audit before user-controlled PAPER activation.
 
@@ -236,13 +235,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     report=safe_report,
                 )
                 print(f"PAPER_PILOT_ENDED status={result.status.value} ticks={result.ticks}")
-                return (
-                    0 if result.status in (
-                        SchedulerStatus.STOPPED,
-                        SchedulerStatus.DISABLED,
-                        SchedulerStatus.LIMIT_REACHED,
-                    ) else 1
-                )
+                allowed = {
+                    SchedulerStatus.STOPPED,
+                    SchedulerStatus.DISABLED,
+                    SchedulerStatus.LIMIT_REACHED,
+                }
+                return 0 if result.status in allowed else 1
         finally:
             engine.dispose()
     except (PaperPilotRejected, SQLAlchemyError, ValueError):
