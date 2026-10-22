@@ -209,9 +209,7 @@ def update_disposable_bot_control(
                 stop_behavior=changed.stop_behavior.value,
                 operator_confirmed_reduce_only=changed.operator_confirmed_reduce_only,
                 settings_version=existing.settings_version,
-                actor_session_hash=hashlib.sha256(
-                    actor_session_hash.encode("ascii")
-                ).hexdigest(),
+                actor_session_hash=hashlib.sha256(actor_session_hash.encode("ascii")).hexdigest(),
                 recorded_at_ms=now,
             )
         )

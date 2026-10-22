@@ -58,8 +58,12 @@ def engine() -> Iterator[Engine]:
     assert DB_URL is not None and VALID_TARGET and ISOLATED
     db = create_engine(DB_URL, pool_pre_ping=True)
     with Session(db) as session:
-        for table in (PaperBotControlRow, PaperBotControlEventRow,
-                      PaperSpotAccountRow, PaperSpotJournalRow):
+        for table in (
+            PaperBotControlRow,
+            PaperBotControlEventRow,
+            PaperSpotAccountRow,
+            PaperSpotJournalRow,
+        ):
             assert session.scalar(select(func.count()).select_from(table)) == 0
     yield db
     db.dispose()
@@ -106,8 +110,10 @@ def test_disposable_controls_revisions_sessions_restarts_and_audit(engine: Engin
                     revoked=digest == REVOKED,
                 )
                 for digest, role in (
-                    (OPERATOR, "operator"), (VIEWER, "viewer"),
-                    (REVOKED, "operator"), (EXPIRED, "operator"),
+                    (OPERATOR, "operator"),
+                    (VIEWER, "viewer"),
+                    (REVOKED, "operator"),
+                    (EXPIRED, "operator"),
                 )
             ]
         )
@@ -138,7 +144,9 @@ def test_disposable_controls_revisions_sessions_restarts_and_audit(engine: Engin
     with ThreadPoolExecutor(max_workers=3) as executor:
         outcomes = list(executor.map(race, range(3)))
     assert sorted(outcomes) == [
-        "2", "control_revision_or_settings_stale", "control_revision_or_settings_stale"
+        "2",
+        "control_revision_or_settings_stale",
+        "control_revision_or_settings_stale",
     ]
     paused = read_disposable_bot_control(engine)
     assert paused is not None and paused.state is BotState.PAUSED and paused.revision == 2
@@ -166,8 +174,10 @@ def test_disposable_controls_revisions_sessions_restarts_and_audit(engine: Engin
         # The isolated wrapper always attests operator authorization. Direct
         # pure state helper covers the explicitly unauthorized branch.
         from binance_ai_trader.ai_position_protection import change_paper_bot_state
+
         change_paper_bot_state(
-            RiskSettings(bot_enabled=True, manual_approval=False), running,
+            RiskSettings(bot_enabled=True, manual_approval=False),
+            running,
             expected_revision=4,
             next_state=BotState.EMERGENCY_FLATTEN,
             operator_authorized=False,

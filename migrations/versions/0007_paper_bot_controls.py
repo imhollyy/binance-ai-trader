@@ -41,8 +41,7 @@ def upgrade() -> None:
             name="ck_paper_bot_stop_behavior",
         ),
         sa.CheckConstraint(
-            "stop_behavior = 'REVIEW_REDUCE_ONLY' "
-            "OR operator_confirmed_reduce_only = false",
+            "stop_behavior = 'REVIEW_REDUCE_ONLY' OR operator_confirmed_reduce_only = false",
             name="ck_paper_bot_approval_consistency",
         ),
     )

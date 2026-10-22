@@ -392,9 +392,7 @@ class PaperBotControlEventRow(Base):
             "revision >= 2 AND settings_version >= 1 AND recorded_at_ms >= 0",
             name="ck_paper_bot_event_versions",
         ),
-        CheckConstraint(
-            "length(actor_session_hash) = 64", name="ck_paper_bot_event_actor_digest"
-        ),
+        CheckConstraint("length(actor_session_hash) = 64", name="ck_paper_bot_event_actor_digest"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
