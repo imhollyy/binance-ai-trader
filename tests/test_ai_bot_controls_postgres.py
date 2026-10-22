@@ -7,7 +7,6 @@ disposable localhost trader_bot_controls_test DB. No HTTP or Binance access.
 from __future__ import annotations
 
 import os
-import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
@@ -19,12 +18,12 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from binance_ai_trader.ai_constitution import BotState
-from binance_ai_trader.ai_position_protection import BotControlRejected, StopBehavior
 from binance_ai_trader.ai_paper_bot_controls_test import (
     initialize_disposable_bot_control,
     read_disposable_bot_control,
     update_disposable_bot_control,
 )
+from binance_ai_trader.ai_position_protection import BotControlRejected, StopBehavior
 from binance_ai_trader.models import (
     PaperBotControlEventRow,
     PaperBotControlRow,
@@ -173,7 +172,7 @@ def test_disposable_controls_revisions_sessions_restarts_and_audit(engine: Engin
             next_state=BotState.EMERGENCY_FLATTEN,
             operator_authorized=False,
         )
-    emergency = _write(engine, version=4, state=BotState.EMERGENCY_FLATTEN)
+    _write(engine, version=4, state=BotState.EMERGENCY_FLATTEN)
     stopped = _write(engine, version=5, state=BotState.STOPPED)
     assert stopped.revision == 6 and stopped.state is BotState.STOPPED
 
