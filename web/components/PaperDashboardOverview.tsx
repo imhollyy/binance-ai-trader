@@ -10,7 +10,7 @@ type PaperAccount = {
 };
 type PaperQuote = {
   source: string; symbol: string; interval: string; observed_at_ms: number;
-  reference_price: string; fee_bps: number; slippage_bps: number;
+  reference_price: string; fee_bps: number; slippage_bps: number; spread_bps: number | null;
 };
 type PaperEvent = {
   id: number; event_type: string; created_at: string; cash_delta_usdt: string;
@@ -162,7 +162,7 @@ export default function PaperDashboardOverview({connected, apiAddress, token}: {
             {event.quote ? <div className="paper-overview-quote">
               <strong>{event.quote.symbol} · {event.quote.interval} · {amount(event.quote.reference_price)}</strong>
               <small>Binance public ticker · Yerel gözlem: {utcMs(event.quote.observed_at_ms)}</small>
-              <small>Varsayımsal komisyon {event.quote.fee_bps} bps · kayma {event.quote.slippage_bps} bps. Gerçek emir fiyatı değildir.</small>
+              <small>Varsayımsal komisyon {event.quote.fee_bps} bps · kayma {event.quote.slippage_bps} bps · spread {event.quote.spread_bps === null || event.quote.spread_bps === undefined ? "geçmiş kayıtta bilinmiyor" : `${event.quote.spread_bps} bps`}. Gerçek emir fiyatı değildir.</small>
             </div> : <small>Bu olay için public fiyat gözlemi kaydı yok; işlem fiyatı doğrulanmış olarak gösterilmez.</small>}
           </article>)}
         </div>}
