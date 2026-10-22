@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from decimal import Decimal
+from typing import Any, cast
 
 import pytest
 
@@ -127,7 +128,7 @@ def test_research_metrics_show_brier_gain_but_never_promote_model() -> None:
 )
 def test_invalid_or_overlapping_declared_splits_rejected(mutation: dict[str, object]) -> None:
     spec, val, test = dataset()
-    result = review_offline_walk_forward(replace(spec, **mutation), val, test)
+    result = review_offline_walk_forward(replace(spec, **cast(Any, mutation)), val, test)
     assert result.status is ValidationStatus.INVALID_PROTOCOL
     assert not result.trade_authorized
 

@@ -110,7 +110,9 @@ def _valid_protocol(p: HoldoutProtocol) -> bool:
         not isinstance(p.model_version, str)
         or not 1 <= len(p.model_version) <= 64
         or not all(c.isascii() and (c.isalnum() or c in "_.-") for c in p.model_version)
+        or type(p.symbol) is not str
         or p.symbol not in SUPPORTED_SYMBOLS
+        or type(p.interval) is not str
         or p.interval not in ("1m", "5m", "15m")
     ):
         return False
@@ -225,7 +227,7 @@ def _metrics(items: Sequence[ForecastOutcome]) -> SplitMetrics:
         mean_conf = sum((entry[0] for entry in group), ZERO) / len(group)
         accuracy = Decimal(sum(entry[1] for entry in group)) / len(group)
         ece += Decimal(len(group)) / count * abs(mean_conf - accuracy)
-    return SplitMetrics(count, brier / count, ece, tuple(labels))
+    return SplitMetrics(count, brier / count, ece, (labels[0], labels[1], labels[2]))
 
 
 def _baseline_brier(
