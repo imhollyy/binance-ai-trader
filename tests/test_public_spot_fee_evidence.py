@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -235,7 +235,7 @@ def test_missing_mismatched_stale_corrupted_and_zero_fees_all_block() -> None:
     assert cost(fee=replace(snapshot(), source="signed_approved")).status is (
         FeeCostStatus.FEE_UNTRUSTED_OR_CORRUPT
     )
-    assert cost(fee=replace(snapshot(), discount_enabled="yes")).status is (
+    assert cost(fee=replace(snapshot(), discount_enabled=cast(bool, "yes"))).status is (
         FeeCostStatus.FEE_UNTRUSTED_OR_CORRUPT
     )
     all_zero = fake_fee_payload()
