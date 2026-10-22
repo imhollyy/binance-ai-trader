@@ -67,9 +67,18 @@ def _mock_observer(
     start = now // 60_000 * 60_000
     klines = [
         [
-            start - (60 - i) * 60_000, "100", "101", "99", "100", "4",
+            start - (60 - i) * 60_000,
+            "100",
+            "101",
+            "99",
+            "100",
+            "4",
             start - (60 - i) * 60_000 + 59_999,
-            "0", 1, "0", "0", "0",
+            "0",
+            1,
+            "0",
+            "0",
+            "0",
         ]
         for i in range(60)
     ]
@@ -87,9 +96,7 @@ def _mock_observer(
             headers={"Retry-After": "30"},
         )
 
-    return PublicSpotObservationClient(
-        transport=httpx.MockTransport(reply), clock_ms=lambda: now
-    )
+    return PublicSpotObservationClient(transport=httpx.MockTransport(reply), clock_ms=lambda: now)
 
 
 def _request(
@@ -187,9 +194,9 @@ def test_manual_paper_account_consent_replay_quote_audit_and_close(engine: Engin
     assert closed.receipt.event_type == "spot_sell"
     assert closed.receipt.realized_pnl_delta_usdt < 0
     assert _totals(engine)[:3] == (1, 3, 2)
-    assert run_manual_paper_once(
-        engine, _request("sell", SELL_ID, budget=None, stop=None)
-    ) == closed
+    assert (
+        run_manual_paper_once(engine, _request("sell", SELL_ID, budget=None, stop=None)) == closed
+    )
     assert _totals(engine)[:3] == (1, 3, 2)
     with Session(engine) as session:
         pos = session.scalar(select(PaperSpotPositionRow))
