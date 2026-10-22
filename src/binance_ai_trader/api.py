@@ -300,7 +300,10 @@ def create_app(
     # Never expose a write route in local development or generic staging.
     # Registration requires exact isolated preview ENV *and* matching config;
     # invalid or missing flags fail closed rather than enabling trade routes.
-    if staging_access is not None and environ.get("PRIVATE_PREVIEW_OPT_IN") == "isolated-paper-only":
+    if (
+        staging_access is not None
+        and environ.get("PRIVATE_PREVIEW_OPT_IN") == "isolated-paper-only"
+    ):
         try:
             verify_preview_environment(environ)
         except ValueError:
