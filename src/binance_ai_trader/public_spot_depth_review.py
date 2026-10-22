@@ -170,9 +170,7 @@ class PublicSpotDepthClient:
         asks = _parse_side(payload["asks"], is_bid=False)
         if bids[0].price >= asks[0].price:
             raise MarketDataInvalid("crossed_public_depth_book")
-        return PublicSpotDepth(
-            symbol, update_id, bids, asks, requested, received
-        )
+        return PublicSpotDepth(symbol, update_id, bids, asks, requested, received)
 
 
 def _fill_vwap(levels: tuple[DepthLevel, ...], amount: Decimal) -> Decimal | None:

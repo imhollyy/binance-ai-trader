@@ -65,9 +65,7 @@ def observer(
         )
 
     return (
-        PublicSpotDepthClient(
-            transport=httpx.MockTransport(handle), clock_ms=lambda: clock[0]
-        ),
+        PublicSpotDepthClient(transport=httpx.MockTransport(handle), clock_ms=lambda: clock[0]),
         paths,
         clock,
     )
@@ -139,10 +137,7 @@ def test_unknown_account_fee_and_negative_net_edge_fail_closed() -> None:
 
 def test_insufficient_depth_and_price_impact_rejection() -> None:
     sample = observer()[0].observe(symbol="BTCUSDT")
-    assert (
-        review(sample, quantity=D("7")).status
-        is DepthReviewStatus.INSUFFICIENT_VISIBLE_DEPTH
-    )
+    assert review(sample, quantity=D("7")).status is DepthReviewStatus.INSUFFICIENT_VISIBLE_DEPTH
     assert review(sample, quantity=D("3"), impact=D("2")).status is (
         DepthReviewStatus.DEPTH_IMPACT_LIMIT
     )
@@ -210,8 +205,6 @@ def test_bad_http_and_timeout_fail_closed() -> None:
     def down(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("no depth", request=request)
 
-    client = PublicSpotDepthClient(
-        transport=httpx.MockTransport(down), clock_ms=lambda: NOW
-    )
+    client = PublicSpotDepthClient(transport=httpx.MockTransport(down), clock_ms=lambda: NOW)
     with pytest.raises(MarketDataUnavailable):
         client.observe(symbol="BTCUSDT")
