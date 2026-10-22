@@ -258,8 +258,7 @@ def evaluate_constitution_spot_proposal(
         or type(state.open_positions) is not int
         or state.open_positions < 0
         or state.equity_usdt
-        <= state.day_start_equity_usdt
-        * (1 - Decimal(str(settings.daily_loss_limit_pct)) / HUNDRED)
+        <= state.day_start_equity_usdt * (1 - Decimal(str(settings.daily_loss_limit_pct)) / HUNDRED)
         or state.equity_usdt
         <= state.peak_equity_usdt * (1 - Decimal(str(settings.max_drawdown_pct)) / HUNDRED)
     ):
@@ -287,14 +286,16 @@ def evaluate_constitution_spot_proposal(
         or not _positive_finite(evidence.reference_price)
     ):
         return _no_trade(proposal, "DATA_QUALITY_FAILURE")
-    if not all(
-        isinstance(amount, Decimal) and amount.is_finite() and amount >= 0
-        for amount in (evidence.taker_fee_bps, evidence.spread_bps, evidence.slippage_bps)
-    ) or evidence.taker_fee_bps <= 0 or evidence.slippage_bps <= 0:
+    if (
+        not all(
+            isinstance(amount, Decimal) and amount.is_finite() and amount >= 0
+            for amount in (evidence.taker_fee_bps, evidence.spread_bps, evidence.slippage_bps)
+        )
+        or evidence.taker_fee_bps <= 0
+        or evidence.slippage_bps <= 0
+    ):
         return _no_trade(proposal, "UNVERIFIED_TRANSACTION_COST")
-    round_trip_cost = (
-        2 * evidence.taker_fee_bps + evidence.spread_bps + 2 * evidence.slippage_bps
-    )
+    round_trip_cost = 2 * evidence.taker_fee_bps + evidence.spread_bps + 2 * evidence.slippage_bps
     if proposal.decision is ConstitutionAction.NO_TRADE:
         return _no_trade(proposal, "MODEL_NO_TRADE")
     if proposal.decision is ConstitutionAction.HOLD:

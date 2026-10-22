@@ -102,9 +102,7 @@ def verdict_reason(
 
 
 def test_calibrated_synthetic_example_is_only_an_eligible_proposal() -> None:
-    result = evaluate_constitution_spot_proposal(
-        proposal(), guard_policy(), trusted(), now_ms=NOW
-    )
+    result = evaluate_constitution_spot_proposal(proposal(), guard_policy(), trusted(), now_ms=NOW)
     assert result.proposal_eligible
     assert result.decision is ConstitutionAction.BUY
     assert result.round_trip_cost_bps == D("32")
@@ -229,18 +227,24 @@ def test_hold_and_unimplemented_exit_are_never_orders() -> None:
 
 def test_open_positions_drawdown_and_wide_stop_are_blocked() -> None:
     default = guard_policy()
-    assert verdict_reason(
-        policy=replace(
-            default,
-            account_state=PaperRiskState(D("1000"), D("1000"), D("1000"), D("100"), 1),
+    assert (
+        verdict_reason(
+            policy=replace(
+                default,
+                account_state=PaperRiskState(D("1000"), D("1000"), D("1000"), D("100"), 1),
+            )
         )
-    ) == "PORTFOLIO_EXPOSURE"
-    assert verdict_reason(
-        policy=replace(
-            default,
-            account_state=PaperRiskState(D("980"), D("1000"), D("1000"), D("0"), 0),
+        == "PORTFOLIO_EXPOSURE"
+    )
+    assert (
+        verdict_reason(
+            policy=replace(
+                default,
+                account_state=PaperRiskState(D("980"), D("1000"), D("1000"), D("0"), 0),
+            )
         )
-    ) == "PORTFOLIO_RISK"
+        == "PORTFOLIO_RISK"
+    )
     assert verdict_reason(candidate=proposal(stop_price="101")) == "INVALID_STOP_LOSS"
     assert verdict_reason(candidate=proposal(stop_price="90")) == "PORTFOLIO_RISK"
 
