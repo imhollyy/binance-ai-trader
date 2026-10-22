@@ -347,3 +347,60 @@ class StagingLoginGateRow(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     failures: Mapped[int] = mapped_column(Integer, nullable=False)
     locked_until_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class PaperBotControlRow(Base):
+    """Inert, versioned operator state. No worker reads this for authorization."""
+
+    __tablename__ = "paper_bot_controls"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_paper_bot_control_singleton"),
+        CheckConstraint(
+            "revision >= 1 AND settings_version >= 1 AND modified_at_ms >= 0",
+            name="ck_paper_bot_control_versions",
+        ),
+        CheckConstraint(
+            "state IN ('RUNNING', 'PAUSED', 'STOPPED', 'EMERGENCY_FLATTEN')",
+            name="ck_paper_bot_control_state",
+        ),
+        CheckConstraint(
+            "stop_behavior IN ('MONITOR_ONLY', 'REVIEW_REDUCE_ONLY')",
+            name="ck_paper_bot_stop_behavior",
+        ),
+        CheckConstraint(
+            "stop_behavior = 'REVIEW_REDUCE_ONLY' OR operator_confirmed_reduce_only = false",
+            name="ck_paper_bot_approval_consistency",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    settings_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(24), nullable=False)
+    stop_behavior: Mapped[str] = mapped_column(String(32), nullable=False)
+    operator_confirmed_reduce_only: Mapped[bool] = mapped_column(nullable=False)
+    modified_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class PaperBotControlEventRow(Base):
+    """Append-only control changes, not an order journal."""
+
+    __tablename__ = "paper_bot_control_events"
+    __table_args__ = (
+        UniqueConstraint("revision", name="uq_paper_bot_control_event_revision"),
+        CheckConstraint(
+            "revision >= 2 AND settings_version >= 1 AND recorded_at_ms >= 0",
+            name="ck_paper_bot_event_versions",
+        ),
+        CheckConstraint("length(actor_session_hash) = 64", name="ck_paper_bot_event_actor_digest"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_state: Mapped[str] = mapped_column(String(24), nullable=False)
+    new_state: Mapped[str] = mapped_column(String(24), nullable=False)
+    stop_behavior: Mapped[str] = mapped_column(String(32), nullable=False)
+    operator_confirmed_reduce_only: Mapped[bool] = mapped_column(nullable=False)
+    settings_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    actor_session_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    recorded_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)

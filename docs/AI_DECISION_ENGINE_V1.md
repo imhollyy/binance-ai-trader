@@ -157,3 +157,36 @@ kanıtı, birden çok pozisyonda bağımsız koruma, fee/spread doğrulaması,
 stop/TP emir motoru, cron/worker idempotency/rate-limit, kontrollü owner
 PAPER kabulü ve gerçek model kalibrasyonu. Bunlar tamamlanmadan bot
 aktif/korumalı gibi tanıtılamaz.
+
+## BT-016: PostgreSQL'de sürümlü operatör durum provası (yalnız CI)
+
+- `0007_paper_bot_controls` migration'ı sadece **boş** durum ve
+  append-only audit tabloları ekler. RUNNING satırı oluşturmaz, botu açmaz,
+  mevcut PAPER hesap, pozisyon ve journal verilerini değiştirmez.
+- `ai_paper_bot_controls_test.py` yazma erişimini özellikle yalnız
+  `BOT_CONTROLS_TEST_ISOLATED=1` ve
+  `localhost/trader_bot_controls_test` kombinasyonuyla sınırlar.
+  Bu kodun üretim API'si, takvim/worker girişi veya Binance private
+  emir erişimi bulunmaz.
+- İlk bootstrap ancak açıkça çağrılırsa `STOPPED`,
+  `MONITOR_ONLY`, `revision=1` oluşturur; tekrar çağrı var olan
+  durumu sıfırlamaz. Her değişiklikte kilitli `TradingSettingsRow`
+  ve `PaperBotControlRow` altından sürüm kontrolü ve canlı
+  `StagingSessionRow` operatör rolü / iptal / süre kontrolü yapılır.
+  Revizyon karşılaştırması aynı işlemde atomiktir; audit yeni
+  revizyonla aynı transaction'da eklenir.
+- **Güvenlik sınırı:** İç servise verilen oturum HASH'i tek başına
+  cookie/CSRF sahipliğinin kanıtı değildir. Üretim HTTP yetkilendirme
+  katmanı bu ham cookie, HTTPS Origin, revocation, CSRF, özel approval
+  ve kullanıcı niyetini ayrıca doğrulamadıkça bu modül **kullanıcı
+  durum güncelleme yetkisi** sağlamaz. CI testleri sentetik oturumlarla
+  çalışır ve ana PAPER işleyicileri bu tabloyu okumaz.
+- `REVIEW_REDUCE_ONLY` seçimi ve `operator_confirmed_reduce_only`
+  halen sadece **inceleme sonucu** üretmeye yöneliktir. Stop/TP,
+  emergency veya başka otomatik emir için izin değildir.
+
+**Sonraki faz:** staging RBAC+CSRF ile güvenli API'ye bağlama,
+kalıcı worker'ın bu durumu kilit altında fail-closed okuması, fiyat
+kaynağının doğrulanması, ayrı audit/journal ve sonra kontrollü
+PAPER stop/TP reduce-only icra testi. Kullanıcı hesabında
+otomatik işlem başlatılmadı, piyasa kârlılığı kanıtlanmadı.

@@ -81,7 +81,7 @@ def _journal(**overrides: object) -> PaperSpotJournalRow:
 def test_schema_has_required_keys_indexes_and_immutable_triggers(ledger_engine: Engine) -> None:
     with ledger_engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0006_staging_sessions"
+            "0007_paper_bot_controls"
         )
         indexes = set(
             connection.scalars(

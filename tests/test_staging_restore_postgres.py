@@ -79,7 +79,7 @@ def _read_snapshot(engine: Engine) -> tuple[object, ...]:
             select(StagingSessionRow).order_by(StagingSessionRow.token_hash)
         ).all()
         revision = session.scalar(text("SELECT version_num FROM alembic_version"))
-        assert revision == "0006_staging_sessions"
+        assert revision == "0007_paper_bot_controls"
         assert settings is not None and account is not None and gate is not None
         return (
             revision,
