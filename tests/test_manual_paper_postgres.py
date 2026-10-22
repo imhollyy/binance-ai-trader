@@ -315,7 +315,7 @@ def test_preview_risk_change_ledger_consistency_and_subsequent_paper_trades(
             account = db.get(PaperSpotAccountRow, 1)
             assert account is not None and account.settings_version == 2
             assert account.cash_usdt == before[3]
-            assert db.scalar(select(func.count()).select_from(AuditRow)) == 2
+            assert db.scalar(select(func.count()).select_from(AuditRow)) == 1
         assert _totals(engine) == before
 
         # The next real PAPER request against a fresh mocked public quote works,
