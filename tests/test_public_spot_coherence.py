@@ -218,9 +218,7 @@ def test_bad_public_sequence_refuses_coherence(
     parameters: dict[str, Any], expected: CoherenceStatus
 ) -> None:
     candle, book, depth, _, _ = clients(**parameters)
-    result = observe_public_spot_coherence_once(
-        candle, book, depth, symbol="BTCUSDT"
-    )
+    result = observe_public_spot_coherence_once(candle, book, depth, symbol="BTCUSDT")
     assert result.status is expected
     assert result.no_trade
     assert not result.trade_authorized
