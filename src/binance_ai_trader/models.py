@@ -465,3 +465,22 @@ class AiResearchForecastReceiptRow(Base):
     prob_win: Mapped[Decimal] = mapped_column(Numeric(38, 30), nullable=False)
     prob_loss: Mapped[Decimal] = mapped_column(Numeric(38, 30), nullable=False)
     prob_flat: Mapped[Decimal] = mapped_column(Numeric(38, 30), nullable=False)
+
+
+class AiResearchForecastOutcomeRow(Base):
+    """Immutable result for a forecast evaluated against persisted closed candles."""
+
+    __tablename__ = "ai_research_forecast_outcomes"
+    __table_args__ = (
+        CheckConstraint("outcome IN ('WIN', 'LOSS', 'FLAT')", name="ck_ai_outcome_label"),
+        CheckConstraint("entry_close > 0 AND target_close > 0", name="ck_ai_outcome_prices"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    receipt_id: Mapped[int] = mapped_column(
+        ForeignKey("ai_research_forecast_receipts.id"), unique=True, nullable=False
+    )
+    outcome: Mapped[str] = mapped_column(String(8), nullable=False)
+    entry_close: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
+    target_close: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
+    evaluated_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
