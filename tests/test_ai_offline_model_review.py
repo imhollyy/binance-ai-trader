@@ -254,7 +254,9 @@ def test_offline_manifest_same_records_have_stable_digest_but_no_trading_rights(
         spec, val, test, model_artifact=b"research-model-bytes", training_data=b"train-inputs"
     )
     repeat = create_offline_research_manifest(
-        spec, list(val), list(test),
+        spec,
+        list(val),
+        list(test),
         model_artifact=b"research-model-bytes",
         training_data=b"train-inputs",
     )
@@ -294,7 +296,10 @@ def test_offline_manifest_requires_detached_reference_and_rejects_replacement() 
         reference: str | None = manifest.manifest_sha256,
     ) -> OfflineManifestStatus:
         return verify_offline_research_manifest(
-            manifest, spec, val, current_test,
+            manifest,
+            spec,
+            val,
+            current_test,
             model_artifact=model,
             training_data=training,
             detached_reference_sha256=reference,
@@ -326,7 +331,10 @@ def test_offline_manifest_rejects_corrupt_model_and_self_claimed_provenance() ->
             )
     altered = replace(manifest, source="alleged_exchange_signed")
     verdict = verify_offline_research_manifest(
-        altered, spec, val, test,
+        altered,
+        spec,
+        val,
+        test,
         model_artifact=b"x",
         training_data=b"y",
         detached_reference_sha256=manifest.manifest_sha256,
@@ -335,6 +343,4 @@ def test_offline_manifest_rejects_corrupt_model_and_self_claimed_provenance() ->
     assert not verdict.trade_authorized
     weak = tuple(replace(row, realized_outcome=ObservedOutcome.WIN) for row in val)
     with pytest.raises(ValueError, match="unverified_or_invalid"):
-        create_offline_research_manifest(
-            spec, weak, test, model_artifact=b"x", training_data=b"y"
-        )
+        create_offline_research_manifest(spec, weak, test, model_artifact=b"x", training_data=b"y")
