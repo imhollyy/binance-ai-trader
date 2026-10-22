@@ -35,6 +35,10 @@ type Summary = {
   };
 };
 type LoggedIn = { role: string; csrf: string };
+type PendingManual = {
+  request_id: string; action: "buy" | "sell"; symbol: "BTCUSDT" | "ETHUSDT";
+  budget_usdt: string | null; stop_distance_pct: string | null;
+};
 function urlFromEnvironment(raw: string | undefined): string | null {
   if (!raw) return null;
   try {
@@ -113,6 +117,11 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
   const [snapshot, setSnapshot] = useState<Summary|null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [manualSymbol, setManualSymbol] = useState<"BTCUSDT"|"ETHUSDT">("BTCUSDT");
+  const [manualBudget, setManualBudget] = useState("50");
+  const [manualStop, setManualStop] = useState("2");
+  const [pendingManual, setPendingManual] = useState<PendingManual|null>(null);
+  const [manualConfirmed, setManualConfirmed] = useState(false);
 
   async function refresh() {
     if (!base) return;
@@ -194,10 +203,73 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
       }
       setSession(null);
       setSnapshot(null);
+      setPendingManual(null);
+      setManualConfirmed(false);
       setNotice("Oturum güvenli biçimde kapatıldı.");
     } catch {
       setNotice("Oturum kapatma isteği iletilemedi.");
     } finally { setBusy(false); }
+  }
+
+  function prepareManual(action: "buy" | "sell", activeSymbol?: string) {
+    if (busy || pendingManual || !snapshot?.initialized || session?.role !== "operator" ||
+        snapshot.worker.requested_enabled !== false) return;
+    const symbol = action === "sell" ? activeSymbol : manualSymbol;
+    if (symbol !== "BTCUSDT" && symbol !== "ETHUSDT") return;
+    if (action === "buy" && (!["25","50","100"].includes(manualBudget) ||
+                            !["1","2"].includes(manualStop))) return;
+    setPendingManual({
+      action, symbol, request_id: crypto.randomUUID(),
+      budget_usdt: action === "buy" ? manualBudget : null,
+      stop_distance_pct: action === "buy" ? manualStop : null,
+    });
+    setManualConfirmed(false);
+    setNotice("");
+  }
+
+  async function commitManual() {
+    if (!base || !pendingManual || !manualConfirmed || !session ||
+        session.role !== "operator" || busy) return;
+    setBusy(true);
+    setNotice("");
+    let completed = false;
+    try {
+      const response = await fetch(base + "/api/v1/paper/manual", {
+        method: "POST", credentials: "include", cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": session.csrf,
+          "X-Paper-Settings-Approval": "PAPER_SETTINGS_ONLY",
+        },
+        body: JSON.stringify({
+          ...pendingManual, confirmation: "CONFIRM_MANUAL_PAPER_ONLY",
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(response.status === 429
+          ? "Kamusal fiyat kaynağı hız sınırında. Yeni istek göndermeden önce bekle."
+          : response.status === 401 ? "Operatör oturumu sona erdi; yeniden giriş yap."
+          : response.status === 403 ? "Operatör yetkisi veya CSRF onayı reddedildi."
+          : response.status === 409 ? "PAPER risk/pozisyon koruması isteği reddetti. Kaydı yenile."
+          : "Manuel PAPER isteği doğrulanamadı (HTTP " + response.status + ").");
+      }
+      const receipt: {mode?:string;result?:string;exchange_order_sent?:boolean} =
+        await response.json();
+      if (receipt.mode !== "paper" || receipt.result !== "paper_recorded" ||
+          receipt.exchange_order_sent !== false) throw new Error("Güvenilir PAPER işlem yanıtı yok.");
+      completed = true;
+      setPendingManual(null);
+      setManualConfirmed(false);
+    } catch (err) {
+      setNotice((err instanceof Error ? err.message : "Bağlantı hatası.") +
+        " Yanıt belirsizse aynı istekle yeniden dene veya önce işlem geçmişini kontrol et.");
+    } finally {
+      setBusy(false);
+    }
+    if (completed) {
+      await refresh();
+      setNotice("Manuel PAPER simülasyonu kaydedildi; kayıtlı bakiye ve olaylar yenilendi.");
+    }
   }
 
   return <main className="staging-shell">
@@ -206,7 +278,7 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
         <div><h1>TradePilot</h1><p>Güvenli PAPER test önizlemesi</p></div>
       </header>
       <div className="staging-warning"><ShieldCheck size={20}/>
-        Bu yalnız sanal hesap görüntüleme ekranıdır. Gerçek Binance emirleri, API anahtarı,
+        Bu yalnız PAPER test ekranıdır. Gerçek Binance emirleri, API anahtarı,
         otomatik çalışan bot doğrulaması ve canlı portföy değeri içermez.</div>
       {!base ? <div role="alert" className="staging-error">
         Önizleme API adresi güvenli HTTPS olarak yapılandırılmamış. Giriş kapalı.
@@ -215,7 +287,7 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
         <label>Kullanıcı rolü
           <select value={role} disabled={busy} onChange={e=>setRole(e.target.value as "viewer"|"operator")}>
             <option value="viewer">Görüntüleyici</option>
-            <option value="operator">Operatör (görüntüleme)</option>
+            <option value="operator">Operatör (manuel PAPER onaylı)</option>
           </select>
         </label>
         <label>Parola
@@ -237,6 +309,69 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
             <article><span>Gerçekleşmiş PnL (sanal)</span><strong>{formatPaperUsdt(snapshot.account.realized_pnl_usdt)} USDT</strong></article>
             <article><span>Varsayımsal komisyon</span><strong>{formatPaperUsdt(snapshot.account.paid_fees_usdt)} USDT</strong></article>
           </div> : <p>Henüz PAPER hesap verisi bulunmuyor; tutar uydurulmaz.</p>}
+          {session.role === "operator" && snapshot.initialized && snapshot.account &&
+            <section className="staging-manual" aria-labelledby="staging-manual-title">
+              <h2 id="staging-manual-title">Manuel PAPER Spot simülasyonu</h2>
+              <p>Gerçek Binance emri gönderilmez. Sunucu işlem sırasında yeni kamusal fiyat doğrular;
+                ekrandaki fiyat canlı emir fiyatı veya garanti edilen fill değildir.
+                Otomatik bot kapalı kalır.</p>
+              {snapshot.worker.requested_enabled !== false
+                ? <p role="alert">Bot ayarı kapalı ve manuel onay zorunlu değilse simülasyon engellenir.</p>
+                : !pendingManual ? <div className="staging-manual-form">
+                  {!snapshot.open_positions && <>
+                    <label>Sanal piyasa
+                      <select value={manualSymbol} disabled={busy}
+                        onChange={e=>setManualSymbol(e.target.value as "BTCUSDT"|"ETHUSDT")}>
+                        <option value="BTCUSDT">BTC/USDT</option>
+                        <option value="ETHUSDT">ETH/USDT</option>
+                      </select>
+                    </label>
+                    <label>En fazla harcanacak sanal USDT
+                      <select value={manualBudget} disabled={busy} onChange={e=>setManualBudget(e.target.value)}>
+                        <option value="25">25 USDT</option><option value="50">50 USDT</option>
+                        <option value="100">100 USDT</option>
+                      </select>
+                    </label>
+                    <label>Varsayımsal stop uzaklığı
+                      <select value={manualStop} disabled={busy} onChange={e=>setManualStop(e.target.value)}>
+                        <option value="1">%1</option><option value="2">%2</option>
+                      </select>
+                    </label>
+                    <button type="button" disabled={busy}
+                      onClick={()=>prepareManual("buy")}>Sanal alış isteğini gözden geçir</button>
+                  </>}
+                  {snapshot.positions.filter(p=>p.status==="open").map(p=>
+                    <button key={p.symbol} type="button" disabled={busy}
+                      onClick={()=>prepareManual("sell",p.symbol)}>
+                      {p.symbol} açık PAPER pozisyonunu kapatmayı gözden geçir
+                    </button>
+                  )}
+                </div> : <div className="staging-manual-review">
+                  <strong>{pendingManual.action === "buy" ? "Sanal alış onayı" : "Sanal pozisyon kapatma onayı"}</strong>
+                  <p>{pendingManual.symbol} · {pendingManual.action === "buy"
+                    ? "En çok " + pendingManual.budget_usdt + " USDT · Stop %" + pendingManual.stop_distance_pct
+                    : "Mevcut açık pozisyonun tamamı"}</p>
+                  <p>Kamusal fiyat yeniden doğrulanacak. Simülasyon sonrası varsayımsal komisyon,
+                    slippage ve piyasa değişikliği nakit sonucunu etkileyebilir.</p>
+                  <label className="staging-confirm-check">
+                    <input type="checkbox" checked={manualConfirmed} disabled={busy}
+                      onChange={e=>setManualConfirmed(e.target.checked)}/>
+                    Bunun yalnızca sanal bir PAPER işlemi olduğunu anladım ve açıkça onaylıyorum.
+                  </label>
+                  <div className="staging-manual-buttons">
+                    <button type="button" disabled={busy || !manualConfirmed}
+                      onClick={()=>void commitManual()}>
+                      {busy ? "Doğrulanıyor..." : "Manuel PAPER işlemini onayla"}
+                    </button>
+                    <button type="button" disabled={busy}
+                      onClick={()=>{setPendingManual(null);setManualConfirmed(false);}}>
+                      İsteği iptal et
+                    </button>
+                  </div>
+                  <p className="staging-muted">Bağlantı koparsa aynı istek kimliğiyle yeniden dene;
+                    yeni istek oluşturmadan önce işlem geçmişini kontrol et.</p>
+                </div>}
+            </section>}
           <section className="staging-history" aria-labelledby="staging-positions-title">
             <div className="staging-section-heading">
               <h2 id="staging-positions-title">PAPER pozisyonları</h2>

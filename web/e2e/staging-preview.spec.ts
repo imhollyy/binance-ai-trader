@@ -185,6 +185,78 @@ for (const width of [390, 1280]) {
   });
 }
 
+
+test("operator alone confirms manual PAPER request; browser never supplies a price", async ({page}) => {
+  test.skip(
+    process.env.NEXT_PUBLIC_TP_STAGING_PREVIEW !== "enabled",
+    "Only isolated staging browser fixture",
+  );
+  await page.setViewportSize({width:390,height:840});
+  let manualPosts = 0;
+  await page.route("https://api.staging.example/api/v1/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    const headers = {
+      "Access-Control-Allow-Origin":"http://127.0.0.1:3000",
+      "Access-Control-Allow-Credentials":"true",
+      "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
+      "Access-Control-Allow-Headers":"Content-Type,X-CSRF-Token,X-Paper-Settings-Approval",
+      "Content-Type":"application/json",
+    };
+    if(route.request().method()==="OPTIONS"){
+      await route.fulfill({status:204,headers});
+      return;
+    }
+    if(path.endsWith("/paper/manual")){
+      manualPosts += 1;
+      const payload = JSON.parse(route.request().postData() ?? "{}");
+      expect(payload).toMatchObject({
+        action:"buy",symbol:"BTCUSDT",budget_usdt:"50",stop_distance_pct:"2",
+        confirmation:"CONFIRM_MANUAL_PAPER_ONLY",
+      });
+      expect(payload).not.toHaveProperty("reference_price");
+      expect(payload).not.toHaveProperty("quantity");
+      expect(route.request().headers()["x-paper-settings-approval"]).toBe("PAPER_SETTINGS_ONLY");
+      expect(route.request().headers()["x-csrf-token"]).toBe("a".repeat(64));
+      expect(payload.request_id).toMatch(/^[0-9a-f-]{36}$/);
+      await route.fulfill({status:200,headers,body:JSON.stringify({
+        mode:"paper",result:"paper_recorded",exchange_order_sent:false,
+      })});
+      return;
+    }
+    const data = path.endsWith("/auth/login")
+      ? {role:"operator",csrf_token:"a".repeat(64)}
+      : {mode:"paper",source:"persisted_paper_spot",initialized:true,
+        account:{
+          initial_capital_usdt:"1000.000000000000000000",
+          cash_usdt:"1000.000000000000000000",
+          realized_pnl_usdt:"0.000000000000000000",
+          paid_fees_usdt:"0.000000000000000000",
+        },total_positions:0,open_positions:0,total_events:1,positions:[],
+        events:[{id:1,event_type:"account_opened",created_at:"2026-10-22T01:00:00Z",
+          cash_delta_usdt:"1000.000000000000000000",
+          realized_pnl_delta_usdt:"0.000000000000000000",
+          fee_usdt:"0.000000000000000000",quote:null}],
+        worker:{requested_enabled:false,process_verified_running:false,
+          last_status:null,last_attempt_at_ms:null,next_allowed_at_ms:null}};
+    await route.fulfill({status:200,headers,body:JSON.stringify(data)});
+  });
+  await page.goto("/");
+  await page.getByLabel("Kullanıcı rolü").selectOption("operator");
+  await page.getByLabel("Parola").fill("synthetic-test-password");
+  await page.getByRole("button",{name:"Giriş yap"}).click();
+  await expect(page.getByRole("heading",{name:"Manuel PAPER Spot simülasyonu"})).toBeVisible();
+  await page.getByRole("button",{name:"Sanal alış isteğini gözden geçir"}).click();
+  await expect(page.getByRole("button",{name:"Manuel PAPER işlemini onayla"})).toBeDisabled();
+  expect(manualPosts).toBe(0);
+  await page.getByRole("checkbox",{name:/Bunun yalnızca sanal bir PAPER işlemi/}).check();
+  await page.getByRole("button",{name:"Manuel PAPER işlemini onayla"}).click();
+  await expect(page.getByRole("status")).toContainText("Manuel PAPER simülasyonu kaydedildi");
+  expect(manualPosts).toBe(1);
+  const overflow = await page.evaluate(() =>
+    document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
 for (const scenario of [
   {name: "dashboard unavailable", status: 503, body: {detail: "temporary outage"},
    expected: "Oturum açıldı ancak sanal kayıtlar okunamadı."},

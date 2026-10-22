@@ -21,6 +21,7 @@ _ROUTES = {
     "/api/v1/status": "status",
     "/api/v1/audit": "audit",
     "/api/v1/paper/dashboard": "paper_dashboard",
+    "/api/v1/paper/manual": "manual_paper",
     "/api/v1/paper/spot": "paper_spot",
 }
 _METHODS = {"GET", "POST", "PUT", "OPTIONS"}

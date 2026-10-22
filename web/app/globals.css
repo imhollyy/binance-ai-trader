@@ -198,3 +198,20 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .staging-history>.staging-muted{display:block;margin-top:8px}
 .staging-status .staging-muted{font-size:11px}
 @media(max-width:440px){.staging-record-heading{align-items:flex-start;flex-direction:column}}
+
+/* Isolated operator manual PAPER, never an automatic worker or exchange order. */
+.staging-manual{margin-top:20px;padding:16px;border:1px solid #c7d7f3;border-radius:12px;background:#f7faff;min-width:0}
+.staging-manual h2{font-size:14px;font-weight:700;color:#294163;margin-bottom:8px}
+.staging-manual>p,.staging-manual-review p{font-size:11px;line-height:1.7;color:#60748f;margin-bottom:12px}
+.staging-manual-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:end}
+.staging-manual-form label{font-size:11px;color:#526683;display:flex;flex-direction:column;gap:7px;min-width:0}
+.staging-manual-form select{width:100%;min-height:44px;padding:10px;border:1px solid #b4c8e6;border-radius:8px;background:#fff;color:#243858}
+.staging-manual button{min-height:44px;padding:9px 13px;background:#3358bd;border:0;border-radius:8px;color:white;cursor:pointer;font-size:12px}
+.staging-manual button:disabled{opacity:.55;cursor:not-allowed}
+.staging-manual-buttons{display:flex;gap:9px;flex-wrap:wrap}
+.staging-manual-buttons button:last-child{background:#6e7b91}
+.staging-manual-review{display:flex;flex-direction:column;gap:9px}
+.staging-manual-review strong{font-size:13px}
+.staging-confirm-check{display:flex;align-items:flex-start;gap:10px;font-size:12px;color:#314d72;line-height:1.6}
+.staging-confirm-check input{width:19px;height:19px;flex:none}
+@media(max-width:440px){.staging-manual-form{grid-template-columns:1fr}.staging-manual-buttons{flex-direction:column}}
