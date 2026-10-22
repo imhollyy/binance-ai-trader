@@ -14,7 +14,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from os import environ
 
-from sqlalchemy import Engine, create_engine, select
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -54,7 +54,10 @@ def validate_preview_pilot(values: Mapping[str, str], *, action: str) -> str:
         raise PaperPilotRejected("isolated_preview_db_required")
     if action == "run" and scheduler_flag != OPT_IN_VALUE:
         raise PaperPilotRejected("scheduler_opt_in_required")
-    if action in ("enable", "disable") and values.get("PAPER_AUTOPILOT_CONTROL_OPT_IN") != CONTROL_APPROVAL:
+    if (
+        action in ("enable", "disable")
+        and values.get("PAPER_AUTOPILOT_CONTROL_OPT_IN") != CONTROL_APPROVAL
+    ):
         raise PaperPilotRejected("local_control_opt_in_required")
     return url
 
@@ -136,7 +139,9 @@ def paper_pilot_status(engine: Engine) -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Isolated preview PAPER automation; default OFF")
-    parser.add_argument("--action", choices=["status", "enable", "disable", "run"], default="status")
+    parser.add_argument(
+        "--action", choices=["status", "enable", "disable", "run"], default="status"
+    )
     parser.add_argument("--confirm-paper-only", action="store_true")
     args = parser.parse_args(argv)
 
@@ -162,11 +167,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                     symbol=ALLOWED_SYMBOL, interval=ALLOWED_INTERVAL,
                 )
                 print(f"PAPER_PILOT_ENDED status={result.status.value} ticks={result.ticks}")
-                return 0 if result.status in (SchedulerStatus.STOPPED, SchedulerStatus.DISABLED) else 1
+                return (
+                    0
+                    if result.status in (SchedulerStatus.STOPPED, SchedulerStatus.DISABLED)
+                    else 1
+                )
         finally:
             engine.dispose()
     except (PaperPilotRejected, SQLAlchemyError, ValueError):
-        print("REJECTED: isolated PAPER pilot or database safety validation failed", file=sys.stderr)
+        print(
+            "REJECTED: isolated PAPER pilot or database safety validation failed",
+            file=sys.stderr,
+        )
         return 2
     return 0
 
