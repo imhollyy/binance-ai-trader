@@ -190,3 +190,27 @@ kalıcı worker'ın bu durumu kilit altında fail-closed okuması, fiyat
 kaynağının doğrulanması, ayrı audit/journal ve sonra kontrollü
 PAPER stop/TP reduce-only icra testi. Kullanıcı hesabında
 otomatik işlem başlatılmadı, piyasa kârlılığı kanıtlanmadı.
+
+## BT-017: authenticated isolated bot-control API rehearsal
+
+- Normal LOCAL and normal STAGING modes **do not register** any bot-control
+  endpoint. The HTTPS route is registered only when an explicitly opted-in,
+  local disposable `trader_bot_controls_http_test` PostgreSQL instance is
+  used with `BOT_CONTROLS_HTTP_TEST_ISOLATED=1`.
+- Isolated `GET/PUT /api/v1/paper/bot-control` accepts the existing
+  server-verifiable HTTPS cookie session. PUT additionally requires exact
+  Origin, CSRF, operator role and separate
+  `X-Paper-Bot-Control-Approval: ISOLATED_BOT_CONTROL_REVIEW_ONLY`.
+  The caller cannot supply an operator token hash. The independently
+  locked DB writer revalidates the unrevoked, unexpired operator session
+  and config revision before an atomic CAS + append-only audit.
+- Read-only GET is permitted to authenticated viewers and operators.
+  Missing/stale control state, wrong version, invalid stop behavior and
+  absent permissions fail closed. `Cache-Control: no-store, private`.
+- All tests are synthetic and use separate disposable PostgreSQL plus
+  FastAPI TestClient; no actual owner account, scheduler or exchange
+  order endpoint. RUNNING in this *test-only* table **never** runs a bot.
+- This remains insufficient for production: the controlled test route
+  intentionally cannot target production PostgreSQL, existing workers
+  do not use the state and stop-loss/TP execution is not installed.
+  Operator risk settings and fees still require separate acceptance.
