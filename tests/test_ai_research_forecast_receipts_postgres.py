@@ -89,6 +89,7 @@ def test_server_clocked_immutable_receipts_and_restart(engine: Engine) -> None:
     assert first.no_trade and not first.trade_authorized
     assert not first.qualifies_as_calibrated_model
     assert read_disposable_forecasts(engine) == (first,)
+    assert DB_URL is not None
     reopened = create_engine(DB_URL, pool_pre_ping=True)
     try:
         assert read_disposable_forecasts(reopened) == (first,)
