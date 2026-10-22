@@ -9,6 +9,11 @@ from typing import Any, cast
 import pytest
 
 from binance_ai_trader.ai_constitution import ProbabilityEstimate
+from binance_ai_trader.ai_offline_artifact_manifest import (
+    OfflineManifestStatus,
+    create_offline_research_manifest,
+    verify_offline_research_manifest,
+)
 from binance_ai_trader.ai_offline_model_review import (
     ForecastOutcome,
     HoldoutProtocol,
@@ -241,3 +246,101 @@ def test_untyped_collections_and_boolean_timestamp_rejected() -> None:
         ).status
         is ValidationStatus.INVALID_OBSERVATION
     )
+
+
+def test_offline_manifest_same_records_have_stable_digest_but_no_trading_rights() -> None:
+    spec, val, test = dataset()
+    manifest = create_offline_research_manifest(
+        spec, val, test, model_artifact=b"research-model-bytes", training_data=b"train-inputs"
+    )
+    repeat = create_offline_research_manifest(
+        spec,
+        list(val),
+        list(test),
+        model_artifact=b"research-model-bytes",
+        training_data=b"train-inputs",
+    )
+    assert repeat == manifest
+    assert manifest.schema_version == 1
+    assert len(manifest.manifest_sha256) == 64
+    review = verify_offline_research_manifest(
+        manifest,
+        spec,
+        val,
+        test,
+        model_artifact=b"research-model-bytes",
+        training_data=b"train-inputs",
+        detached_reference_sha256=manifest.manifest_sha256,
+    )
+    assert review.status is OfflineManifestStatus.SELF_REPORTED_RESEARCH_MATCH_ONLY
+    assert review.model_review_status is ValidationStatus.UNVERIFIED_OFFLINE_RESEARCH_ONLY
+    assert review.actual_manifest_sha256 == manifest.manifest_sha256
+    assert review.no_trade
+    assert not review.trade_authorized
+    assert not review.qualifies_as_calibrated_model
+
+
+def test_offline_manifest_requires_detached_reference_and_rejects_replacement() -> None:
+    spec, val, test = dataset()
+    source = b"synthetic-saved-model"
+    train = b"synthetic-training"
+    manifest = create_offline_research_manifest(
+        spec, val, test, model_artifact=source, training_data=train
+    )
+
+    def check(
+        current_test: tuple[ForecastOutcome, ...] = test,
+        *,
+        model: bytes = source,
+        training: bytes = train,
+        reference: str | None = manifest.manifest_sha256,
+    ) -> OfflineManifestStatus:
+        return verify_offline_research_manifest(
+            manifest,
+            spec,
+            val,
+            current_test,
+            model_artifact=model,
+            training_data=training,
+            detached_reference_sha256=reference,
+        ).status
+
+    assert check(reference=None) is OfflineManifestStatus.DETACHED_REFERENCE_MISSING
+    assert check(reference="0" * 64) is OfflineManifestStatus.DETACHED_REFERENCE_MISMATCH
+    assert check(reference=manifest.manifest_sha256.upper()) is (
+        OfflineManifestStatus.DETACHED_REFERENCE_MISMATCH
+    )
+    assert check(model=source + b"change") is OfflineManifestStatus.UNTRUSTED_MANIFEST_CHANGED
+    assert check(training=train + b"change") is OfflineManifestStatus.UNTRUSTED_MANIFEST_CHANGED
+    changed_label = replace(test[0], realized_outcome=ObservedOutcome.LOSS)
+    assert check(current_test=(changed_label, *test[1:])) is (
+        OfflineManifestStatus.UNTRUSTED_MANIFEST_CHANGED
+    )
+    assert check(current_test=test[:-1]) is OfflineManifestStatus.HOLDOUT_REJECTED
+
+
+def test_offline_manifest_rejects_corrupt_model_and_self_claimed_provenance() -> None:
+    spec, val, test = dataset()
+    manifest = create_offline_research_manifest(
+        spec, val, test, model_artifact=b"x", training_data=b"y"
+    )
+    for bad in (b"", b"x" * 10_000_001):
+        with pytest.raises(ValueError, match="unverified_or_invalid"):
+            create_offline_research_manifest(
+                spec, val, test, model_artifact=bad, training_data=b"y"
+            )
+    altered = replace(manifest, source="alleged_exchange_signed")
+    verdict = verify_offline_research_manifest(
+        altered,
+        spec,
+        val,
+        test,
+        model_artifact=b"x",
+        training_data=b"y",
+        detached_reference_sha256=manifest.manifest_sha256,
+    )
+    assert verdict.status is OfflineManifestStatus.UNTRUSTED_MANIFEST_CHANGED
+    assert not verdict.trade_authorized
+    weak = tuple(replace(row, realized_outcome=ObservedOutcome.WIN) for row in val)
+    with pytest.raises(ValueError, match="unverified_or_invalid"):
+        create_offline_research_manifest(spec, weak, test, model_artifact=b"x", training_data=b"y")
