@@ -3,6 +3,12 @@ from __future__ import annotations
 from decimal import Decimal
 
 from binance_ai_trader.ai_constitution import BotState
+from binance_ai_trader.ai_shadow_preflight import (
+    ShadowEvidence,
+    ShadowPreflightResult,
+    evaluate_shadow_preflight,
+)
+from binance_ai_trader.ai_trainable_model import ModelAction, ResearchPrediction
 from binance_ai_trader.risk_guard import RiskProfile, RiskReason, RiskRequest, evaluate_risk
 
 
@@ -80,3 +86,60 @@ def test_risk_guard_limits_modes_and_unverified_edges_fail_closed() -> None:
     assert (
         evaluate_risk(_profile(), _request(consecutive_losses=3)).reason is RiskReason.LOSS_STREAK
     )
+
+
+def test_shadow_chain_audits_paper_suitability_without_order_intent() -> None:
+    prediction = ResearchPrediction(
+        ModelAction.BUY,
+        "shadow_signal_0001",
+        "model-v1",
+        "1.0",
+        "BTCUSDT",
+        "1m",
+        60_000,
+        960_000,
+        None,
+        False,
+        "UNCALIBRATED_RESEARCH_ONLY",
+        "a" * 64,
+        "b" * 64,
+    )
+    evidence = ShadowEvidence(
+        "BTCUSDT",
+        "1m",
+        60_000,
+        60_001,
+        120_000,
+        Decimal("100"),
+        Decimal("5"),
+        Decimal("1"),
+        Decimal("1"),
+        "c" * 64,
+        "d" * 64,
+        True,
+        True,
+    )
+
+    class Recorder:
+        def __init__(self) -> None:
+            self.recorded: list[tuple[ResearchPrediction, ShadowPreflightResult]] = []
+
+        def __call__(self, row: ResearchPrediction, result: ShadowPreflightResult) -> None:
+            self.recorded.append((row, result))
+
+    audit = Recorder()
+
+    result = evaluate_shadow_preflight(
+        prediction,
+        _profile(),
+        _request(),
+        evidence,
+        now_ms=70_000,
+        max_data_age_ms=60_000,
+        audit=audit,
+    )
+    assert result.risk_decision is not None and result.risk_decision.allowed
+    assert result.status == "BLOCKED"
+    assert result.reason_code == "MODEL_CALIBRATION_UNVERIFIED"
+    assert not result.paper_suitability and not result.order_intent_created
+    assert audit.recorded == [(prediction, result)]
