@@ -2,7 +2,7 @@
 # Explicit -f compose.preview.yaml --profile preview and an untracked env file required.
 services:
   preview-db:
-    profiles: ["preview"]
+    profiles: ["preview", "paper-pilot"]
     image: postgres:16-alpine
     restart: "no"
     environment:
@@ -107,6 +107,8 @@ services:
       - --action
       - run
       - --confirm-paper-only
+      - --max-ticks
+      - "3"
     networks:
       - preview_private
     # No exposed ports, real keys, exchange orders or startup by default.

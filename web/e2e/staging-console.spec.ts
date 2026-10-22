@@ -23,7 +23,7 @@ const dashboard = {
     cash_delta_usdt:"1000.000000000000000000",realized_pnl_delta_usdt:"0.000000000000000000",
     fee_usdt:"0.000000000000000000",quote:null}],
   worker:{requested_enabled:false,process_verified_running:false,last_status:null,
-    last_attempt_at_ms:null,next_allowed_at_ms:null},
+    last_attempt_at_ms:null,next_allowed_at_ms:null,consecutive_failures:null},
 };
 function stagingOnly() {
   test.skip(process.env.NEXT_PUBLIC_TP_STAGING_PREVIEW !== "enabled",
@@ -88,6 +88,11 @@ for(const width of [360,390,768,1280]){
     await menu.getByRole("button",{name:"Piyasa Verileri"}).click();
     await expect(page.getByRole("heading",{name:"Piyasa Verileri"})).toBeVisible();
     await expect(page.getByText("Kayıtlı mum bulunamadı")).toBeVisible();
+    await nav(page,"Bot Yönetimi",width);
+    await expect(page.getByRole("heading",{name:"Bot Yönetimi"})).toBeVisible();
+    await expect(page.getByText("Son worker sonucu")).toBeVisible();
+    await expect(page.getByText(/çalışan bir işlem sürecinin kanıtı değildir/)).toBeVisible();
+    await expect(page.getByRole("button",{name:/botu başlat/i})).toHaveCount(0);
     await nav(page,"Risk Yönetimi",width);
     await expect(page.getByRole("heading",{name:"Risk Yönetimi"})).toBeVisible();
     await expect(page.getByText("Bot çalışma tercihi")).toBeVisible();

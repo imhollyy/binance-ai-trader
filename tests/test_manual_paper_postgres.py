@@ -368,10 +368,12 @@ def test_autopilot_enable_disable_carries_unchanged_virtual_money(engine: Engine
     from binance_ai_trader.preview_autopilot import (
         PaperPilotRejected,
         change_paper_pilot_mode,
+        paper_pilot_preflight,
         paper_pilot_status,
     )
 
     before = _totals(engine)
+    assert paper_pilot_preflight(engine) == "READY_MANUAL_PAPER_MODE"
     with Session(engine) as db:
         prior = db.get(PaperSpotAccountRow, 1)
         assert prior is not None and prior.settings_version == 2
@@ -379,6 +381,7 @@ def test_autopilot_enable_disable_carries_unchanged_virtual_money(engine: Engine
     new_version = change_paper_pilot_mode(engine, enable=True)
     assert new_version == 3
     assert paper_pilot_status(engine) == "AUTO_PAPER_PERMITTED_NOT_RUNNING_VERIFIED"
+    assert paper_pilot_preflight(engine) == "READY_AUTOMATIC_PAPER_PERMISSION"
     assert _totals(engine) == before
     # Persisted mode consent is NOT enough to start a process, HTTP, or trade.
     assert run_paper_scheduler(engine, enabled=False).status is SchedulerStatus.DISABLED
@@ -392,6 +395,7 @@ def test_autopilot_enable_disable_carries_unchanged_virtual_money(engine: Engine
     assert version == 4
     assert change_paper_pilot_mode(engine, enable=False) == 4
     assert paper_pilot_status(engine) == "MANUAL_PAPER_ONLY_SCHEDULER_OFF"
+    assert paper_pilot_preflight(engine) == "READY_MANUAL_PAPER_MODE"
     with Session(engine) as db:
         settings = db.get(TradingSettingsRow, 1)
         account = db.get(PaperSpotAccountRow, 1)
