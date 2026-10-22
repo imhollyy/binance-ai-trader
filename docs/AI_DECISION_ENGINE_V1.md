@@ -323,3 +323,41 @@ koruma etkinleştirilemez.
   tarihsel ortalama fiyatı, fee-tier, iptal/yenileme ve uzun
   süreli ileri PAPER denemeleri. **Hiçbir üretim işlem yetkisi
   açılmadı.**
+
+## BT-021: salt-okunur Spot veri kaynakları arasında tutarlılık kapısı
+
+- `public_spot_coherence.py` önceki üç public REST istemcisinin
+  çıktılarını sırayla okur: 1m kapanmış OHLCV + ticker/price,
+  exchangeInfo + ticker/bookTicker, 20 seviyelik Spot depth.
+  Yanıtların Binance'ten **atomik bir piyasa anını**
+  oluşturduğu iddia EDİLMEZ. Borsa event timestamp'i bu REST
+  yanıtlarda yoktur; kullanılan UTC ölçümler **yerel** saattir.
+- Veri kontrolü bağımsız `expected_symbol` doğrulaması,
+  zaman işaretlerinin sıralanması / toplam ölçüm süresi (3 saniye),
+  kapanmış mum bütünlüğü, exchange tick/min/max fiyat filtreleri,
+  bilinmeyen `avgPriceMins` ve diğer filtrelerin reddi,
+  bookTicker/depth en iyi fiyatlarında sapma (en fazla 5 bps),
+  ticker/price ile public best book bölgesinde sapma (en fazla
+  30 bps) ve önceki depth yapısal kontrolünün tekrar çalıştırılmasıdır.
+- 5/30 bps sınırları yalnız **konservatif araştırma kapısı**dır,
+  kullanıcı tarafından tanımlanmış risk/strateji limiti değildir.
+  Tek bir noktada veri yoksa, 418/429 gelirse, kaynak bayatsa,
+  semboller karışırsa ya da zaman/price uyumsuzsa durum kodu
+  ile fail-closed olur; pozitif durumda da sadece
+  `COHERENT_RESEARCH_ONLY` verir.
+- Bu kontrol hiçbir sonucu yürütme hakkı saymaz:
+  `SpotCoherenceReview.no_trade=True`,
+  `trade_authorized=False` **her durumda**. Private Binance
+  API erişimi, fee tier doğrulaması, PAPER pozisyon yazma,
+  scheduler, canlı emir ve production panel bağlantısı yoktur.
+  Bir modelin güven/verim skorunu doğrulamaz veya üretmez.
+- MockTransport üzerinden sahte Spot fiyatlarıyla uçtan uca
+  veri birlikteliği, fake symbol, eksik/bozuk feed, zaman
+  sapması, book/depth çelişkisi, tick ve yetkisiz kaynak
+  örnekleri test edilir. Bu testler gerçek piyasada işlem
+  geçerliliği veya fiyat gerçekleşme güvencesi değildir.
+
+**Sonraki aşama:** sunucu sahipliğinde sürümlü fiyat kanıtının
+uygulanması, gerçek ücret kademesi ve filtre doğrulaması,
+kalibre edilmiş strateji analizinin bağımsız risk guard ile
+birleştirilmesi, sınırlı ve açık onaylı PAPER forward-run.
