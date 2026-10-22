@@ -180,10 +180,7 @@ def test_market_size_grid_liquidity_and_assumptions_fail_closed() -> None:
             "askQty": "4",
         }
     )
-    assert (
-        review(limited.observe(symbol="BTCUSDT")).status
-        is CostReviewStatus.TOP_BOOK_LIQUIDITY
-    )
+    assert review(limited.observe(symbol="BTCUSDT")).status is CostReviewStatus.TOP_BOOK_LIQUIDITY
 
 
 @pytest.mark.parametrize("which", ["info", "book"])
@@ -253,9 +250,7 @@ def test_exchange_permissions_and_unverified_filters_block() -> None:
     filters = base["filters"]
     assert isinstance(filters, list)
     unknown = {
-        "symbols": [
-            {**base, "filters": [*filters, {"filterType": "T_PLUS_SELL", "lag": 1}]}
-        ]
+        "symbols": [{**base, "filters": [*filters, {"filterType": "T_PLUS_SELL", "lag": 1}]}]
     }
     sample = observer(info=unknown)[0].observe(symbol="BTCUSDT")
     assert review(sample).status is CostReviewStatus.UNEVALUATED_FILTER

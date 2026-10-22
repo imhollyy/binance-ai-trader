@@ -4,6 +4,7 @@ NO authenticated tradeFee, order, account, ledger, scheduler or worker paths.
 The bookTicker has NO exchange event timestamp or fill guarantee.
 Even positive hypothetical net edge NEVER authorizes a trade.
 """
+
 from __future__ import annotations
 
 import time
@@ -195,8 +196,15 @@ def _rules(raw: object, symbol: str) -> SymbolCostRules:
     if maximum_notional is not None and minimum_notional > maximum_notional:
         raise MarketDataInvalid("contradictory_notional_filters")
     return SymbolCostRules(
-        symbol, tick, minimum_price, maximum_price, lot, market_lot,
-        minimum_notional, maximum_notional, needs_average,
+        symbol,
+        tick,
+        minimum_price,
+        maximum_price,
+        lot,
+        market_lot,
+        minimum_notional,
+        maximum_notional,
+        needs_average,
         tuple(sorted(set(by_type) - KNOWN_FILTERS)),
     )
 
@@ -273,9 +281,7 @@ class PublicSpotCostClient:
             or (rules.maximum_price > 0 and ask > rules.maximum_price)
         ):
             raise MarketDataInvalid("crossed_or_off_tick_public_book")
-        return PublicBookCostSample(
-            symbol, bid, ask, bid_qty, ask_qty, requested, received, rules
-        )
+        return PublicBookCostSample(symbol, bid, ask, bid_qty, ask_qty, requested, received, rules)
 
 
 def _bounded(value: object, minimum: Decimal, maximum: Decimal) -> bool:
