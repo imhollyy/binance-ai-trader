@@ -307,7 +307,7 @@ def test_bad_or_rate_limited_public_source_never_emits_an_exit(
 
 def test_freshness_provenance_and_version_fail_closed() -> None:
     client, _, clock = observer(price="98")
-    sample = client.observe(symbol="BTCUSDT", interval="1m", limit=50)
+    sample = client.observe(symbol="BTCUSDT", interval="1m", limit=100)
     clock[0] += 4_000
     stale = evaluate_paper_position_protection(
         settings(),
