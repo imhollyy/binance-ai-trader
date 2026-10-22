@@ -28,29 +28,38 @@ EVALUATED = TEST_END + HORIZON
 
 def protocol() -> HoldoutProtocol:
     return HoldoutProtocol(
-        "research_model_v1", "BTCUSDT", "1m",
-        ORIGIN, VAL_START, VAL_END, TEST_START, TEST_END,
-        HORIZON, EVALUATED,
+        "research_model_v1",
+        "BTCUSDT",
+        "1m",
+        ORIGIN,
+        VAL_START,
+        VAL_END,
+        TEST_START,
+        TEST_END,
+        HORIZON,
+        EVALUATED,
     )
 
 
-def rows(
-    prefix: str, start: int, *, calibrated: bool = True
-) -> tuple[ForecastOutcome, ...]:
+def rows(prefix: str, start: int, *, calibrated: bool = True) -> tuple[ForecastOutcome, ...]:
     records: list[ForecastOutcome] = []
     for i in range(120):
         group = i // 60
         within = i % 60
         if group == 0:
             outcome = (
-                ObservedOutcome.WIN if within < 42
-                else ObservedOutcome.LOSS if within < 51
+                ObservedOutcome.WIN
+                if within < 42
+                else ObservedOutcome.LOSS
+                if within < 51
                 else ObservedOutcome.FLAT
             )
         else:
             outcome = (
-                ObservedOutcome.LOSS if within < 42
-                else ObservedOutcome.WIN if within < 51
+                ObservedOutcome.LOSS
+                if within < 42
+                else ObservedOutcome.WIN
+                if within < 51
                 else ObservedOutcome.FLAT
             )
         if calibrated:
@@ -64,16 +73,20 @@ def rows(
         instant = start + i * HORIZON
         records.append(
             ForecastOutcome(
-                f"{prefix}_{i:04d}", "research_model_v1", "BTCUSDT", "1m",
-                instant, instant + HORIZON, probabilities, outcome,
+                f"{prefix}_{i:04d}",
+                "research_model_v1",
+                "BTCUSDT",
+                "1m",
+                instant,
+                instant + HORIZON,
+                probabilities,
+                outcome,
             )
         )
     return tuple(records)
 
 
-def dataset() -> tuple[
-    HoldoutProtocol, tuple[ForecastOutcome, ...], tuple[ForecastOutcome, ...]
-]:
+def dataset() -> tuple[HoldoutProtocol, tuple[ForecastOutcome, ...], tuple[ForecastOutcome, ...]]:
     return protocol(), rows("validation", VAL_START), rows("holdout", TEST_START)
 
 
@@ -122,35 +135,55 @@ def test_invalid_or_overlapping_declared_splits_rejected(mutation: dict[str, obj
 def test_duplicate_and_reordered_holdout_signals_are_temporal_leakage() -> None:
     spec, val, test = dataset()
     repeated = replace(test[0], signal_id=val[0].signal_id)
-    assert review_offline_walk_forward(
-        spec, val, (repeated, *test[1:])
-    ).status is ValidationStatus.TEMPORAL_LEAKAGE
-    assert review_offline_walk_forward(
-        spec, val, (test[1], test[0], *test[2:])
-    ).status is ValidationStatus.TEMPORAL_LEAKAGE
-    assert review_offline_walk_forward(
-        spec, val, (replace(test[0], observed_close_at_ms=VAL_END), *test[1:])
-    ).status is ValidationStatus.TEMPORAL_LEAKAGE
+    assert (
+        review_offline_walk_forward(spec, val, (repeated, *test[1:])).status
+        is ValidationStatus.TEMPORAL_LEAKAGE
+    )
+    assert (
+        review_offline_walk_forward(spec, val, (test[1], test[0], *test[2:])).status
+        is ValidationStatus.TEMPORAL_LEAKAGE
+    )
+    assert (
+        review_offline_walk_forward(
+            spec, val, (replace(test[0], observed_close_at_ms=VAL_END), *test[1:])
+        ).status
+        is ValidationStatus.TEMPORAL_LEAKAGE
+    )
 
 
 def test_immature_labels_future_leakage_and_malformed_entries_fail_closed() -> None:
     spec, val, test = dataset()
-    assert review_offline_walk_forward(
-        spec, val, (replace(test[0], label_available_at_ms=EVALUATED + HORIZON), *test[1:])
-    ).status is ValidationStatus.TEMPORAL_LEAKAGE
-    assert review_offline_walk_forward(
-        spec, (replace(val[0], label_available_at_ms=VAL_START), *val[1:]), test
-    ).status is ValidationStatus.TEMPORAL_LEAKAGE
-    assert review_offline_walk_forward(
-        spec, val, (replace(test[0], model_version="unseen_model"), *test[1:])
-    ).status is ValidationStatus.INVALID_OBSERVATION
-    assert review_offline_walk_forward(
-        spec, val, (replace(test[0], symbol="ETHUSDT"), *test[1:])
-    ).status is ValidationStatus.INVALID_OBSERVATION
+    assert (
+        review_offline_walk_forward(
+            spec, val, (replace(test[0], label_available_at_ms=EVALUATED + HORIZON), *test[1:])
+        ).status
+        is ValidationStatus.TEMPORAL_LEAKAGE
+    )
+    assert (
+        review_offline_walk_forward(
+            spec, (replace(val[0], label_available_at_ms=VAL_START), *val[1:]), test
+        ).status
+        is ValidationStatus.TEMPORAL_LEAKAGE
+    )
+    assert (
+        review_offline_walk_forward(
+            spec, val, (replace(test[0], model_version="unseen_model"), *test[1:])
+        ).status
+        is ValidationStatus.INVALID_OBSERVATION
+    )
+    assert (
+        review_offline_walk_forward(
+            spec, val, (replace(test[0], symbol="ETHUSDT"), *test[1:])
+        ).status
+        is ValidationStatus.INVALID_OBSERVATION
+    )
     forged = ProbabilityEstimate.model_construct(win=D("1.2"), loss=D("-.2"), flat=D(0))
-    assert review_offline_walk_forward(
-        spec, val, (replace(test[0], forecast=forged), *test[1:])
-    ).status is ValidationStatus.INVALID_OBSERVATION
+    assert (
+        review_offline_walk_forward(
+            spec, val, (replace(test[0], forecast=forged), *test[1:])
+        ).status
+        is ValidationStatus.INVALID_OBSERVATION
+    )
     assert review_offline_walk_forward(spec, val, test[:50]).status is (
         ValidationStatus.INSUFFICIENT_HOLDOUT
     )
@@ -183,10 +216,7 @@ def test_calibration_rejection_and_climatology_comparison() -> None:
 
 def test_no_future_matured_outcome_cannot_inflate_sample_size() -> None:
     spec, val, test = dataset()
-    sparse = tuple(
-        replace(item, realized_outcome=ObservedOutcome.WIN)
-        for item in val
-    )
+    sparse = tuple(replace(item, realized_outcome=ObservedOutcome.WIN) for item in val)
     report = review_offline_walk_forward(spec, sparse, test)
     assert report.status is ValidationStatus.INSUFFICIENT_HOLDOUT
     assert not report.qualifies_as_calibrated_model
@@ -194,12 +224,19 @@ def test_no_future_matured_outcome_cannot_inflate_sample_size() -> None:
 
 def test_untyped_collections_and_boolean_timestamp_rejected() -> None:
     spec, val, test = dataset()
-    assert review_offline_walk_forward(
-        spec, val, test
-    ).status is ValidationStatus.UNVERIFIED_OFFLINE_RESEARCH_ONLY
-    assert review_offline_walk_forward(
-        replace(spec, test_start_ms=True), val, test
-    ).status is ValidationStatus.INVALID_PROTOCOL
-    assert review_offline_walk_forward(
-        spec, val, [*test[:1], None, *test[2:]]  # type: ignore[list-item]
-    ).status is ValidationStatus.INVALID_OBSERVATION
+    assert (
+        review_offline_walk_forward(spec, val, test).status
+        is ValidationStatus.UNVERIFIED_OFFLINE_RESEARCH_ONLY
+    )
+    assert (
+        review_offline_walk_forward(replace(spec, test_start_ms=True), val, test).status
+        is ValidationStatus.INVALID_PROTOCOL
+    )
+    assert (
+        review_offline_walk_forward(
+            spec,
+            val,
+            [*test[:1], None, *test[2:]],  # type: ignore[list-item]
+        ).status
+        is ValidationStatus.INVALID_OBSERVATION
+    )

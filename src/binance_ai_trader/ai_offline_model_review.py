@@ -169,9 +169,7 @@ def _check_split(
         # probability claims before scoring even synthetic records.
         if (
             any(
-                type(value) is not Decimal
-                or not value.is_finite()
-                or not ZERO <= value <= ONE
+                type(value) is not Decimal or not value.is_finite() or not ZERO <= value <= ONE
                 for value in values
             )
             or sum(values, ZERO) != ONE
@@ -183,8 +181,7 @@ def _check_split(
             item.signal_id in seen_ids
             or not start_ms <= item.observed_close_at_ms < end_ms
             or item.observed_close_at_ms <= previous_at
-            or item.observed_close_at_ms + p.outcome_horizon_ms
-            != item.label_available_at_ms
+            or item.observed_close_at_ms + p.outcome_horizon_ms != item.label_available_at_ms
             or item.label_available_at_ms > p.evaluated_at_ms
             or item.label_available_at_ms > end_ms
         ):
@@ -242,9 +239,12 @@ def _baseline_brier(
     return sum(
         (
             sum(
-                ((rate - expected) ** 2 for rate, expected in zip(
-                    rates, _event_vector(row.realized_outcome), strict=True
-                )),
+                (
+                    (rate - expected) ** 2
+                    for rate, expected in zip(
+                        rates, _event_vector(row.realized_outcome), strict=True
+                    )
+                ),
                 ZERO,
             )
             for row in test
@@ -273,9 +273,7 @@ def review_offline_walk_forward(
         (validation, protocol.validation_start_ms, protocol.validation_end_ms),
         (test, protocol.test_start_ms, protocol.test_end_ms),
     ):
-        blocked = _check_split(
-            rows, p=protocol, start_ms=start_ms, end_ms=end_ms, seen_ids=seen
-        )
+        blocked = _check_split(rows, p=protocol, start_ms=start_ms, end_ms=end_ms, seen_ids=seen)
         if blocked is not None:
             return _denied(blocked, protocol.model_version)
     metrics_val, metrics_test = _metrics(validation), _metrics(test)
@@ -284,8 +282,7 @@ def review_offline_walk_forward(
         or min(metrics_test.outcome_counts) < MIN_PER_OUTCOME
     ):
         return OfflineModelValidation(
-            ValidationStatus.INSUFFICIENT_HOLDOUT, protocol.model_version,
-            metrics_val, metrics_test
+            ValidationStatus.INSUFFICIENT_HOLDOUT, protocol.model_version, metrics_val, metrics_test
         )
     baseline = _baseline_brier(validation, test)
     improvement = baseline - metrics_test.multiclass_brier
@@ -302,6 +299,5 @@ def review_offline_walk_forward(
     else:
         status = ValidationStatus.UNVERIFIED_OFFLINE_RESEARCH_ONLY
     return OfflineModelValidation(
-        status, protocol.model_version, metrics_val, metrics_test,
-        baseline, improvement
+        status, protocol.model_version, metrics_val, metrics_test, baseline, improvement
     )
