@@ -120,8 +120,6 @@ def test_manual_endpoint_not_exposed_without_explicit_preview_flag(
     stage: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("PRIVATE_PREVIEW_OPT_IN")
-    db = stage.app.state  # Existing stage fixture is separate from a newly created app.
-    assert db is not None
     config = ApiConfig(
         auth_mode="staging",
         database_url=URL,
