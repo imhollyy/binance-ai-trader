@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from decimal import Context, Decimal, ROUND_DOWN, localcontext
+from decimal import ROUND_DOWN, Context, Decimal, localcontext
 from typing import Literal
 from uuid import UUID
 
@@ -34,7 +34,6 @@ from binance_ai_trader.paper_execution import (
 )
 from binance_ai_trader.paper_spot import PaperCosts, SpotBuyIntent
 from binance_ai_trader.public_spot_observation import (
-    PublicSpotObservation,
     PublicSpotObservationClient,
     validate_public_observation,
 )
