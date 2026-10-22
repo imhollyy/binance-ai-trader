@@ -275,18 +275,25 @@ def test_isolated_locked_ai_buy_sell_replay_risk_and_net_pnl(engine: Engine) -> 
         assert account.paid_fees_usdt == position.entry_fee_usdt + position.exit_fee_usdt
         assert account.realized_pnl_usdt == position.realized_pnl_usdt
         assert account.cash_usdt == sold.cash_after_usdt
-    assert _execute(
-        engine,
-        sell,
-        sample,
-        replace(rules, bot_state=BotState.PAUSED),
-        closing=bought.trade_id,
-    ) == sold
+    assert (
+        _execute(
+            engine,
+            sell,
+            sample,
+            replace(rules, bot_state=BotState.PAUSED),
+            closing=bought.trade_id,
+        )
+        == sold
+    )
 
     with pytest.raises(PaperExecutionRejected, match="ai_gate:POSITION_NOT_OPEN_OR_MISMATCH"):
-        _execute(engine, _proposal(clock, "SELL").model_copy(
-            update={"signal_id": "isolated_sell_0002"}
-        ), sample, rules, closing=bought.trade_id)
+        _execute(
+            engine,
+            _proposal(clock, "SELL").model_copy(update={"signal_id": "isolated_sell_0002"}),
+            sample,
+            rules,
+            closing=bought.trade_id,
+        )
     assert _counts(engine) == (1, 3)
 
 
