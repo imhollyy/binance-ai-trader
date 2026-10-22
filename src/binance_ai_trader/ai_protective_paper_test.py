@@ -30,7 +30,6 @@ from binance_ai_trader.models import (
     PaperSpotJournalRow,
     PaperSpotObservedQuoteRow,
     PaperSpotPositionRow,
-    SpotCandleRow,
     TradingSettingsRow,
 )
 from binance_ai_trader.paper_execution import (

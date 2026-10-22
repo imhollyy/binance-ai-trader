@@ -91,7 +91,9 @@ def _row(opened: int, *, close: str = "100") -> SpotCandleRow:
     )
 
 
-def _observer(db: Engine, clock: int, *, ticker: str, code: int = 200) -> PublicSpotObservationClient:
+def _observer(
+    db: Engine, clock: int, *, ticker: str, code: int = 200
+) -> PublicSpotObservationClient:
     with Session(db) as session:
         rows = list(
             session.scalars(select(SpotCandleRow).order_by(SpotCandleRow.open_time_ms))
@@ -168,7 +170,7 @@ def test_mock_stop_then_take_profit_with_locked_control_fee_pnl_and_audit(
                 data=RiskSettings(
                     bot_enabled=True,
                     manual_approval=False,
-                    risk_per_trade_pct=5,
+                    risk_per_trade_pct=2,
                 ).model_dump(mode="json"),
             )
         )
@@ -306,8 +308,9 @@ def test_mock_stop_then_take_profit_with_locked_control_fee_pnl_and_audit(
     with Session(engine) as session:
         account = session.get(PaperSpotAccountRow, 1)
         assert account is not None
-        assert account.cash_usdt == D("1000") + stop.realized_pnl_delta_usdt + profit.realized_pnl_delta_usdt
-        assert account.realized_pnl_usdt == stop.realized_pnl_delta_usdt + profit.realized_pnl_delta_usdt
+        expected_pnl = stop.realized_pnl_delta_usdt + profit.realized_pnl_delta_usdt
+        assert account.cash_usdt == D("1000") + expected_pnl
+        assert account.realized_pnl_usdt == expected_pnl
 
 
 def test_non_disposable_target_is_denied_before_any_network() -> None:
