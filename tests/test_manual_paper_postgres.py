@@ -208,7 +208,8 @@ def test_manual_paper_account_consent_replay_quote_audit_and_close(engine: Engin
 
 
 def test_preview_risk_change_ledger_consistency_and_subsequent_paper_trades(
-    engine: Engine, monkeypatch: pytest.MonkeyPatch,
+    engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Fresh staging roles and PAPER journal must survive approved risk edit."""
     from fastapi.testclient import TestClient
@@ -249,14 +250,16 @@ def test_preview_risk_change_ledger_consistency_and_subsequent_paper_trades(
     ):
         headers = {"Origin": origin}
         viewer_login = viewer.post(
-            "/api/v1/auth/login", headers=headers,
-            json={"username":"viewer","password":view_password},
+            "/api/v1/auth/login",
+            headers=headers,
+            json={"username": "viewer", "password": view_password},
         )
         assert viewer_login.status_code == 200
         view_csrf = viewer_login.json()["csrf_token"]
         oper_login = operator.post(
-            "/api/v1/auth/login", headers=headers,
-            json={"username":"operator","password":operator_password},
+            "/api/v1/auth/login",
+            headers=headers,
+            json={"username": "operator", "password": operator_password},
         )
         assert oper_login.status_code == 200
         oper_csrf = oper_login.json()["csrf_token"]
@@ -270,34 +273,46 @@ def test_preview_risk_change_ledger_consistency_and_subsequent_paper_trades(
         assert settings_snapshot["version"] == 1
         data = settings_snapshot["settings"]
         desired = {**data, "risk_per_trade_pct": 0.35}
-        request = {"expected_version":1, "settings":desired}
+        request = {"expected_version": 1, "settings": desired}
 
-        assert viewer.put("/api/v1/settings", headers=view_approval,json=request).status_code == 403
-        assert operator.put(
-            "/api/v1/settings", headers={**approval,"Origin":"https://evil.example"},
-            json=request,
-        ).status_code == 403
-        assert operator.put(
-            "/api/v1/settings", headers=headers,json=request
-        ).status_code == 403
-        assert operator.put(
-            "/api/v1/settings", headers=approval,
-            json={**request,"settings":{**desired,"bot_enabled":True}},
-        ).status_code == 409
-        assert operator.put(
-            "/api/v1/settings", headers=approval,
-            json={**request,"settings":{**desired,"spot_capital_usdt":2000}},
-        ).status_code == 409
+        assert (
+            viewer.put("/api/v1/settings", headers=view_approval, json=request).status_code == 403
+        )
+        assert (
+            operator.put(
+                "/api/v1/settings",
+                headers={**approval, "Origin": "https://evil.example"},
+                json=request,
+            ).status_code
+            == 403
+        )
+        assert operator.put("/api/v1/settings", headers=headers, json=request).status_code == 403
+        assert (
+            operator.put(
+                "/api/v1/settings",
+                headers=approval,
+                json={**request, "settings": {**desired, "bot_enabled": True}},
+            ).status_code
+            == 409
+        )
+        assert (
+            operator.put(
+                "/api/v1/settings",
+                headers=approval,
+                json={**request, "settings": {**desired, "spot_capital_usdt": 2000}},
+            ).status_code
+            == 409
+        )
         assert _totals(engine) == before
 
-        saved = operator.put("/api/v1/settings",headers=approval,json=request)
+        saved = operator.put("/api/v1/settings", headers=approval, json=request)
         assert saved.status_code == 200
         assert saved.json()["version"] == 2
         assert saved.json()["settings"]["bot_enabled"] is False
-        assert operator.put("/api/v1/settings",headers=approval,json=request).status_code == 409
+        assert operator.put("/api/v1/settings", headers=approval, json=request).status_code == 409
 
         with Session(engine) as db:
-            account = db.get(PaperSpotAccountRow,1)
+            account = db.get(PaperSpotAccountRow, 1)
             assert account is not None and account.settings_version == 2
             assert account.cash_usdt == before[3]
             assert db.scalar(select(func.count()).select_from(AuditRow)) == 2
@@ -306,37 +321,39 @@ def test_preview_risk_change_ledger_consistency_and_subsequent_paper_trades(
         # The next real PAPER request against a fresh mocked public quote works,
         # rather than failing because settings version drifted from the ledger.
         now = 1_800_000_600_200
-        newer = _request(request_id=UUID("00000000-0000-4000-8000-000000000014"),
-                         budget="50")
-        created = run_manual_paper_once(engine,newer,observer=_mock_observer(now=now))
+        newer = _request(request_id=UUID("00000000-0000-4000-8000-000000000014"), budget="50")
+        created = run_manual_paper_once(engine, newer, observer=_mock_observer(now=now))
         assert created.receipt.event_type == "spot_buy"
         assert created.receipt.cash_after_usdt < before[3]
-        assert _totals(engine)[:3] == (2,4,3)
+        assert _totals(engine)[:3] == (2, 4, 3)
 
         # Do not silently change risk while an open PAPER position exists.
-        proposed = {**desired, "risk_per_trade_pct":0.4}
-        assert operator.put(
-            "/api/v1/settings", headers=approval,
-            json={"expected_version":2,"settings":proposed},
-        ).status_code == 409
+        proposed = {**desired, "risk_per_trade_pct": 0.4}
+        assert (
+            operator.put(
+                "/api/v1/settings",
+                headers=approval,
+                json={"expected_version": 2, "settings": proposed},
+            ).status_code
+            == 409
+        )
         with Session(engine) as db:
-            account = db.get(PaperSpotAccountRow,1)
+            account = db.get(PaperSpotAccountRow, 1)
             assert account is not None and account.settings_version == 2
 
         closed = run_manual_paper_once(
             engine,
-            _request("sell", UUID("00000000-0000-4000-8000-000000000015"),
-                     budget=None,stop=None),
-            observer=_mock_observer(now=now+60_000),
+            _request("sell", UUID("00000000-0000-4000-8000-000000000015"), budget=None, stop=None),
+            observer=_mock_observer(now=now + 60_000),
         )
         assert closed.receipt.event_type == "spot_sell"
-        assert _totals(engine)[:3] == (2,5,4)
+        assert _totals(engine)[:3] == (2, 5, 4)
 
     # Independent engine restart persists both ledger and settings version.
-    fresh = create_engine(URL,pool_pre_ping=True)
+    fresh = create_engine(URL, pool_pre_ping=True)
     try:
         with Session(fresh) as db:
-            account = db.get(PaperSpotAccountRow,1)
+            account = db.get(PaperSpotAccountRow, 1)
             assert account is not None
             assert account.settings_version == 2
             assert account.cash_usdt == closed.receipt.cash_after_usdt
