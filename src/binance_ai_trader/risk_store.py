@@ -92,16 +92,24 @@ def install_profile(
     expected_runtime_revision: int,
     state: BotState = BotState.STOPPED,
 ) -> int:
-    """Store explicitly confirmed profile and atomically activate its exact version."""
+    """Store explicitly confirmed profile without enabling the bot."""
     _isolated(engine)
+    if state is not BotState.STOPPED:
+        raise RiskStoreRejected("initial_profile_must_start_stopped")
     if type(user_confirmed) is not bool or not user_confirmed or not validate_profile(profile):
         raise RiskStoreRejected("explicitly_confirmed_complete_profile_required")
     with Session(engine) as session, session.begin():
         session.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": _LOCK_ID})
-        current = session.execute(
-            text("SELECT revision FROM ai_risk_runtime WHERE id=1 FOR UPDATE")
-        ).scalar_one_or_none()
-        if current is None:
+        runtime = (
+            session.execute(
+                text(
+                    "SELECT revision,active_profile_version FROM ai_risk_runtime WHERE id=1 FOR UPDATE"
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if runtime is None:
             if expected_runtime_revision != 0 or profile.profile_version != 1:
                 raise RiskStoreRejected("stale_initial_profile_version")
             session.execute(
@@ -125,7 +133,12 @@ def install_profile(
                 },
             )
             return 1
-        if current != expected_runtime_revision or profile.profile_version != current + 1:
+        current_revision = int(runtime["revision"])
+        active_profile_version = int(runtime["active_profile_version"])
+        if (
+            current_revision != expected_runtime_revision
+            or profile.profile_version != active_profile_version + 1
+        ):
             raise RiskStoreRejected("stale_profile_revision")
         session.execute(
             text(
@@ -137,19 +150,19 @@ def install_profile(
                 "data": json.dumps(_profile_json(profile)),
             },
         )
-        changed = session.execute(
+        updated_revision = session.execute(
             text(
-                "UPDATE ai_risk_runtime SET active_profile_version=:version,active_risk_level=:level,revision=revision+1 WHERE id=1 AND revision=:expected"
+                "UPDATE ai_risk_runtime SET active_profile_version=:version,active_risk_level=:level,revision=revision+1 WHERE id=1 AND revision=:expected RETURNING revision"
             ),
             {
                 "version": profile.profile_version,
                 "level": profile.risk_level,
                 "expected": expected_runtime_revision,
             },
-        ).rowcount
-        if changed != 1:
+        ).scalar_one_or_none()
+        if updated_revision is None:
             raise RiskStoreRejected("stale_profile_revision")
-        return current + 1
+        return int(updated_revision)
 
 
 def set_bot_state(engine: Engine, *, state: BotState, expected_revision: int) -> int:
@@ -178,7 +191,7 @@ def set_bot_state(engine: Engine, *, state: BotState, expected_revision: int) ->
         session.execute(
             text(
                 "INSERT INTO ai_risk_audit(event_id,signal_id,profile_version,bot_revision,decision_json) "
-                "SELECT :event,:signal,active_profile_version,revision+1,CAST(:payload AS json) FROM ai_risk_runtime WHERE id=1"
+                "SELECT :event,:signal,active_profile_version,revision,CAST(:payload AS json) FROM ai_risk_runtime WHERE id=1"
             ),
             {
                 "event": f"botstate_{expected_revision + 1}",
@@ -257,6 +270,8 @@ def evaluate_and_reserve(
             {"level": runtime["active_risk_level"] if runtime else -1, "version": profile_version},
         ).scalar_one_or_none()
         profile = _profile(stored) if stored is not None else None
+        if runtime is None or runtime["active_profile_version"] != profile_version:
+            profile = None
         reserved = cast(
             Decimal,
             session.execute(
@@ -278,10 +293,9 @@ def evaluate_and_reserve(
             .mappings()
             .one_or_none()
         )
-        stale = runtime is None or runtime["active_profile_version"] != profile_version
         effective = replace(
             request,
-            settings_version=-1 if stale else profile_version,
+            settings_version=request.settings_version,
             bot_state=BotState.STOPPED if runtime is None else BotState(runtime["bot_state"]),
             current_open_capital=Decimal(reserved)
             + (Decimal(0) if snapshot is None else Decimal(snapshot["open_capital_usdt"])),

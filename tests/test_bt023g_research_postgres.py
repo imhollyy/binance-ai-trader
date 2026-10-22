@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
+from sqlalchemy.exc import DBAPIError
 
 from binance_ai_trader.ai_research_store import (
     ResearchStoreRejected,
@@ -112,3 +113,50 @@ def test_concurrent_duplicate_prediction_is_recorded_once(engine: Engine) -> Non
             {"id": row.signal_id},
         ).scalar_one()
     assert count == 1
+
+
+def test_append_only_research_tables_reject_update_delete_and_truncate(engine: Engine) -> None:
+    with engine.connect() as conn:
+        now: int = conn.execute(
+            text("SELECT FLOOR(EXTRACT(EPOCH FROM clock_timestamp())*1000)::bigint")
+        ).scalar_one()
+    close = now // 60_000 * 60_000 - 1
+    row = ResearchPrediction(
+        ModelAction.HOLD,
+        "append_only_signal_0001",
+        "model-v1",
+        "1.0",
+        "BTCUSDT",
+        "1m",
+        close,
+        close + 60_000,
+        None,
+        False,
+        "RESEARCH_ONLY",
+        "c" * 64,
+        "d" * 64,
+    )
+    append_prediction(engine, row)
+    # Outcome insertion is gated by the database clock and cannot be backdated.
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "SELECT pg_sleep(GREATEST(0, (:due - FLOOR(EXTRACT(EPOCH FROM clock_timestamp())*1000))/1000.0))"
+            ),
+            {"due": close + 60_000},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO ai_research_prediction_outcomes(signal_id,observed_outcome,source_sha256) VALUES(:signal,'HOLD',:hash)"
+            ),
+            {"signal": row.signal_id, "hash": "e" * 64},
+        )
+    for table in ("ai_research_prediction_log", "ai_research_prediction_outcomes"):
+        truncate = (
+            "TRUNCATE ai_research_prediction_log, ai_research_prediction_outcomes"
+            if table == "ai_research_prediction_log"
+            else "TRUNCATE ai_research_prediction_outcomes"
+        )
+        for statement in (f"UPDATE {table} SET id=id", f"DELETE FROM {table}", truncate):
+            with pytest.raises(DBAPIError, match="append only"), engine.begin() as conn:
+                conn.execute(text(statement))
