@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from decimal import ROUND_DOWN, Context, Decimal, localcontext
+from decimal import ROUND_DOWN, Context, Decimal, Inexact, localcontext
 from typing import Literal
 from uuid import UUID
 
@@ -41,7 +41,11 @@ from binance_ai_trader.risk_schemas import RiskSettings
 
 LOCK_KEY = 7_812_243_021  # separate from the worker's process-scoped lock
 COSTS = PaperCosts()
-SCALE = Decimal("0.000000000000000001")
+# Derived fee (3 decimals) and slippage (4 decimals) must fit the ledger's
+# exact 18-decimal storage: price 6 places + quantity 5 + slippage 4 + fee 3 = 18.
+# Fail closed on more precise public references rather than silently round them.
+PRICE_SCALE = Decimal("0.000001")
+QUANTITY_SCALE = Decimal("0.00001")
 
 
 class ManualPaperRequest(BaseModel):
@@ -213,7 +217,9 @@ def run_manual_paper_once(
 
             sample = price_source.observe(symbol=request.symbol, interval="1m", limit=100)
             validate_public_observation(sample, now_ms=price_source.now_ms())
-            reference = _money(sample.reference_price)
+            with localcontext(Context(prec=64, traps=[Inexact])):
+                reference = sample.reference_price.quantize(PRICE_SCALE)
+            reference = _money(reference)
 
             def locked_verify(
                 session: Session,
@@ -257,10 +263,10 @@ def run_manual_paper_once(
                         slip_factor = Decimal(1) + Decimal(COSTS.slippage_bps) / Decimal(10_000)
                         quantity = (
                             request.budget_usdt / (reference * fee_factor * slip_factor)
-                        ).quantize(SCALE, rounding=ROUND_DOWN)
+                        ).quantize(QUANTITY_SCALE, rounding=ROUND_DOWN)
                         stop = (
                             reference * (Decimal(1) - request.stop_distance_pct / 100)
-                        ).quantize(SCALE, rounding=ROUND_DOWN)
+                        ).quantize(PRICE_SCALE, rounding=ROUND_DOWN)
                     if quantity <= 0 or stop <= 0:
                         raise PaperExecutionRejected("invalid_manual_paper_allocation")
                     receipt = open_paper_spot(
