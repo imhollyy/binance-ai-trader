@@ -84,6 +84,7 @@ def review(
 ) -> DepthCostReview:
     return review_hypothetical_spot_depth(
         sample,
+        expected_symbol="BTCUSDT",
         quantity=quantity,
         hypothetical_taker_fee_bps=fee,
         adverse_slippage_bps=slippage,

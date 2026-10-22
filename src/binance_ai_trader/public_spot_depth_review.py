@@ -188,6 +188,7 @@ def _fill_vwap(levels: tuple[DepthLevel, ...], amount: Decimal) -> Decimal | Non
 def review_hypothetical_spot_depth(
     sample: PublicSpotDepth,
     *,
+    expected_symbol: str,
     quantity: Decimal,
     hypothetical_taker_fee_bps: Decimal | None,
     adverse_slippage_bps: Decimal,
@@ -201,6 +202,7 @@ def review_hypothetical_spot_depth(
         not isinstance(sample, PublicSpotDepth)
         or sample.source != "binance_public_spot_depth"
         or sample.symbol not in SUPPORTED_SYMBOLS
+        or sample.symbol != expected_symbol
         or sample.exchange_event_time_ms is not None
         or type(sample.update_id) is not int
         or sample.update_id <= 0
