@@ -279,7 +279,11 @@ def create_app(
                                 status_code=409, detail="Preview settings version changed"
                             )
                         prior = RiskSettings.model_validate(current.data)
-                        excluded = {"risk_per_trade_pct", "daily_loss_limit_pct", "max_drawdown_pct"}
+                        excluded = {
+                            "risk_per_trade_pct",
+                            "daily_loss_limit_pct",
+                            "max_drawdown_pct",
+                        }
                         if (
                             prior.model_dump(exclude=excluded)
                             != payload.settings.model_dump(exclude=excluded)
@@ -287,7 +291,8 @@ def create_app(
                             or not prior.manual_approval
                         ):
                             raise HTTPException(
-                                status_code=409, detail="Preview permits bounded manual PAPER risk only"
+                                status_code=409,
+                                detail="Preview permits bounded manual PAPER risk only",
                             )
                         account = session.scalar(
                             select(PaperSpotAccountRow)
@@ -313,7 +318,8 @@ def create_app(
                                 .limit(1)
                             ) is not None:
                                 raise HTTPException(
-                                    status_code=409, detail="Close open PAPER position before editing risk"
+                                    status_code=409,
+                                    detail="Close open PAPER position before editing risk",
                                 )
                     if payload.expected_version == 0:
                         session.add(TradingSettingsRow(id=1, version=1, data=data, modified_at=now))
