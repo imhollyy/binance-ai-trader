@@ -43,12 +43,27 @@ def upgrade() -> None:
             name="ck_prediction_causal",
         ),
         sa.CheckConstraint(
+            "length(signal_id) BETWEEN 8 AND 128 AND length(model_version) BETWEEN 1 AND 64",
+            name="ck_prediction_names",
+        ),
+        sa.CheckConstraint(
+            "outcome_due_at_ms-observed_close_at_ms BETWEEN 60000 AND 86400000",
+            name="ck_prediction_horizon",
+        ),
+        sa.CheckConstraint(
+            "CASE interval WHEN '1m' THEN MOD(observed_close_at_ms+1,60000)=0 AND MOD(outcome_due_at_ms-observed_close_at_ms,60000)=0 "
+            "WHEN '5m' THEN MOD(observed_close_at_ms+1,300000)=0 AND MOD(outcome_due_at_ms-observed_close_at_ms,300000)=0 "
+            "WHEN '15m' THEN MOD(observed_close_at_ms+1,900000)=0 AND MOD(outcome_due_at_ms-observed_close_at_ms,900000)=0 ELSE FALSE END",
+            name="ck_prediction_closed_grid",
+        ),
+        sa.CheckConstraint(
             "length(artifact_sha256)=64 AND length(feature_sha256)=64", name="ck_prediction_hashes"
         ),
         sa.CheckConstraint(
             "(prob_win IS NULL AND prob_loss IS NULL AND prob_flat IS NULL) OR "
             "(prob_win BETWEEN 0 AND 1 AND prob_loss BETWEEN 0 AND 1 AND prob_flat BETWEEN 0 AND 1 "
-            "AND prob_win + prob_loss + prob_flat = 1)",
+            "AND prob_win + prob_loss + prob_flat = 1 AND prob_win <> 'NaN'::numeric "
+            "AND prob_loss <> 'NaN'::numeric AND prob_flat <> 'NaN'::numeric)",
             name="ck_prediction_probabilities",
         ),
     )
