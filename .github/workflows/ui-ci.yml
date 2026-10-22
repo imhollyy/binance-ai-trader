@@ -40,7 +40,7 @@ jobs:
         env:
           NEXT_PUBLIC_TP_STAGING_PREVIEW: enabled
           NEXT_PUBLIC_STAGING_API_ORIGIN: https://api.staging.example
-        run: npx playwright test e2e/staging-preview.spec.ts
+        run: npx playwright test e2e/staging-preview.spec.ts e2e/staging-console.spec.ts
       - name: Retain responsive chart QA screenshots
         if: always()
         uses: actions/upload-artifact@v4
