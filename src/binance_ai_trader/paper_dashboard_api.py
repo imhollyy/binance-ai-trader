@@ -46,6 +46,7 @@ class PaperOverviewQuote(BaseModel):
     reference_price: Decimal
     fee_bps: int
     slippage_bps: int
+    spread_bps: int | None
 
 
 class PaperOverviewEvent(BaseModel):
@@ -216,6 +217,7 @@ def register_paper_dashboard_route(
                                     reference_price=by_journal[e.id].reference_price,
                                     fee_bps=by_journal[e.id].fee_bps,
                                     slippage_bps=by_journal[e.id].slippage_bps,
+                                    spread_bps=by_journal[e.id].spread_bps,
                                 )
                                 if e.id in by_journal
                                 else None
