@@ -57,3 +57,34 @@ olan kullanıcı metnidir, bu açıklama onun yerine geçmez. İş kaydı: #88.
 Original UTF-8 kaynak 1.161 metin satırı, CRLF ve son satır yeni satır
 ile 23.043 bayttır. Testler bu kaynak dosyanın değişmediğini kontrol eder.
 Anayasa değişiklikleri yalnız kullanıcının açık kararıyla v1.1 / v2 olabilir.
+
+## BT-013 izole PAPER karar ve defter provası
+
+- `ai_market_regime.py` yalnız kullanıcı/uygulama tarafından AÇIKÇA seçilen üç ayrı
+  zaman dilimini (şu an public veri adaptörünün desteklediği 1m/5m/15m) kullanır.
+  Kapalı, kesintisiz, güncel en az 30 mum olmadan rejim hazır sayılmaz.
+  Direction, hacim ve gözlenen göreceli range expansion betimseldir; bilimsel
+  kalibre edilmiş yön tahmini veya kesin kâr olasılığı değildir.
+- Üç zaman dilimi çelişirse `UNCERTAIN`; veri hatasında `DATA_QUALITY_FAILURE`.
+  BUY için yalnız doğrulanmış UPTREND/STRONG_UPTREND uyumu kabul edilir.
+- `ai_paper_dry_run.py`, önceden bağımsız risk kontrolü yapılmış BUY sinyalini
+  immutable ve **kalıcı olmayan** `PaperSpotBook` simülatörüne geçirir.
+  Sembole, kapalı muma, rejime ve ücrete ait veriler modelin JSON'undan alınmaz.
+- İki yönlü taker fee + slippage ve iki tarafta yarım spread baz alınarak
+  `paid_fees_usdt`, `realized_pnl_usdt` ve gerçek net nakit doğrulanır.
+  Mevcut simülatör tam sayı bps işlem ücreti ve kayma kabul ettiği için
+  doğrulanmış fractional bps ücreti düşürerek yuvarlamak yerine giriş reddedilir.
+- AI SELL yalnız defterde gerçekten var olan bir pozisyonun tam miktarını azaltabilir.
+  RUNNING, PAUSED ve EMERGENCY_FLATTEN sırasında doğrulanmış fiyatta sanal kapanış
+  test edilir. STOPPED sırasında henüz tanımlanmamış `stop_behavior` için
+  otomatik çıkış varsayımı yapılmaz; bu bir üretim stop emri değildir.
+- Testler sentetik OHLCV/risksiz bakiyede çalışır; burada *kalibrasyon testi veya
+  finansal getiri üstünlüğü* iddiası yoktur.
+
+**Sınırlar:** Yeni fonksiyonlar herhangi bir HTTP endpoint, worker, PostgreSQL
+ledger, gerçek Binance emri veya Cloudflare erişimine BAĞLI DEĞİLDİR.
+Sanal BUY→SELL yalnız fonksiyon çağrısı içindeki in-memory defterde gösterilir.
+Kalıcı veritabanı bağlama, atomik tekrar kontrol, gerçek stop/TP motoru,
+kaynak veri provenance'ı, fee precision genişletmesi, model calibration,
+çok daha zengin regime/flow analizi ve ileri walk-forward testler ayrı
+güvenlik-kritik işlerdir. Canlı işlem ve Futures kesinlikle kapalıdır.
