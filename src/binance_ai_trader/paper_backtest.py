@@ -166,8 +166,10 @@ def run_paper_spot_backtest(
         not isinstance(costs, PaperCosts)
         or type(costs.fee_bps) is not int
         or type(costs.slippage_bps) is not int
+        or type(costs.spread_bps) is not int
         or not 0 <= costs.fee_bps <= 100
         or not 0 <= costs.slippage_bps <= 100
+        or not 0 <= costs.spread_bps <= 100
     ):
         raise PaperBacktestRejected("invalid_simulation_costs")
     if type(warmup_candles) is not int or not 50 <= warmup_candles <= 1000:

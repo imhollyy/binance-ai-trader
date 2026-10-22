@@ -186,6 +186,13 @@ class PaperSpotPositionRow(Base):
     )
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    @property
+    def gross_realized_pnl_usdt(self) -> Decimal | None:
+        """Fill-price PnL before fees, derived without changing ledger history."""
+        if self.realized_pnl_usdt is None or self.exit_fee_usdt is None:
+            return None
+        return self.realized_pnl_usdt + self.entry_fee_usdt + self.exit_fee_usdt
+
 
 class PaperSpotJournalRow(Base):
     """Append-only accounting facts; UPDATE, DELETE and TRUNCATE fail in PostgreSQL."""
@@ -269,6 +276,10 @@ class PaperSpotObservedQuoteRow(Base):
             "fee_bps BETWEEN 0 AND 100 AND slippage_bps BETWEEN 0 AND 100",
             name="ck_paper_observed_costs",
         ),
+        CheckConstraint(
+            "spread_bps IS NULL OR spread_bps BETWEEN 0 AND 100",
+            name="ck_paper_observed_spread",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
@@ -284,6 +295,7 @@ class PaperSpotObservedQuoteRow(Base):
     reference_price: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
     fee_bps: Mapped[int] = mapped_column(Integer, nullable=False)
     slippage_bps: Mapped[int] = mapped_column(Integer, nullable=False)
+    spread_bps: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

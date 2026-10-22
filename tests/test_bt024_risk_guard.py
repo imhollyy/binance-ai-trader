@@ -134,6 +134,7 @@ def test_shadow_chain_audits_paper_suitability_without_order_intent() -> None:
         _profile(),
         _request(),
         evidence,
+        approved_model_versions=frozenset({"model-v1"}),
         now_ms=70_000,
         max_data_age_ms=60_000,
         audit=audit,
@@ -143,3 +144,35 @@ def test_shadow_chain_audits_paper_suitability_without_order_intent() -> None:
     assert result.reason_code == "MODEL_CALIBRATION_UNVERIFIED"
     assert not result.paper_suitability and not result.order_intent_created
     assert audit.recorded == [(prediction, result)]
+
+
+def test_research_model_cannot_pass_model_evidence_gate() -> None:
+    prediction = ResearchPrediction(
+        ModelAction.BUY,
+        "shadow_signal_0002",
+        "research-v1",
+        "1.0",
+        "BTCUSDT",
+        "1m",
+        60_000,
+        960_000,
+        None,
+        False,
+        "UNCALIBRATED_RESEARCH_ONLY",
+    )
+    seen: list[ShadowPreflightResult] = []
+    result = evaluate_shadow_preflight(
+        prediction,
+        _profile(),
+        _request(),
+        None,
+        approved_model_versions=frozenset(),
+        now_ms=70_000,
+        max_data_age_ms=60_000,
+        audit=lambda _prediction, outcome: seen.append(outcome),
+    )
+    assert result.status == "BLOCKED"
+    assert result.reason_code == "MODEL_NOT_APPROVED"
+    assert not result.paper_suitability
+    assert not result.order_intent_created
+    assert seen == [result]

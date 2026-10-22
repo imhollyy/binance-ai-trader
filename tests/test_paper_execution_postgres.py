@@ -114,6 +114,11 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
         open_paper_spot(session, _intent("first", price="101"), "buy-first")
     with (
         Session(engine) as session,
+        pytest.raises(PaperExecutionRejected, match="paper_idempotency_conflict"),
+    ):
+        open_paper_spot(session, _intent("first"), "buy-first", costs=PaperCosts(spread_bps=1))
+    with (
+        Session(engine) as session,
         pytest.raises(PaperExecutionRejected, match="duplicate_paper_trade_id"),
     ):
         open_paper_spot(session, _intent("first"), "buy-other")
@@ -143,6 +148,16 @@ def test_atomic_paper_open_close_replay_concurrency_and_rollback(engine: Engine)
     assert closed.cash_after_usdt == D("1009.685005000000000000")
     assert closed.realized_pnl_delta_usdt == D("9.685005000000000000")
     assert _counts(engine) == (1, 3, 1)
+    with Session(engine) as session:
+        position = session.scalar(
+            select(PaperSpotPositionRow).where(PaperSpotPositionRow.trade_id == "first")
+        )
+        assert position is not None
+        assert position.realized_pnl_usdt is not None
+        assert position.exit_fee_usdt is not None
+        assert position.gross_realized_pnl_usdt == (
+            position.realized_pnl_usdt + position.entry_fee_usdt + position.exit_fee_usdt
+        )
     with Session(engine) as session:
         assert close_paper_spot(session, "first", D("110"), "sell-first") == closed
     with (

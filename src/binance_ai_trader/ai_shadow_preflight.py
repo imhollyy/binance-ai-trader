@@ -62,6 +62,7 @@ def evaluate_shadow_preflight(
     request: RiskRequest,
     evidence: ShadowEvidence | None,
     *,
+    approved_model_versions: frozenset[str],
     now_ms: int,
     max_data_age_ms: int,
     audit: Callable[[ResearchPrediction, ShadowPreflightResult], None],
@@ -107,6 +108,17 @@ def evaluate_shadow_preflight(
     if prediction.action not in (ModelAction.BUY, ModelAction.SELL):
         result = ShadowPreflightResult(
             status, "INVALID_MODEL_ACTION", prediction.signal_id, None, False
+        )
+        audit(prediction, result)
+        return result
+    # Model approval is an independent deployment setting. A prediction's
+    # self-reported probability_verified bit is never sufficient authority.
+    if (
+        type(approved_model_versions) is not frozenset
+        or prediction.model_version not in approved_model_versions
+    ):
+        result = ShadowPreflightResult(
+            status, "MODEL_NOT_APPROVED", prediction.signal_id, None, False
         )
         audit(prediction, result)
         return result

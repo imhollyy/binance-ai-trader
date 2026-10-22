@@ -28,10 +28,11 @@ class PaperSpotRejected(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class PaperCosts:
-    """Explicit hypothetical taker fee and adverse execution price slippage."""
+    """Explicit hypothetical taker fee, spread and adverse price slippage."""
 
     fee_bps: int = 10
     slippage_bps: int = 5
+    spread_bps: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,9 +61,15 @@ class PaperSpotExit:
     trade_id: str
     symbol: str
     exit_fill_price: Decimal
+    entry_fee_usdt: Decimal
     exit_fee_usdt: Decimal
     net_proceeds_usdt: Decimal
     realized_pnl_usdt: Decimal
+
+    @property
+    def gross_realized_pnl_usdt(self) -> Decimal:
+        """Fill-price PnL before entry and exit fees; spread/slippage remain in fills."""
+        return self.realized_pnl_usdt + self.entry_fee_usdt + self.exit_fee_usdt
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,15 +97,21 @@ def _positive(value: Decimal) -> bool:
     return isinstance(value, Decimal) and value.is_finite() and value > 0
 
 
-def _costs(costs: PaperCosts) -> tuple[Decimal, Decimal]:
+def _costs(costs: PaperCosts) -> tuple[Decimal, Decimal, Decimal]:
     if (
         type(costs.fee_bps) is not int
         or type(costs.slippage_bps) is not int
+        or type(costs.spread_bps) is not int
         or not 0 <= costs.fee_bps <= 100
         or not 0 <= costs.slippage_bps <= 100
+        or not 0 <= costs.spread_bps <= 100
     ):
         raise PaperSpotRejected("invalid_simulation_costs")
-    return Decimal(costs.fee_bps) / BPS, Decimal(costs.slippage_bps) / BPS
+    return (
+        Decimal(costs.fee_bps) / BPS,
+        Decimal(costs.slippage_bps) / BPS,
+        Decimal(costs.spread_bps) / BPS,
+    )
 
 
 def _validate_book(book: PaperSpotBook, settings: RiskSettings) -> None:
@@ -158,7 +171,7 @@ def simulate_spot_buy(
         raise PaperSpotRejected("invalid_price_or_quantity")
     if intent.stop_price >= intent.reference_price:
         raise PaperSpotRejected("stop_not_below_entry")
-    fee_rate, slip_rate = _costs(costs if costs is not None else PaperCosts())
+    fee_rate, slip_rate, spread_rate = _costs(costs if costs is not None else PaperCosts())
 
     # Prevent trusting a stale open-position/reservation snapshot.
     reserved = sum((position.entry_notional_usdt for position in book.positions), Decimal(0))
@@ -169,11 +182,11 @@ def simulate_spot_buy(
     ):
         raise PaperSpotRejected("risk_snapshot_mismatch")
 
-    entry_fill = intent.reference_price * (1 + slip_rate)
+    entry_fill = intent.reference_price * (1 + spread_rate / 2) * (1 + slip_rate)
     entry_notional = intent.quantity * entry_fill
     entry_fee = entry_notional * fee_rate
     spent = entry_notional + entry_fee
-    stop_exit_fill = intent.stop_price * (1 - slip_rate)
+    stop_exit_fill = intent.stop_price * (1 - spread_rate / 2) * (1 - slip_rate)
     expected_exit_fee = intent.quantity * stop_exit_fill * fee_rate
     estimated_stop_loss = spent - intent.quantity * stop_exit_fill + expected_exit_fee
     stop_distance_pct = (entry_fill - intent.stop_price) * HUNDRED / entry_fill
@@ -226,12 +239,12 @@ def simulate_spot_sell(
 
     if not _positive(reference_price):
         raise PaperSpotRejected("invalid_exit_reference_price")
-    fee_rate, slip_rate = _costs(costs if costs is not None else PaperCosts())
+    fee_rate, slip_rate, spread_rate = _costs(costs if costs is not None else PaperCosts())
     matching = [position for position in book.positions if position.trade_id == trade_id]
     if len(matching) != 1:
         raise PaperSpotRejected("paper_position_not_open")
     position = matching[0]
-    exit_fill = reference_price * (1 - slip_rate)
+    exit_fill = reference_price * (1 - spread_rate / 2) * (1 - slip_rate)
     gross = position.quantity * exit_fill
     exit_fee = gross * fee_rate
     proceeds = gross - exit_fee
@@ -240,6 +253,7 @@ def simulate_spot_sell(
         trade_id=trade_id,
         symbol=position.symbol,
         exit_fill_price=exit_fill,
+        entry_fee_usdt=position.entry_fee_usdt,
         exit_fee_usdt=exit_fee,
         net_proceeds_usdt=proceeds,
         realized_pnl_usdt=pnl,

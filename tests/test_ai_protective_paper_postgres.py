@@ -60,7 +60,7 @@ pytestmark = pytest.mark.skipif(
     reason="Fresh disposable localhost trader_protective_close_test required",
 )
 OPERATOR = "e" * 64
-COSTS = PaperCosts(fee_bps=10, slippage_bps=5)
+COSTS = PaperCosts(fee_bps=10, slippage_bps=5, spread_bps=4)
 
 
 @pytest.fixture(scope="module")
@@ -294,6 +294,10 @@ def test_mock_stop_then_take_profit_with_locked_control_fee_pnl_and_audit(
         assert quote.reference_price == D("98.5")
         assert quote.fee_bps == 10
         assert quote.slippage_bps == 5
+        assert quote.spread_bps == 4
+        assert position.stop_price == D("99")
+        assert position.exit_fill_price is not None
+        assert position.exit_fill_price < position.stop_price  # gap plus adverse costs
 
     # Synthetic next mark: after five new fully closed candles, the price is
     # above a separately specified TARGET. Same protected engine, no live API.

@@ -239,6 +239,7 @@ def simulate_isolated_protective_close_once(
                 reference_price=_money(sample.reference_price),
                 fee_bps=costs.fee_bps,
                 slippage_bps=costs.slippage_bps,
+                spread_bps=costs.spread_bps,
             )
         )
 
