@@ -272,6 +272,7 @@ def test_isolated_locked_ai_buy_sell_replay_risk_and_net_pnl(engine: Engine) -> 
         account = session.get(PaperSpotAccountRow, 1)
         assert position is not None and account is not None
         assert position.status == "closed"
+        assert position.exit_fee_usdt is not None
         assert account.paid_fees_usdt == position.entry_fee_usdt + position.exit_fee_usdt
         assert account.realized_pnl_usdt == position.realized_pnl_usdt
         assert account.cash_usdt == sold.cash_after_usdt
