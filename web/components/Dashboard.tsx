@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import PaperSpotLedger from "./PaperSpotLedger";
 import PaperDashboardOverview from "./PaperDashboardOverview";
+import RiskCapabilitiesPanel from "./RiskCapabilitiesPanel";
 import { StoredCloseChart } from "./RecordedPaperCharts";
 
 type Section = "dashboard" | "market" | "bot" | "risk" | "ai" | "positions" | "logs";
@@ -331,6 +332,7 @@ export default function Dashboard() {
           <label>Risk seviyesi<select aria-label="Risk seviyesi" value="" disabled><option value="">Bu API'de sürümlü profil seçimi yok</option>
             <option value="1">1 · Çok düşük</option><option value="2">2 · Düşük</option><option value="3">3 · Dengeli</option><option value="4">4 · Yüksek</option><option value="5">5 · Agresif</option></select></label>
           <div className="warning"><ShieldAlert size={19}/><div><strong>Risk profili değiştirilemiyor.</strong> Mevcut BT-024 profil deposu bu API'nin PAPER ayar veritabanına bağlı değil. Profil limiti veya kullanıcı onayı varsayılmıyor; profil endpoint'i ve audit bağlantısı sağlanana kadar yeni risk ayarı burada kaydedilemez.</div></div>
+          <RiskCapabilitiesPanel connected={connected} apiAddress={address} token={secret}/>
           <h3>PAPER bütçe ve defter kaynağı</h3><p>Başlangıç sermayesi ve kullanılabilir nakit yalnızca kaydedilmiş PAPER ledger üzerinden okunur. Bu ekran sermaye değerini değiştirmez.</p>
           <PaperDashboardOverview connected={connected} apiAddress={address} token={secret}/>
           <p>Spot dışındaki yürütme ve Futures ayarları bu arayüzde pasiftir.</p>
