@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from enum import StrEnum
+from typing import TypedDict
 
 from binance_ai_trader.ai_constitution import SPOT_SUPPORTED, BotState
 from binance_ai_trader.market_data import MarketDataError
@@ -64,6 +65,13 @@ class ProtectionDecision:
     def would_execute(self) -> bool:
         """Explicit invariant: this component can never execute a trade."""
         return False
+
+
+class _ProtectionFields(TypedDict):
+    trade_id: str
+    observed_price: Decimal
+    stop_price: Decimal
+    take_profit_price: Decimal | None
 
 
 class BotControlRejected(ValueError):
@@ -196,7 +204,7 @@ def evaluate_paper_position_protection(
     except (MarketDataError, ValueError, TypeError, AttributeError):
         return _blocked("PUBLIC_QUOTE_STALE_OR_INVALID", position.trade_id)
     price = sample.reference_price
-    base = {
+    base: _ProtectionFields = {
         "trade_id": position.trade_id,
         "observed_price": price,
         "stop_price": position.stop_price,

@@ -101,7 +101,9 @@ def observer(
         if request.url.path == "/api/v3/klines":
             rows = [kline(START - (60 - i) * 60_000) for i in range(60)]
             if damaged:
-                rows[20][6] = int(rows[20][6]) + 60_000
+                original_close = rows[20][6]
+                assert isinstance(original_close, int)
+                rows[20][6] = original_close + 60_000
             return httpx.Response(200, json=rows)
         assert request.url.path == "/api/v3/ticker/price"
         clock[0] += clock_skew
