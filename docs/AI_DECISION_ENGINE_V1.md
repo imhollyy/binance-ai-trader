@@ -361,3 +361,40 @@ koruma etkinleştirilemez.
 uygulanması, gerçek ücret kademesi ve filtre doğrulaması,
 kalibre edilmiş strateji analizinin bağımsız risk guard ile
 birleştirilmesi, sınırlı ve açık onaylı PAPER forward-run.
+
+## BT-022: offline Binance Spot account commission breakdown (kimlik doğrulamasız)
+
+- Binance'in imzalı `GET /api/v3/account/commission` **USER_DATA**
+  yanıt biçimini ele alan `public_spot_fee_evidence.py`, sadece
+  program içindeki **SENTETİK / DOĞRULANMAMIŞ** ücret fikstürlerini
+  işler. API anahtarı, oturum, gizli anahtar veya özel Binance
+  uç noktası ÇAĞRILMAZ. Verinin Binance hesabına ait olduğunu
+  bu kod **kanıtlayamaz**. `source` alanı yalnızca
+  `unverified_offline_account_commission_fixture` olabilir.
+- `standardCommission`, `taxCommission`, `specialCommission`
+  içindeki `maker/taker/buyer/seller` bileşenleri eksiksiz ve
+  kesin `Decimal` oranlarla okunur. Herhangi bir alan eksik,
+  fazla, hatalı ya da NaN ise reddedilir. Piyasa emri için
+  her BUY ve SELL tarafında `taker + buyer/seller` toplamları
+  ayrı hesaplanır. Promosyon ve BNB indirimi **bilerek hesaptan
+  düşülmez**, indirim bakiyesi varsayılmaz; böylece maliyet
+  olduğundan iyimser görünmez.
+- Sentetik ücret kanıtı yerel 120 sn sınırı dışında, sembolü
+  başka, kaynağı değişmiş, sıfır veya aşırı ücret içeriyorsa
+  fail-closed. BT-021 veri tutarlılığı ve BT-020 20 kademeli
+  depth VWAP denetimleri, lot/market-lot ve notional
+  kontrolleri yeniden uygulanır. İki yönün hesaplanan
+  komisyonundan **yüksek olanı her iki tarafta** kullanılır:
+  gerçek sonuçların üstünde maliyet modellemek mümkündür,
+  ancak bu garanti değildir.
+- Kaynağın doğrulanmamış oluşu sebebiyle `UNVERIFIED_FEE_SIMULATION_ONLY`
+  sonucu dahi `trade_authorized=False`, `no_trade=True`.
+  Önceki LIVE/PAPER işlem akışı, private Binance erişimi,
+  bot scheduler, kullanıcı bakiyesi, Cloudflare, Futures
+  ve AI anayasası değiştirilmedi.
+- Sıradaki zorunlu adımlar: ayrı onaylı ve salt-okunur
+  `USER_DATA` bağlantısı, hassas anahtarların sunucuda
+  gizli saklanması ve iptal edilebilmesi, doğrulanmış
+  kullanıcının/hesabın yetki sınırı, ücret yenilemesi,
+  rate-limit durdurması, filtrelerin tam kapsamı,
+  ileri PAPER testleri. Bunlardan önce otomatik emir yoktur.
