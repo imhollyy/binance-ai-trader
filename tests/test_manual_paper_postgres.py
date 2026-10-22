@@ -232,8 +232,8 @@ def test_preview_risk_change_ledger_consistency_and_subsequent_paper_trades(
             auth_mode="staging",
             staging_origin=origin,
             staging_host="preview.staging.example",
-            viewer_password_hash=password_hash(view_password, salt=b"paper-view-010b"),
-            operator_password_hash=password_hash(operator_password, salt=b"paper-oper-010b"),
+            viewer_password_hash=password_hash(view_password, salt=b"paper-view-010bx"),
+            operator_password_hash=password_hash(operator_password, salt=b"paper-oper-010bx"),
         ),
         engine=engine,
     )
