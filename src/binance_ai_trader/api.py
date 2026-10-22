@@ -19,7 +19,13 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from binance_ai_trader.api_config import ApiConfig
 from binance_ai_trader.manual_paper_api import register_manual_paper_route
-from binance_ai_trader.models import AuditRow, SpotCandleRow, TradingSettingsRow
+from binance_ai_trader.models import (
+    AuditRow,
+    PaperSpotAccountRow,
+    PaperSpotPositionRow,
+    SpotCandleRow,
+    TradingSettingsRow,
+)
 from binance_ai_trader.paper_dashboard_api import register_paper_dashboard_route
 from binance_ai_trader.paper_read_api import register_paper_spot_read_route
 from binance_ai_trader.preview_preflight import verify_preview_environment
@@ -258,6 +264,57 @@ def create_app(
             try:
                 with session.begin():
                     data = payload.settings.model_dump(mode="json")
+                    account = None
+                    # The private staging viewer edits *only* bounded PAPER risk
+                    # fields. An initialized ledger must never be invalidated by
+                    # a settings version bump while carrying real PAPER history.
+                    if staging and environ.get("PRIVATE_PREVIEW_OPT_IN") == "isolated-paper-only":
+                        current = session.scalar(
+                            select(TradingSettingsRow)
+                            .where(TradingSettingsRow.id == 1)
+                            .with_for_update()
+                        )
+                        if current is None or current.version != payload.expected_version:
+                            raise HTTPException(
+                                status_code=409, detail="Preview settings version changed"
+                            )
+                        prior = RiskSettings.model_validate(current.data)
+                        excluded = {"risk_per_trade_pct", "daily_loss_limit_pct", "max_drawdown_pct"}
+                        if (
+                            prior.model_dump(exclude=excluded)
+                            != payload.settings.model_dump(exclude=excluded)
+                            or prior.bot_enabled
+                            or not prior.manual_approval
+                        ):
+                            raise HTTPException(
+                                status_code=409, detail="Preview permits bounded manual PAPER risk only"
+                            )
+                        account = session.scalar(
+                            select(PaperSpotAccountRow)
+                            .where(PaperSpotAccountRow.id == 1)
+                            .with_for_update()
+                        )
+                        if account is not None:
+                            if (
+                                account.mode != "paper"
+                                or account.market_type != "spot"
+                                or account.settings_version != current.version
+                                or account.initial_capital_usdt != Decimal(prior.spot_capital_usdt)
+                            ):
+                                raise HTTPException(
+                                    status_code=409, detail="PAPER account settings mismatch"
+                                )
+                            if session.scalar(
+                                select(PaperSpotPositionRow.id)
+                                .where(
+                                    PaperSpotPositionRow.account_id == account.id,
+                                    PaperSpotPositionRow.status == "open",
+                                )
+                                .limit(1)
+                            ) is not None:
+                                raise HTTPException(
+                                    status_code=409, detail="Close open PAPER position before editing risk"
+                                )
                     if payload.expected_version == 0:
                         session.add(TradingSettingsRow(id=1, version=1, data=data, modified_at=now))
                         session.flush()  # Ensure the FK parent exists before inserting audit.
@@ -278,6 +335,10 @@ def create_app(
                             raise HTTPException(
                                 status_code=409, detail="Stale settings version; reload"
                             )
+                    if account is not None:
+                        # Same SQL transaction as settings + audit: no cash,
+                        # position or immutable journal mutations.
+                        account.settings_version = payload.expected_version + 1
                     session.add(
                         AuditRow(
                             settings_id=1,
