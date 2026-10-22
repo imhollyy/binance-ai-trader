@@ -182,10 +182,7 @@ def simulate_isolated_protective_close_once(
     trigger = "EMERGENCY" if take_profit_price is None else "TARGET_CHECK"
     # The close uses a stable key per sample and revision. Disagreeing quote
     # with same key raises an idempotency payload conflict in paper_execution.
-    seed = (
-        f"v1:{trade_id}:{expected_control_revision}:"
-        f"{sample.signal_close_time_ms}:{trigger}"
-    )
+    seed = f"v1:{trade_id}:{expected_control_revision}:{sample.signal_close_time_ms}:{trigger}"
     key = "protected-" + hashlib.sha256(seed.encode("ascii")).hexdigest()[:48]
 
     def locked(
@@ -210,11 +207,7 @@ def simulate_isolated_protective_close_once(
         ):
             raise PaperExecutionRejected("protective_settings_unreconciled")
         opened = [p for p in positions if p.status == "open"]
-        if (
-            len(opened) != 1
-            or opened[0].trade_id != trade_id
-            or opened[0].symbol != sample.symbol
-        ):
+        if len(opened) != 1 or opened[0].trade_id != trade_id or opened[0].symbol != sample.symbol:
             raise PaperExecutionRejected("protective_position_changed_under_lock")
         if _history_rows(session, sample) != sample.closed_candles:
             raise PaperExecutionRejected("protective_stored_feed_disagrees")

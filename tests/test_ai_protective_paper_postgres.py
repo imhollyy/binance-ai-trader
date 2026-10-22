@@ -69,8 +69,12 @@ def engine() -> Iterator[Engine]:
     db = create_engine(URL, pool_pre_ping=True)
     with Session(db) as session:
         for model in (
-            PaperSpotAccountRow, PaperSpotPositionRow, PaperSpotJournalRow,
-            PaperSpotObservedQuoteRow, PaperBotControlRow, SpotCandleRow,
+            PaperSpotAccountRow,
+            PaperSpotPositionRow,
+            PaperSpotJournalRow,
+            PaperSpotObservedQuoteRow,
+            PaperBotControlRow,
+            SpotCandleRow,
         ):
             assert session.scalar(select(func.count()).select_from(model)) == 0
     yield db
@@ -95,14 +99,21 @@ def _observer(
     db: Engine, clock: int, *, ticker: str, code: int = 200
 ) -> PublicSpotObservationClient:
     with Session(db) as session:
-        rows = list(
-            session.scalars(select(SpotCandleRow).order_by(SpotCandleRow.open_time_ms))
-        )
+        rows = list(session.scalars(select(SpotCandleRow).order_by(SpotCandleRow.open_time_ms)))
         candles: list[list[object]] = [
             [
-                row.open_time_ms, str(row.open), str(row.high), str(row.low),
-                str(row.close), str(row.volume), row.close_time_ms, "0", 1,
-                "0", "0", "0",
+                row.open_time_ms,
+                str(row.open),
+                str(row.high),
+                str(row.low),
+                str(row.close),
+                str(row.volume),
+                row.close_time_ms,
+                "0",
+                1,
+                "0",
+                "0",
+                "0",
             ]
             for row in rows
         ]
@@ -174,9 +185,7 @@ def test_mock_stop_then_take_profit_with_locked_control_fee_pnl_and_audit(
                 ).model_dump(mode="json"),
             )
         )
-        session.add_all(
-            [_row(start - (60 - i) * 60_000) for i in range(60)]
-        )
+        session.add_all([_row(start - (60 - i) * 60_000) for i in range(60)])
         session.add(
             StagingSessionRow(
                 token_hash=OPERATOR,
