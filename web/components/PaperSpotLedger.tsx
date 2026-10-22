@@ -14,6 +14,7 @@ type LedgerPosition = {
   entry_fee_usdt: string; stop_price: string; estimated_stop_loss_usdt: string;
   exit_fill_price: string | null; exit_fee_usdt: string | null;
   net_proceeds_usdt: string | null; realized_pnl_usdt: string | null;
+  gross_realized_pnl_usdt: string | null;
   opened_at: string; closed_at: string | null;
 };
 type LedgerEvent = {
@@ -21,6 +22,11 @@ type LedgerEvent = {
   cash_delta_usdt: string; balance_after_usdt: string;
   fee_usdt: string; realized_pnl_delta_usdt: string;
   quantity_delta: string; created_at: string;
+  observed_quote: {
+    source: string; symbol: string; interval: string; observed_at_ms: number;
+    reference_price: string; fee_bps: number; slippage_bps: number;
+    spread_bps: number | null;
+  } | null;
 };
 type LedgerSnapshot = {
   mode: "paper"; market_type: "spot"; source: "persisted_paper_spot";
@@ -152,7 +158,9 @@ export default function PaperSpotLedger({ connected, apiAddress, token }: {
               <div><dt>Tahmini stop</dt><dd>{amount(item.stop_price)}</dd></div>
               <div><dt>Tahmini stop zararı</dt><dd>{amount(item.estimated_stop_loss_usdt)}</dd></div>
               <div><dt>Çıkış fiyatı</dt><dd>{amount(item.exit_fill_price)}</dd></div>
-              <div><dt>Gerçekleşmiş PnL</dt><dd>{amount(item.realized_pnl_usdt)}</dd></div>
+              <div><dt>Çıkış komisyonu</dt><dd>{amount(item.exit_fee_usdt)}</dd></div>
+              <div><dt>Brüt gerçekleşmiş PnL (sanal)</dt><dd>{amount(item.gross_realized_pnl_usdt)}</dd></div>
+              <div><dt>Net gerçekleşmiş PnL (sanal)</dt><dd>{amount(item.realized_pnl_usdt)}</dd></div>
               <div><dt>Açılış / kapanış</dt><dd>{time(item.opened_at)} / {time(item.closed_at)}</dd></div>
             </dl>
           </article>)}
@@ -166,9 +174,13 @@ export default function PaperSpotLedger({ connected, apiAddress, token }: {
             <div><strong>{eventLabels[event.event_type] || "Sanal muhasebe olayı"}</strong>
               <small>{time(event.created_at)}</small></div>
             <div><span>Nakit değişimi: {amount(event.cash_delta_usdt)}</span>
+              <span>Miktar değişimi: {event.quantity_delta}</span>
               <span>Son nakit: {amount(event.balance_after_usdt)}</span>
               <span>Komisyon: {amount(event.fee_usdt)}</span>
-              <span>Realize PnL: {amount(event.realized_pnl_delta_usdt)}</span></div>
+              <span>Realize net PnL: {amount(event.realized_pnl_delta_usdt)}</span></div>
+            {event.observed_quote ? <small>
+              Kayıtlı public gözlem: {event.observed_quote.symbol} · {event.observed_quote.reference_price} USDT · {time(new Date(event.observed_quote.observed_at_ms).toISOString())}. Varsayımsal ücret {event.observed_quote.fee_bps} bps, kayma {event.observed_quote.slippage_bps} bps, spread {event.observed_quote.spread_bps === null ? "bilinmiyor" : `${event.observed_quote.spread_bps} bps`}; gerçek fill değildir.
+            </small> : <small>Bu olay için public fiyat veya maliyet kanıtı kaydedilmemiş; spread bilinmiyor.</small>}
           </article>)}
         </div>}
       {data.total_events > data.events.length &&
