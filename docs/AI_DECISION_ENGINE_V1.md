@@ -88,3 +88,33 @@ Kalıcı veritabanı bağlama, atomik tekrar kontrol, gerçek stop/TP motoru,
 kaynak veri provenance'ı, fee precision genişletmesi, model calibration,
 çok daha zengin regime/flow analizi ve ileri walk-forward testler ayrı
 güvenlik-kritik işlerdir. Canlı işlem ve Futures kesinlikle kapalıdır.
+
+## BT-014: kapalı, tek kullanımlık PostgreSQL atomik işlem provası
+
+- `ai_paper_atomic_test.py` yeni bir motor veya otomatik worker DEĞİLDİR.
+  Yalnız `AI_ATOMIC_TEST_ISOLATED=1` ve `localhost/trader_ai_atomic_test`
+  koşulları **birlikte** sağlanıyorsa aynı mevcut `open_paper_spot` /
+  `close_paper_spot` atomik defterini çağırır. GitHub CI ayrı veritabanı
+  oluşturur, Alembic uygular, eşzamanlı ve başarısız işlemleri test eder.
+- AI'nın JSON'undaki sermaye/risk limitleri kabul edilmez. Güncel settings,
+  hesap/sürüm, açık pozisyon ve journal hesap mutabakatı PostgreSQL kilidi
+  altından yeniden okunur. Üç zaman dilimi kayıtlı OHLCV'si de aynı işlemde
+  yeniden doğrulanır. AI BUY risk değerlendirmesini tekrar geçemezse bütün
+  işlem rollback olur. Idempotency anahtarı bir sinyal kimliğine bağlıdır.
+- SELL yalnız var olan açık pozisyonu kapatır; yeni risk açamaz. STOPPED
+  otomatik kapanış davranışı henüz tanımlanmadığından reddedilir.
+- Fiyat örneği en son kayıtlı kapalı mumun kapanışıdır; bunun üzerinden
+  half-spread ve adverse slippage eklenir. **Bu fiyat o anda gerçekleşebilir
+  gerçek emir fiyatı değildir.** Decimal kesinlik sınırında aşağı yuvarlanmış
+  0.001 adımlı miktar kullanılır; korunan notional tavan aşılmaz.
+- İzole test ortamında policy, sahte kalibrasyon listesi ve kaynak örneği
+  elle sağlanır. Depodaki mevcut SpotCandle tablosu kriptografik kaynak
+  doğrulaması yapmadığından testlerin geçmesi güvenilir piyasa veri
+  provenance'ının veya AI modelinin gerçek kalibrasyonunun kanıtı OLAMAZ.
+
+**Üretime aktivasyon yok:** Kullanıcının gerçek PAPER ledger'ı, scheduler,
+API, Cloudflare, Binance account, Futures ve LIVE emir yolu değiştirilmez.
+PAPER üretim hesabına bağlamadan önce doğrulanmış source adapter, gerçek
+fee/slippage konfigürasyonu, stop/TP/PAUSED/EMERGENCY davranış motoru,
+ayrı gate yönetimi, model kalibrasyonu, tekrar/çakışma/saat testleri ve
+kullanıcının kontrollü test onayı zorunludur.
