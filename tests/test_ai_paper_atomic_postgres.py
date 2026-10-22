@@ -190,7 +190,7 @@ def test_isolated_locked_ai_buy_sell_replay_risk_and_net_pnl(engine: Engine) -> 
     for invalid, context, expected in (
         (proposal, replace(rules, calibrated_model_versions=frozenset()), "MODEL_NOT_CALIBRATED"),
         (proposal, replace(rules, bot_state=BotState.PAUSED), "BOT_NOT_RUNNING"),
-        (proposal, replace(rules, expected_settings_version=2), "USER_HARD_LIMIT"),
+        (proposal, replace(rules, expected_settings_version=2), "USER_HARD_LIMIT_OR_SETTINGS_VERSION"),
         (proposal, replace(rules, min_net_edge_bps=D("200")), "INSUFFICIENT_EXPECTED_NET_EDGE"),
         (
             proposal.model_copy(update={"market_regime": "DOWNTREND"}),
