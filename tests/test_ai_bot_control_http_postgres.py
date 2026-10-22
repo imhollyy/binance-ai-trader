@@ -264,7 +264,8 @@ def test_real_https_session_csrf_approval_and_cas_reboot(
         )
 
         second = op.post(
-            "/api/v1/auth/login", headers=HEADERS,
+            "/api/v1/auth/login",
+            headers=HEADERS,
             json={"username": "operator", "password": OP_PASS},
         )
         assert second.status_code == 200
