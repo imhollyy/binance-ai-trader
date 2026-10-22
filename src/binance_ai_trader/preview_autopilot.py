@@ -11,10 +11,10 @@ from __future__ import annotations
 import argparse
 import signal
 import sys
-from threading import Event
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from os import environ
+from threading import Event
 
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.exc import SQLAlchemyError

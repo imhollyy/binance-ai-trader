@@ -13,8 +13,8 @@ from binance_ai_trader.preview_autopilot import (
     PaperPilotRejected,
     change_paper_pilot_mode,
     main,
-    validate_preview_pilot,
     paper_pilot_preflight,
+    validate_preview_pilot,
 )
 from binance_ai_trader.staging_auth import password_hash
 

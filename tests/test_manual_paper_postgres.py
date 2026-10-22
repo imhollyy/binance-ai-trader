@@ -368,10 +368,9 @@ def test_autopilot_enable_disable_carries_unchanged_virtual_money(engine: Engine
     from binance_ai_trader.preview_autopilot import (
         PaperPilotRejected,
         change_paper_pilot_mode,
+        paper_pilot_preflight,
         paper_pilot_status,
     )
-
-    from binance_ai_trader.preview_autopilot import paper_pilot_preflight
 
     before = _totals(engine)
     assert paper_pilot_preflight(engine) == "READY_MANUAL_PAPER_MODE"
