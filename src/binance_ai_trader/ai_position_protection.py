@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 from enum import StrEnum
 
-from binance_ai_trader.ai_constitution import BotState, SPOT_SUPPORTED
+from binance_ai_trader.ai_constitution import SPOT_SUPPORTED, BotState
 from binance_ai_trader.market_data import MarketDataError
 from binance_ai_trader.paper_spot import PaperSpotPosition
 from binance_ai_trader.public_spot_observation import (

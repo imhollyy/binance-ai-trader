@@ -16,8 +16,8 @@ from binance_ai_trader.ai_constitution import BotState
 from binance_ai_trader.ai_position_protection import (
     BotControlRejected,
     BotControlSnapshot,
-    ProtectionDecision,
     ProtectionAction,
+    ProtectionDecision,
     StopBehavior,
     change_paper_bot_state,
     evaluate_paper_position_protection,
