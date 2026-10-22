@@ -3,8 +3,6 @@ from __future__ import annotations
 import hashlib
 from decimal import Decimal
 
-import pytest
-
 from binance_ai_trader.ai_market_regime import TimeframeHistory
 from binance_ai_trader.ai_trainable_model import (
     FEATURES,
@@ -70,8 +68,9 @@ def test_future_label_leakage_is_rejected() -> None:
         )
         for i in range(60)
     )
-    with pytest.raises(ValueError, match="temporal_leakage"):
-        train_chronological(rows, model_version="v1", outcome_horizon_ms=10)
+    result = train_chronological(rows, model_version="v1", outcome_horizon_ms=10)
+    assert result.train_rows == 47
+    assert result.train_end_ms < rows[47].outcome_available_at_ms
 
 
 def test_model_fail_closed_and_receipts_callback_receives_uncalibrated_prediction() -> None:

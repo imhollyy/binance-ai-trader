@@ -67,6 +67,8 @@ class ResearchPrediction:
     probability: ProbabilityEstimate | None
     probability_verified: bool
     reason_code: str
+    artifact_sha256: str | None = None
+    feature_sha256: str | None = None
 
 
 class ReceiptRecorder(Protocol):
@@ -184,8 +186,10 @@ def train_chronological(
     if any(a.close_at_ms >= b.close_at_ms for a, b in zip(rows, rows[1:], strict=False)):
         raise ValueError("training_rows_not_chronological")
     split = int(len(rows) * (1 - test_fraction))
+    while split > 1 and rows[split - 1].outcome_available_at_ms > rows[split].close_at_ms:
+        split -= 1
     train, test = rows[:split], rows[split:]
-    if not test or train[-1].outcome_available_at_ms > test[0].close_at_ms:
+    if len(train) < 20 or not test:
         raise ValueError("temporal_leakage_or_embargo_failure")
     # Normalize from train only; fit logistic weights on training partition.
     means = [sum(r.features[j] for r in train) / len(train) for j in range(len(FEATURES))]
@@ -224,10 +228,12 @@ def train_chronological(
         "schema_version": SCHEMA_VERSION,
         "model_version": model_version,
         "artifact_sha256": digest,
-        "row_count": len(rows),
+        "row_count": len(train),
+        "available_rows": len(rows),
+        "holdout_rows": len(test),
         "data_sha256": hashlib.sha256(
             json.dumps(
-                [[r.close_at_ms, r.outcome_available_at_ms, r.features, r.label] for r in rows],
+                [[r.close_at_ms, r.outcome_available_at_ms, r.features, r.label] for r in train],
                 separators=(",", ":"),
             ).encode()
         ).hexdigest(),
@@ -276,6 +282,9 @@ def predict_research(
         if interval not in ("1m", "5m", "15m") or horizon_ms < INTERVAL_MS[interval]:
             raise ValueError("invalid_horizon")
         x = extract_features(histories, symbol=symbol, now_ms=now_ms)
+        feature_digest = hashlib.sha256(
+            json.dumps(x, separators=(",", ":"), allow_nan=False).encode()
+        ).hexdigest()
         if (
             not isinstance(model.get("model_version"), str)
             or len(model["means"]) != len(FEATURES)
@@ -315,6 +324,8 @@ def predict_research(
             probability,
             False,
             "UNCALIBRATED_RESEARCH_ONLY",
+            expected_sha256,
+            feature_digest,
         )
     except Exception:
         prediction = ResearchPrediction(
