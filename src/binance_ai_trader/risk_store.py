@@ -92,10 +92,14 @@ def _isolated(engine: Engine) -> None:
         engine.url.database == "trader_ai_research"
         and os.environ.get("TRADEPILOT_RISK_STORE") == "1"
     )
+    paper_entry_test_store = (
+        engine.url.database == "trader_paper_entry_risk_test"
+        and os.environ.get("TRADEPILOT_PAPER_ENTRY_RISK_TEST_DB") == "1"
+    )
     if (
         engine.dialect.name != "postgresql"
         or engine.url.host not in ("127.0.0.1", "localhost")
-        or not (test_store or research_store)
+        or not (test_store or research_store or paper_entry_test_store)
     ):
         raise RiskStoreRejected("dedicated_local_bt023_test_database_required")
 
