@@ -68,3 +68,30 @@ idempotent STOP request, and stop acknowledgement are control/status primitives
 only. They do not grant entry authority or start an execution process. Enabling
 START still requires a process manager with persisted fencing-token enforcement
 at the execution boundary.
+
+
+## BT-027E recovery classifier (inert groundwork)
+
+`paper_entry_recovery.py` now defines strict immutable, digest-bound evidence
+types and a conservative cross-store comparison. It is deliberately **not**
+connected to any trading or mutation route. The classifier never authorizes a
+new BUY, releases a reservation, or treats two caller-reported digests as
+authenticated proof of a distributed commit.
+
+| Risk reservation | PAPER journal | Recovery result |
+| --- | --- | --- |
+| Missing | Missing | No evidence; new entry still forbidden |
+| Present | Missing | Hold the reservation; investigate/reconcile |
+| Missing | Present | Orphan journal; investigate ledger and authorization |
+| Present | Present, mismatch/released | Integrity conflict; investigate |
+| Present | Present, matching metadata | Still unverified; independent attestation needed |
+
+Required before enabling entries: write-ahead intent recorded durably prior
+to reservation; immutable intent hash and exact Decimal amounts bound to both
+stores; idempotent reserve/commit/release operations; recovery after every
+crash boundary; protection against concurrent retries, stale profile,
+STOP/lease-generation changes, and model revocation; attested ledger snapshots;
+and an operational circuit breaker on reconciliation uncertainty. The current
+`risk_store.evaluate_and_reserve` and PAPER journal do not yet expose a
+complete cross-store, recovery-safe transaction protocol. The existing
+`open_paper_spot` denial remains active. START remains unsupported.
