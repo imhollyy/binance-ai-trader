@@ -467,7 +467,7 @@ def test_migration_downgrade_preserves_append_only_history(engine: Engine) -> No
 
     with engine.connect() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "0019_bt027_paper_entry_intents"
+            "0020_bt027_entry_evidence"
         )
         assert (
             conn.execute(

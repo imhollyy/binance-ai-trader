@@ -104,18 +104,36 @@ hashes canonical, exact Decimal intent fields, deduplicates by idempotency key,
 serializes state transitions under a row lock, and exposes nonterminal intents
 for restart recovery review. Database triggers enforce immutable intent rows,
 append-only audit events, contiguous state history, and the declared transition
-graph. This is an intent journal only: it does not contact RiskGuard, reserve
-capacity, commit a PAPER ledger mutation, or authorize BUY. `RECONCILIATION_REQUIRED`
+graph. This is an intent journal only: it does not itself reserve capacity,
+commit a PAPER ledger mutation, or authorize BUY. `RECONCILIATION_REQUIRED`
 is terminal in this stage until a later independently attested recovery contract
 exists. Caller supplied ledger/cost hashes are stored as claims, not verified
 accounting evidence. START remains disabled.
+
+### BT-027E2P account and market evidence
+
+Migration `0020_bt027_entry_evidence` adds append-only application-database
+receipts for a ledger-reconciled PAPER account snapshot and fresh public
+pre-entry market observations. The account hash covers settings, cash, realized
+net P&L, commissions, positions and ordered journal rows. Market evidence binds
+a closed 1m public observation, bookTicker/depth coherence, observed spread and
+versioned hypothetical fee/slippage assumptions. Those assumptions do not
+represent an account fee tier or actual execution costs; expected net advantage
+remains explicitly unverified.
+
+The coordinator rechecks current account state and stored evidence under PAPER
+database locks, then requires RiskStore's independently persisted reservation,
+audit event, current profile/runtime, exact risk request and matching account
+snapshot before appending `RISK_RESERVED`. This verifies a risk reservation, not
+distributed atomicity or permission to BUY. AI intents remain blocked, ledger
+commit/recovery is not implemented, and START remains disabled.
 
 The next E2 coordinator can build on `create_intent`, `get_intent`,
 `transition_intent`, `list_status_events`, `list_recovery_candidates`, and
 `assess_cross_store_evidence`. The durable contract is `request_id` plus unique
 `idempotency_key` and canonical intent SHA-256, immutable amount/version/source
 fields, account/settings-version binding, and serialized append-only event
-sequence with a database-enforced transition graph. E2 still needs independently
-verified RiskGuard reservation references, ledger receipt attestation, and
-cross-store crash reconciliation; the current claims alone must not authorize
-a ledger write.
+sequence with a database-enforced transition graph. E2P adds independently
+verified RiskGuard reservation references and account/cost receipt attestation.
+E3 still needs ledger commit and cross-store crash reconciliation; these
+receipts alone must not authorize a ledger write.
