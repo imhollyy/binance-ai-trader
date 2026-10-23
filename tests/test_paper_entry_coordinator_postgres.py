@@ -42,7 +42,9 @@ from binance_ai_trader.paper_entry_evidence import (
     collect_pre_entry_cost_evidence,
 )
 from binance_ai_trader.paper_entry_recovery import RecoveryFinding
+from binance_ai_trader.paper_execution import close_paper_spot
 from binance_ai_trader.paper_ledger import ensure_paper_spot_account
+from binance_ai_trader.paper_spot import PaperCosts
 from binance_ai_trader.public_spot_cost_review import PublicSpotCostClient
 from binance_ai_trader.public_spot_depth_review import PublicSpotDepthClient
 from binance_ai_trader.public_spot_observation import PublicSpotObservationClient
@@ -426,6 +428,19 @@ def test_evidenced_intent_persists_real_snapshot_and_cost_receipts_without_buy(
     engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     before = _ledger_counts(engine)
+    with pytest.raises(EntryCoordinatorRejected, match="isolated_dual_postgresql_test_required"):
+        commit_risk_reserved_for_isolated_test(engine, engine, request_id=str(uuid4()))
+    monkeypatch.setenv("PAPER_ENTRY_E3_TEST_ONLY", "1")
+    monkeypatch.setenv("PAPER_ENTRY_COORDINATOR_TEST_ISOLATED", "1")
+    monkeypatch.setenv("TRADEPILOT_PAPER_ENTRY_RISK_TEST_DB", "1")
+    monkeypatch.setenv("PAPER_LEDGER_TEST_ISOLATED", "1")
+    isolated_risk_engine = create_engine(os.environ["RISK_TEST_POSTGRES_URL"])
+    with pytest.raises(EntryCoordinatorRejected, match="entry_intent_not_found"):
+        commit_risk_reserved_for_isolated_test(
+            engine, isolated_risk_engine, request_id=str(uuid4())
+        )
+    isolated_risk_engine.dispose()
+    assert _ledger_counts(engine) == before
     clients = _entry_observation_clients()
     monkeypatch.setenv("PAPER_ENTRY_EVIDENCE_TEST_ONLY", "0")
     with pytest.raises(EntryCoordinatorRejected, match="isolated_evidence_test_database_required"):
@@ -487,6 +502,17 @@ def test_evidenced_intent_persists_real_snapshot_and_cost_receipts_without_buy(
     risk_url = os.environ["RISK_TEST_POSTGRES_URL"]
     risk_engine = create_engine(risk_url, pool_pre_ping=True)
     try:
+        ai_intent = replace(
+            _costed_intent(),
+            idempotency_key=f"unapproved_ai_{uuid4().hex}",
+            source_type="AI",
+            model_version="research-only-test-model",
+        )
+        ai_record = create_intent(engine, ai_intent)
+        with pytest.raises(EntryCoordinatorRejected, match="unapproved_ai_model_cannot_reserve"):
+            record_verified_risk_reservation(engine, risk_engine, request_id=ai_record.request_id)
+        assert _ledger_counts(engine) == before
+
         profile = RiskProfile(
             "1.0",
             1,
@@ -569,6 +595,12 @@ def test_evidenced_intent_persists_real_snapshot_and_cost_receipts_without_buy(
         )
         assert reserved.current_state == "RISK_RESERVED"
         assert _ledger_counts(engine) == before
+        assert set_bot_state(risk_engine, state=BotState.PAUSED, expected_revision=3) == 4
+        with pytest.raises(
+            EntryCoordinatorRejected, match="independent_risk_reservation_unverified"
+        ):
+            record_verified_risk_reservation(engine, risk_engine, request_id=record.request_id)
+        assert set_bot_state(risk_engine, state=BotState.RUNNING, expected_revision=4) == 5
         with engine.begin() as connection:
             connection.execute(
                 text("UPDATE paper_spot_accounts SET cash_usdt=cash_usdt + 1 WHERE id=1")
@@ -590,11 +622,47 @@ def test_evidenced_intent_persists_real_snapshot_and_cost_receipts_without_buy(
         monkeypatch.setenv("PAPER_ENTRY_E3_TEST_ONLY", "1")
         monkeypatch.setenv("PAPER_LEDGER_TEST_ISOLATED", "1")
         before_commit = _ledger_counts(engine)
+        risk_engine.dispose()
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER DATABASE trader_paper_entry_risk_test WITH ALLOW_CONNECTIONS false")
+            )
+        unavailable_risk_engine = create_engine(risk_url, pool_pre_ping=True)
+        try:
+            with pytest.raises(DBAPIError):
+                commit_risk_reserved_for_isolated_test(
+                    engine, unavailable_risk_engine, request_id=record.request_id
+                )
+            assert _ledger_counts(engine) == before_commit
+            assert get_intent(engine, record.request_id).current_state == "RISK_RESERVED"  # type: ignore[union-attr]
+        finally:
+            unavailable_risk_engine.dispose()
+            with engine.begin() as connection:
+                connection.execute(
+                    text("ALTER DATABASE trader_paper_entry_risk_test WITH ALLOW_CONNECTIONS true")
+                )
+        risk_engine = create_engine(risk_url, pool_pre_ping=True)
+        engine.dispose()
+        restarted_engine = create_engine(URL, pool_pre_ping=True)
+        assert get_intent(restarted_engine, record.request_id).current_state == "RISK_RESERVED"  # type: ignore[union-attr]
+        for crash_point, expected_message in (
+            ("before_ledger", "simulated_crash_before_ledger"),
+            ("inside_ledger", "simulated_crash_inside_ledger_transaction"),
+        ):
+            with pytest.raises(RuntimeError, match=expected_message):
+                commit_risk_reserved_for_isolated_test(
+                    engine,
+                    risk_engine,
+                    request_id=record.request_id,
+                    _simulate_crash_at=crash_point,
+                )
+            assert get_intent(engine, record.request_id).current_state == "RISK_RESERVED"  # type: ignore[union-attr]
+            assert _ledger_counts(engine) == before_commit
         committed = commit_risk_reserved_for_isolated_test(
             engine,
             risk_engine,
             request_id=record.request_id,
-            _simulate_crash_after_ledger_commit=True,
+            _simulate_crash_at="after_ledger_commit",
         )
         assert committed.event_type == "spot_buy"
         assert get_intent(engine, record.request_id).current_state == "LEDGER_COMMITTED"  # type: ignore[union-attr]
@@ -615,6 +683,37 @@ def test_evidenced_intent_persists_real_snapshot_and_cost_receipts_without_buy(
         )
         assert replayed.current_state == "COMPLETED"
         assert _ledger_counts(engine) == after_commit
+        with pytest.raises(RuntimeError, match="simulated_crash_after_completed"):
+            commit_risk_reserved_for_isolated_test(
+                engine,
+                risk_engine,
+                request_id=record.request_id,
+                _simulate_crash_at="after_completed",
+            )
+        assert (
+            recover_committed_entry(engine, request_id=record.request_id).current_state
+            == "COMPLETED"
+        )
+        with Session(engine) as session:
+            close_paper_spot(
+                session,
+                record.request_id,
+                Decimal("101"),
+                f"close_{uuid4().hex}",
+                explicit_approval=True,
+                costs=PaperCosts(),
+            )
+        closed_replay = commit_risk_reserved_for_isolated_test(
+            engine, risk_engine, request_id=record.request_id
+        )
+        assert closed_replay.current_state == "COMPLETED"
+        with engine.connect() as connection:
+            position_status: str = connection.execute(
+                text("SELECT status FROM paper_spot_positions WHERE trade_id=:id"),
+                {"id": record.request_id},
+            ).scalar_one()
+        assert position_status == "closed"
+        assert _ledger_counts(engine)[2] == after_commit[2] + 1
 
         for statement in (
             "UPDATE paper_entry_account_evidence SET snapshot_sha256='"

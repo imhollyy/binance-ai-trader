@@ -832,6 +832,7 @@ def commit_risk_reserved_for_isolated_test(
     *,
     request_id: str,
     _simulate_crash_after_ledger_commit: bool = False,
+    _simulate_crash_at: str | None = None,
 ) -> Any:
     """Commit one coordinated BUY only in the dedicated dual-PostgreSQL fixture.
 
@@ -865,6 +866,20 @@ def commit_risk_reserved_for_isolated_test(
         raise EntryCoordinatorRejected("isolated_dual_postgresql_test_required")
     if type(_simulate_crash_after_ledger_commit) is not bool:
         raise EntryCoordinatorRejected("invalid_test_crash_control")
+    crash_at = _simulate_crash_at
+    if _simulate_crash_after_ledger_commit:
+        if crash_at is not None:
+            raise EntryCoordinatorRejected("conflicting_test_crash_controls")
+        crash_at = "after_ledger_commit"
+    if crash_at not in {
+        None,
+        "before_ledger",
+        "inside_ledger",
+        "after_ledger_commit",
+        "before_completed",
+        "after_completed",
+    }:
+        raise EntryCoordinatorRejected("invalid_test_crash_control")
 
     record = get_intent(engine, request_id)
     if record is None:
@@ -873,9 +888,14 @@ def commit_risk_reserved_for_isolated_test(
         recover_committed_entry(engine, request_id=request_id)
         return get_intent(engine, request_id)
     if record.current_state == "COMPLETED":
-        return get_intent(engine, request_id)
+        completed = recover_committed_entry(engine, request_id=request_id)
+        if crash_at == "after_completed":
+            raise RuntimeError("simulated_crash_after_completed")
+        return completed
     if record.current_state != "RISK_RESERVED":
         raise EntryCoordinatorRejected("risk_reserved_state_required")
+    if crash_at == "before_ledger":
+        raise RuntimeError("simulated_crash_before_ledger")
 
     # Re-run the full E2P cross-store verification, including the exact stored
     # snapshot/cost receipts, profile, STOP state, reservation and audit linkage.
@@ -1035,6 +1055,8 @@ def commit_risk_reserved_for_isolated_test(
                 "evidence": commit_hash,
             },
         )
+        if crash_at == "inside_ledger":
+            raise RuntimeError("simulated_crash_inside_ledger_transaction")
 
     from sqlalchemy import select
 
@@ -1055,8 +1077,10 @@ def commit_risk_reserved_for_isolated_test(
             _signal_preflight=preflight,
             _signal_postwrite=postwrite,
         )
-    if not _simulate_crash_after_ledger_commit:
+    if crash_at not in {"after_ledger_commit", "before_completed"}:
         recover_committed_entry(engine, request_id=request_id)
+    if crash_at == "after_completed":
+        raise RuntimeError("simulated_crash_after_completed")
     return receipt
 
 
@@ -1075,7 +1099,12 @@ def capture_snapshot_for_commit(session: Session, *, account_id: int, settings_v
 
 
 def recover_committed_entry(engine: Engine, *, request_id: str) -> EntryIntentRecord:
-    """Complete an already committed app-ledger saga step without replaying BUY."""
+    """Verify a committed PAPER receipt and complete it without replaying BUY.
+
+    A position may have been legally closed after the BUY committed. Recovery
+    validates the immutable BUY journal and receipt, while accepting either
+    current position lifecycle state.
+    """
     _require_postgresql(engine)
     with Session(engine) as session, session.begin():
         session.execute(
@@ -1083,16 +1112,19 @@ def recover_committed_entry(engine: Engine, *, request_id: str) -> EntryIntentRe
             {"id": request_id},
         ).one()
         current = _latest_event(session, request_id)
-        if current.to_state == "COMPLETED":
-            return _record(session, request_id)
-        if current.to_state != "LEDGER_COMMITTED":
+        if current.to_state not in {"LEDGER_COMMITTED", "COMPLETED"}:
             raise EntryCoordinatorRejected("committed_ledger_receipt_required")
         receipt = (
             session.execute(
                 text(
-                    "SELECT c.intent_sha256,c.journal_id,c.position_id,c.ledger_event_id,"
-                    "c.commit_sha256,"
-                    "j.event_id,j.event_type,p.status,p.trade_id FROM paper_entry_ledger_commits c "
+                    "SELECT c.intent_sha256,c.risk_audit_event_id,c.risk_reservation_event_id,"
+                    "c.journal_id,c.position_id,c.ledger_event_id,c.commit_sha256,"
+                    "c.cash_after_usdt,c.fee_usdt,j.account_id AS journal_account_id,"
+                    "j.position_id AS journal_position_id,j.event_id,j.event_type,"
+                    "j.idempotency_key AS journal_idempotency_key,j.cash_delta_usdt,"
+                    "j.balance_after_usdt,j.fee_usdt AS journal_fee_usdt,"
+                    "j.quantity_delta,p.status,p.trade_id,p.symbol,p.quantity,p.entry_fee_usdt "
+                    "FROM paper_entry_ledger_commits c "
                     "JOIN paper_spot_journal j ON j.id=c.journal_id "
                     "JOIN paper_spot_positions p ON p.id=c.position_id WHERE c.request_id=:id"
                 ),
@@ -1101,19 +1133,50 @@ def recover_committed_entry(engine: Engine, *, request_id: str) -> EntryIntentRe
             .mappings()
             .one_or_none()
         )
-        intent = session.execute(
-            text("SELECT intent_sha256 FROM paper_entry_intents WHERE request_id=:id"),
-            {"id": request_id},
-        ).one()
+        intent = (
+            session.execute(
+                text(
+                    "SELECT intent_sha256,paper_account_id,symbol,quantity,order_notional_usdt "
+                    "FROM paper_entry_intents WHERE request_id=:id"
+                ),
+                {"id": request_id},
+            )
+            .mappings()
+            .one()
+        )
         if (
             receipt is None
-            or receipt["intent_sha256"] != intent[0]
+            or receipt["intent_sha256"] != intent["intent_sha256"]
+            or receipt["risk_audit_event_id"] != request_id
+            or receipt["risk_reservation_event_id"] != request_id + "_reserve"
             or receipt["ledger_event_id"] != receipt["event_id"]
             or receipt["event_type"] != "spot_buy"
-            or receipt["status"] != "open"
+            or receipt["status"] not in {"open", "closed"}
             or receipt["trade_id"] != request_id
+            or receipt["journal_account_id"] != intent["paper_account_id"]
+            or receipt["journal_position_id"] != receipt["position_id"]
+            or receipt["journal_idempotency_key"] != f"entry-{request_id}"
+            or receipt["symbol"] != intent["symbol"]
+            or Decimal(receipt["quantity"]) != Decimal(intent["quantity"])
+            or Decimal(receipt["quantity_delta"]) != Decimal(intent["quantity"])
+            or Decimal(receipt["entry_fee_usdt"]) != Decimal(receipt["journal_fee_usdt"])
+            or Decimal(receipt["fee_usdt"]) != Decimal(receipt["journal_fee_usdt"])
+            or Decimal(receipt["cash_after_usdt"]) != Decimal(receipt["balance_after_usdt"])
+            or Decimal(receipt["cash_delta_usdt"]) >= 0
+            or Decimal(receipt["balance_after_usdt"]) < 0
         ):
             raise EntryCoordinatorRejected("ledger_commit_receipt_mismatch")
+        previous_balance = session.execute(
+            text(
+                "SELECT balance_after_usdt FROM paper_spot_journal "
+                "WHERE account_id=:account AND id<:journal ORDER BY id DESC LIMIT 1"
+            ),
+            {"account": intent["paper_account_id"], "journal": receipt["journal_id"]},
+        ).scalar_one_or_none()
+        if previous_balance is None or Decimal(receipt["balance_after_usdt"]) - Decimal(
+            previous_balance
+        ) != Decimal(receipt["cash_delta_usdt"]):
+            raise EntryCoordinatorRejected("ledger_commit_balance_mismatch")
         expected_hash = hashlib.sha256(
             json.dumps(
                 {
@@ -1143,6 +1206,10 @@ def recover_committed_entry(engine: Engine, *, request_id: str) -> EntryIntentRe
         ).hexdigest()
         if expected_hash != receipt["commit_sha256"]:
             raise EntryCoordinatorRejected("ledger_commit_receipt_hash_mismatch")
+        if current.to_state == "COMPLETED":
+            if current.evidence_reference != receipt["commit_sha256"]:
+                raise EntryCoordinatorRejected("completed_entry_evidence_mismatch")
+            return _record(session, request_id)
         session.execute(
             text(
                 "INSERT INTO paper_entry_intent_events(event_id,request_id,sequence,from_state,"

@@ -125,8 +125,8 @@ The coordinator rechecks current account state and stored evidence under PAPER
 database locks, then requires RiskStore's independently persisted reservation,
 audit event, current profile/runtime, exact risk request and matching account
 snapshot before appending `RISK_RESERVED`. This verifies a risk reservation, not
-distributed atomicity or permission to BUY. AI intents remain blocked, ledger
-commit/recovery is not implemented, and START remains disabled.
+distributed atomicity or permission to BUY. AI intents remain blocked, and
+START remains disabled.
 
 The next E2 coordinator can build on `create_intent`, `get_intent`,
 `transition_intent`, `list_status_events`, `list_recovery_candidates`, and
@@ -135,5 +135,26 @@ The next E2 coordinator can build on `create_intent`, `get_intent`,
 fields, account/settings-version binding, and serialized append-only event
 sequence with a database-enforced transition graph. E2P adds independently
 verified RiskGuard reservation references and account/cost receipt attestation.
-E3 still needs ledger commit and cross-store crash reconciliation; these
-receipts alone must not authorize a ledger write.
+These receipts alone must not authorize a ledger write. BT-027E3 adds an
+isolated, disposable-test-only ledger commit coordinator and append-only commit
+receipt; it does not authorize production entries.
+
+### BT-027E3T recovery verification status
+
+Recovery revalidates the immutable commit receipt against the intent hash,
+RiskGuard event identifiers, original BUY journal event, account/position,
+idempotency key, quantity, fee, and cash-balance arithmetic. It accepts a
+position that was legally closed after its BUY and verifies the completed
+receipt again on replay. Disposable dual-database tests cover RiskGuard outage
+with a held reservation, rollback after ledger rows and receipt are written
+but before transaction commit, restart after ledger commit, response loss
+after COMPLETED, post-close replay, AI-intent rejection, and ledger
+immutability. Separate RiskGuard PostgreSQL tests cover same-ID concurrent
+retries and different IDs competing for a limited budget.
+
+This is not the complete E3T acceptance matrix: it does not yet inject every
+RiskGuard-reservation crash boundary, race two full ledger commits, simulate
+PAPER database loss independently, or cover every stale/missing cost, broken
+receipt, profile-change and worker-fencing case through the coordinator. E3
+remains incomplete; production BUY and START stay disabled pending those tests
+and BT-027F fencing/process-manager work.
