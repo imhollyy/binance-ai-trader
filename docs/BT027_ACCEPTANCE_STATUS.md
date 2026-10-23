@@ -178,15 +178,49 @@ written only to the disposable RiskGuard database.
 | STOP/profile revision | PASS | RiskGuard verification rejects PAUSED state and a reservation tied to an older active profile. No release event is generated. |
 | Worker fence | PASS for denial | Any intent containing worker identity/generation is rejected by the test coordinator because a DB-backed supervisor fence is not implemented. Valid worker execution is not claimed. |
 
-The process-kill tests prove process loss at the listed checkpoints. They do not
-simulate a network proxy dropping PostgreSQL's COMMIT response after the server
-commits, nor a PostgreSQL server crash/recovery during WAL flush. A risk or PAPER
-database outage is tested as an actual refused connection with backend sessions
-terminated, not as host or storage failure. Corrupt receipt/journal rows cannot
-be updated through normal SQL because append-only guards reject such writes;
-coordinator and migration tests reject forged/mismatched receipts/events. No
-trigger bypass or replication-role mutation is used to manufacture corrupted
-history.
+At the T3 checkpoint, protocol-level COMMIT acknowledgement loss and PostgreSQL
+server restart had not yet been tested; the T4 results below supersede that
+gap. A risk or PAPER database outage is tested as an actual refused connection
+with backend sessions terminated, not as host or storage failure. Corrupt
+receipt/journal rows cannot be updated through normal SQL because append-only
+guards reject such writes; coordinator and migration tests reject
+forged/mismatched receipts/events. No trigger bypass or replication-role
+mutation is used to manufacture corrupted history.
+
+#### BT-027E3T4 final fault-injection slice
+
+Executed on disposable PostgreSQL 16 instances. The first pair of databases
+uses separate `trader_paper_entry_coordinator_test` and
+`trader_paper_entry_risk_test` databases on a task-owned container. The server
+crash test creates its own uniquely named PostgreSQL 16 container and named
+volume with a unique ownership label, then removes only those exact resources.
+The coordinator's alternate test-port exception requires an explicit T4
+sentinel, localhost, and the exact two test database names; ordinary production
+validation remains unchanged.
+
+| Scenario | Result | Evidence |
+| --- | --- | --- |
+| Server committed, client missed COMMIT acknowledgement | PASS | A PostgreSQL protocol-aware TCP proxy observed the backend `CommandComplete(COMMIT)` while `synchronous_commit=on`, withheld and dropped that response. A separate direct engine read the single immutable commit receipt, position, BUY journal, `LEDGER_COMMITTED` event, and reduced cash before the client received a connection error. A new engine recovered to `COMPLETED`; replay kept the same journal/position/receipt counts, exactly one RiskGuard RESERVE, and no RELEASE. |
+| PostgreSQL process killed before ledger commit | PASS | In a dedicated PG16 container and temporary labeled volume, the coordinator was observed blocked inside the ledger journal transaction. The server process was killed and restarted with the same volume. WAL recovery exposed no partial BUY/receipt/account change; the intent remained `RISK_RESERVED` and its reservation was held. |
+| PostgreSQL process killed after commit, before client acknowledgement | PASS | The protocol proxy held the COMMIT completion after server commit; independent read-back established the committed rows, then the actual PG16 process was killed and restarted on the same volume. New engines read all committed ledger/receipt/event rows, completed recovery, and replay created no second BUY or reservation. |
+| Different keys, two OS processes, one shared insufficient account balance | PASS | Two child Python processes used separate app and RiskGuard engines and idempotency keys. PostgreSQL `pg_stat_activity` showed both blocked on the same PAPER settings/account row locks before release. Exactly one committed BUY/position/receipt; the other failed closed after seeing the open position without a current mark. Two independently persisted RESERVEs remained held, zero RELEASE events were written, and account cash/journal/position counts reconciled. |
+| Same-key replay and changed payload | PASS | The completed request replay resolved to the original request; changed quantity/notional on its idempotency key raised `idempotency_key_payload_conflict`. |
+
+The server-crash test covers a deterministic pre-commit lock wait and a
+post-commit/pre-ack crash. It does not claim deterministic interruption during
+the internal WAL flush interval. No distributed ACID transaction is claimed
+across application and RiskGuard databases; ambiguous reservations are held for
+reconciliation. The full coordinator integration file passed 14 tests with no
+skips on two disposable databases; the dedicated T4 subset passed 2 tests.
+
+E3's isolated coordination/recovery evidence now covers the T4 acceptance
+matrix, but this does not authorize production BUY. Expected net advantage is
+still unverified independently, and a persisted worker fencing proof is not
+implemented; worker-origin requests remain rejected. BT-027F still requires a
+real process manager, durable lease/generation fencing enforced at the
+execution boundary, and verifiable START/STOP completion. Production BUY,
+START, scheduler activation, live orders, Futures, and AI model activation
+remain disabled.
 
 E3 remains incomplete. Production BUY stays disabled: expected net advantage is
 not independently verified, and the two stores have no distributed ACID

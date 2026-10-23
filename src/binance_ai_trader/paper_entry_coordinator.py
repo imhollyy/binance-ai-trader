@@ -455,15 +455,22 @@ def create_evidenced_intent_for_test(
         engine_url = make_url(engine.url)
     except (ValueError, TypeError) as exc:
         raise EntryCoordinatorRejected("isolated_evidence_test_database_required") from exc
+    restart_test_port = os.environ.get("PAPER_ENTRY_E3T4_DISPOSABLE_SERVER_PORT")
+    disposable_server_test = (
+        os.environ.get("PAPER_ENTRY_E3T4_DISPOSABLE_SERVER") == "1"
+        and restart_test_port is not None
+        and restart_test_port.isdecimal()
+        and url.host in {"127.0.0.1", "localhost"}
+        and url.port == int(restart_test_port)
+        and url.database == "trader_paper_entry_coordinator_test"
+    )
     if not (
         test_flag
         and url.get_backend_name() == "postgresql"
         and url.host in {"127.0.0.1", "localhost"}
-        and url.port == 55444
+        and (url.port == 55444 or disposable_server_test)
         and url.database == "trader_paper_entry_coordinator_test"
-        and engine_url.host == url.host
-        and engine_url.port == url.port
-        and engine_url.database == url.database
+        and engine_url == url
     ):
         raise EntryCoordinatorRejected("isolated_evidence_test_database_required")
     return _create_evidenced_intent(
@@ -855,15 +862,31 @@ def commit_risk_reserved_for_isolated_test(
     _require_postgresql(engine)
     app_url = make_url(os.environ.get("TEST_POSTGRES_URL", ""))
     risk_url = make_url(os.environ.get("RISK_TEST_POSTGRES_URL", ""))
+    restart_test_port = os.environ.get("PAPER_ENTRY_E3T4_DISPOSABLE_SERVER_PORT")
+    disposable_server_port = (
+        int(restart_test_port)
+        if restart_test_port is not None and restart_test_port.isdecimal()
+        else None
+    )
+    disposable_server_test = (
+        os.environ.get("PAPER_ENTRY_E3T4_DISPOSABLE_SERVER") == "1"
+        and disposable_server_port is not None
+        and app_url.host in {"127.0.0.1", "localhost"}
+        and risk_url.host in {"127.0.0.1", "localhost"}
+        and app_url.port == disposable_server_port
+        and risk_url.port == disposable_server_port
+        and app_url.database == "trader_paper_entry_coordinator_test"
+        and risk_url.database == "trader_paper_entry_risk_test"
+    )
     if not (
         os.environ.get("PAPER_ENTRY_E3_TEST_ONLY") == "1"
         and os.environ.get("PAPER_ENTRY_COORDINATOR_TEST_ISOLATED") == "1"
         and os.environ.get("TRADEPILOT_PAPER_ENTRY_RISK_TEST_DB") == "1"
         and app_url.host in {"127.0.0.1", "localhost"}
-        and app_url.port == 55444
+        and (app_url.port == 55444 or disposable_server_test)
         and app_url.database == "trader_paper_entry_coordinator_test"
         and risk_url.host in {"127.0.0.1", "localhost"}
-        and risk_url.port == 55444
+        and (risk_url.port == 55444 or disposable_server_test)
         and risk_url.database == "trader_paper_entry_risk_test"
         and engine.url == app_url
         and risk_engine.url == risk_url

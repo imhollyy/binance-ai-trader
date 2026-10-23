@@ -4,19 +4,23 @@ from __future__ import annotations
 
 import json
 import os
+import select
+import socket
 import subprocess
 import sys
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event, Thread
 from typing import Any
 from uuid import uuid4
 
 import httpx
+import psycopg
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
@@ -75,6 +79,113 @@ pytestmark = pytest.mark.skipif(
     not ISOLATED,
     reason="requires isolated trader_paper_entry_coordinator_test on localhost:55444",
 )
+
+
+class _CommitAckDropProxy:
+    """Forward PostgreSQL v3 traffic and hold the COMMIT completion packet."""
+
+    def __init__(self, host: str, port: int) -> None:
+        self.host = host
+        self.port = port
+        self.commit_observed = Event()
+        self.release = Event()
+        self._closed = Event()
+        self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._listener.bind(("127.0.0.1", 0))
+        self._listener.listen()
+        self._listener.settimeout(0.1)
+        self.port = self._listener.getsockname()[1]
+        self.target_host = host
+        self.target_port = port
+        self._accept_thread = Thread(target=self._accept, daemon=True)
+        self._accept_thread.start()
+
+    def _accept(self) -> None:
+        while not self._closed.is_set():
+            try:
+                client, _ = self._listener.accept()
+            except TimeoutError:
+                continue
+            except OSError:
+                return
+            Thread(target=self._relay, args=(client,), daemon=True).start()
+
+    def _relay(self, client: socket.socket) -> None:
+        upstream: socket.socket | None = None
+        try:
+            upstream = socket.create_connection((self.target_host, self.target_port), timeout=5)
+            client.setblocking(False)
+            upstream.setblocking(False)
+            client_buffer = bytearray()
+            upstream_buffer = bytearray()
+            startup_pending = True
+            ledger_write_seen = False
+            while not self._closed.is_set():
+                readable, _, _ = select.select([client, upstream], [], [], 0.1)
+                for source in readable:
+                    data = source.recv(65536)
+                    if not data:
+                        return
+                    if source is client:
+                        client_buffer.extend(data)
+                        if startup_pending:
+                            if len(client_buffer) < 4:
+                                continue
+                            startup_length = int.from_bytes(client_buffer[:4], "big")
+                            if len(client_buffer) < startup_length:
+                                continue
+                            upstream.sendall(client_buffer[:startup_length])
+                            del client_buffer[:startup_length]
+                            startup_pending = False
+                        while not startup_pending and len(client_buffer) >= 5:
+                            length = int.from_bytes(client_buffer[1:5], "big")
+                            frame_length = 1 + length
+                            if len(client_buffer) < frame_length:
+                                break
+                            frame = bytes(client_buffer[:frame_length])
+                            del client_buffer[:frame_length]
+                            if frame[0:1] == b"P":
+                                query = frame[5:].split(b"\x00", 2)
+                                if (
+                                    len(query) >= 2
+                                    and b"insert into paper_entry_ledger_commits"
+                                    in query[1].lower()
+                                ):
+                                    ledger_write_seen = True
+                            upstream.sendall(frame)
+                    else:
+                        upstream_buffer.extend(data)
+                        while len(upstream_buffer) >= 5:
+                            length = int.from_bytes(upstream_buffer[1:5], "big")
+                            frame_length = 1 + length
+                            if len(upstream_buffer) < frame_length:
+                                break
+                            frame = bytes(upstream_buffer[:frame_length])
+                            del upstream_buffer[:frame_length]
+                            if (
+                                ledger_write_seen
+                                and frame[0:1] == b"C"
+                                and frame[5:].rstrip(b"\x00") == b"COMMIT"
+                            ):
+                                self.commit_observed.set()
+                                self.release.wait(timeout=30)
+                                return
+                            client.sendall(frame)
+        except (OSError, TimeoutError):
+            return
+        finally:
+            with suppress(OSError):
+                client.close()
+            if upstream is not None:
+                with suppress(OSError):
+                    upstream.close()
+
+    def close(self) -> None:
+        self._closed.set()
+        self.release.set()
+        self._listener.close()
+        self._accept_thread.join(timeout=2)
 
 
 def _intent(key: str | None = None) -> PaperEntryIntent:
@@ -154,6 +265,8 @@ def _ledger_counts(engine: Engine) -> tuple[int, int, int]:
 
 def _entry_observation_clients(
     delay_ms: int = 2,
+    *,
+    display_quantity: Decimal = Decimal("3"),
 ) -> tuple[PublicSpotObservationClient, PublicSpotCostClient, PublicSpotDepthClient]:
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -205,13 +318,13 @@ def _entry_observation_clients(
                                 {
                                     "filterType": "LOT_SIZE",
                                     "minQty": "0.01",
-                                    "maxQty": "10",
+                                    "maxQty": str(max(Decimal("10"), display_quantity)),
                                     "stepSize": "0.01",
                                 },
                                 {
                                     "filterType": "MARKET_LOT_SIZE",
                                     "minQty": "0.01",
-                                    "maxQty": "4",
+                                    "maxQty": str(max(Decimal("4"), display_quantity)),
                                     "stepSize": "0.01",
                                 },
                                 {
@@ -234,8 +347,8 @@ def _entry_observation_clients(
                     "symbol": "BTCUSDT",
                     "bidPrice": "99.90",
                     "askPrice": "100.10",
-                    "bidQty": "3",
-                    "askQty": "3",
+                    "bidQty": str(display_quantity),
+                    "askQty": str(display_quantity),
                 },
             )
         if path == "/api/v3/depth":
@@ -243,8 +356,8 @@ def _entry_observation_clients(
                 200,
                 json={
                     "lastUpdateId": 101,
-                    "bids": [["99.90", "3"], ["99.80", "2"]],
-                    "asks": [["100.10", "3"], ["100.20", "2"]],
+                    "bids": [["99.90", str(display_quantity)], ["99.80", "2"]],
+                    "asks": [["100.10", str(display_quantity)], ["100.20", "2"]],
                 },
             )
         raise AssertionError(path)
@@ -278,6 +391,186 @@ def _costed_intent() -> PaperEntryIntent:
         spread_cost_usdt=Decimal("0.2001"),
         slippage_cost_usdt=Decimal("0.050025"),
         expected_net_advantage_usdt=Decimal("1"),
+    )
+
+
+def _configure_e3t4_profile(risk_engine: Engine) -> int:
+    with risk_engine.connect() as connection:
+        runtime = (
+            connection.execute(
+                text(
+                    "SELECT active_profile_version,revision,bot_state "
+                    "FROM ai_risk_runtime WHERE id=1"
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+    if runtime is None:
+        initial_profile = RiskProfile(
+            "1.0",
+            1,
+            1,
+            10,
+            Decimal("10"),
+            Decimal("20000"),
+            Decimal("20000"),
+            Decimal("20"),
+            Decimal("50"),
+            20,
+            (("confirmed_disposable_test_cap", Decimal("20000")),),
+        )
+        revision = install_profile(
+            risk_engine,
+            initial_profile,
+            user_confirmed=True,
+            expected_runtime_revision=0,
+        )
+        revision = set_bot_state(risk_engine, state=BotState.PAUSED, expected_revision=revision)
+        set_bot_state(risk_engine, state=BotState.RUNNING, expected_revision=revision)
+        return 1
+    state = BotState(str(runtime["bot_state"]))
+    revision = int(runtime["revision"])
+    if state == BotState.RUNNING:
+        revision = set_bot_state(risk_engine, state=BotState.PAUSED, expected_revision=revision)
+        state = BotState.PAUSED
+    if state in {BotState.PAUSED, BotState.EMERGENCY_FLATTEN}:
+        revision = set_bot_state(risk_engine, state=BotState.STOPPED, expected_revision=revision)
+        state = BotState.STOPPED
+    assert state == BotState.STOPPED
+    profile_version = int(runtime["active_profile_version"]) + 1
+    profile = RiskProfile(
+        "1.0",
+        profile_version,
+        1,
+        10,
+        Decimal("10"),
+        Decimal("20000"),
+        Decimal("20000"),
+        Decimal("20"),
+        Decimal("50"),
+        20,
+        (("confirmed_disposable_test_cap", Decimal("20000")),),
+    )
+    revision = install_profile(
+        risk_engine,
+        profile,
+        user_confirmed=True,
+        expected_runtime_revision=revision,
+    )
+    revision = set_bot_state(risk_engine, state=BotState.PAUSED, expected_revision=revision)
+    set_bot_state(risk_engine, state=BotState.RUNNING, expected_revision=revision)
+    return profile_version
+
+
+def _reserve_e3t4_intent(
+    app_engine: Engine,
+    risk_engine: Engine,
+    *,
+    profile_version: int,
+    quantity: Decimal,
+    stop_price: Decimal,
+) -> tuple[Any, PaperEntryIntent]:
+    reference = Decimal("100.05")
+    notional = quantity * reference
+    intent = replace(
+        _costed_intent(),
+        idempotency_key=f"e3t4_{uuid4().hex}",
+        source_reference=f"e3t4-disposable-{uuid4().hex}",
+        risk_profile_version=profile_version,
+        quantity=quantity,
+        reference_price=reference,
+        order_notional_usdt=notional,
+        risk_amount_usdt=quantity * (reference - stop_price),
+        fee_cost_usdt=notional * Decimal("0.001"),
+        spread_cost_usdt=notional * Decimal("0.002"),
+        slippage_cost_usdt=notional * Decimal("0.0005"),
+        expected_net_advantage_usdt=Decimal("1"),
+    )
+    clients = _entry_observation_clients(display_quantity=quantity)
+    record = create_evidenced_intent_for_test(
+        app_engine,
+        intent,
+        candle_client=clients[0],
+        book_client=clients[1],
+        depth_client=clients[2],
+    )
+    snapshot = capture_paper_account_evidence(app_engine, account_id=1, expected_settings_version=7)
+    record_account_snapshot(
+        risk_engine,
+        snapshot_id=record.request_id,
+        equity=Decimal(str(snapshot.payload["risk_equity_usdt"])),
+        day_start_equity=Decimal(str(snapshot.payload["day_start_equity_usdt"])),
+        peak_equity=Decimal(str(snapshot.payload["peak_equity_usdt"])),
+        open_capital=Decimal(str(snapshot.payload["open_capital_usdt"])),
+        open_positions=int(snapshot.payload["open_positions"]),
+        consecutive_losses=int(snapshot.payload["consecutive_losses"]),
+        source_sha256=snapshot.snapshot_sha256,
+    )
+    with app_engine.connect() as connection:
+        market: Decimal = connection.execute(
+            text("SELECT spread_bps FROM paper_entry_market_evidence WHERE request_id=:id"),
+            {"id": record.request_id},
+        ).scalar_one()
+    spread_bps = Decimal(market)
+    fee_bps = Decimal("20")
+    slippage_bps = Decimal("5")
+    gross_edge = Decimal("1") * Decimal(10_000) / notional
+    gross_edge += fee_bps + spread_bps + slippage_bps
+    request = RiskRequest(
+        settings_version=profile_version,
+        bot_state=BotState.RUNNING,
+        proposed_notional=notional,
+        stop_loss_price=stop_price,
+        take_profit_price=reference + Decimal("2"),
+        reference_price=reference,
+        fee_bps_round_trip=fee_bps,
+        spread_bps=spread_bps,
+        slippage_bps=slippage_bps,
+        expected_gross_edge_bps=gross_edge,
+        min_net_edge_bps=Decimal(0),
+        current_open_capital=Decimal(str(snapshot.payload["open_capital_usdt"])),
+        open_positions=int(snapshot.payload["open_positions"]),
+        equity=Decimal(str(snapshot.payload["risk_equity_usdt"])),
+        day_start_equity=Decimal(str(snapshot.payload["day_start_equity_usdt"])),
+        peak_equity=Decimal(str(snapshot.payload["peak_equity_usdt"])),
+        consecutive_losses=int(snapshot.payload["consecutive_losses"]),
+    )
+    decision = evaluate_and_reserve(
+        risk_engine,
+        request_id=record.request_id,
+        signal_id=record.request_id,
+        profile_version=profile_version,
+        request=request,
+        intent_sha256=record.intent_sha256,
+        paper_snapshot_sha256=snapshot.snapshot_sha256,
+    )
+    assert decision.allowed
+    assert (
+        record_verified_risk_reservation(
+            app_engine, risk_engine, request_id=record.request_id
+        ).current_state
+        == "RISK_RESERVED"
+    )
+    with app_engine.connect() as connection:
+        claims = (
+            connection.execute(
+                text(
+                    "SELECT claimed_ledger_snapshot_sha256,claimed_cost_evidence_sha256 "
+                    "FROM paper_entry_intents WHERE request_id=:id"
+                ),
+                {"id": record.request_id},
+            )
+            .mappings()
+            .one()
+        )
+    return (
+        record,
+        replace(
+            intent,
+            claimed_ledger_snapshot_sha256=claims["claimed_ledger_snapshot_sha256"],
+            claimed_cost_evidence_sha256=claims["claimed_cost_evidence_sha256"],
+        ),
     )
 
 
@@ -1993,3 +2286,864 @@ time.sleep(60)
             )
     finally:
         risk_restart.dispose()
+
+
+def test_e3t4_commit_ack_loss_and_multiprocess_capital_race(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Observe committed writes while dropping COMMIT ack, then race two BUY workers."""
+    monkeypatch.setenv("PAPER_ENTRY_E3_TEST_ONLY", "1")
+    monkeypatch.setenv("PAPER_ENTRY_COORDINATOR_TEST_ISOLATED", "1")
+    monkeypatch.setenv("TRADEPILOT_PAPER_ENTRY_RISK_TEST_DB", "1")
+    monkeypatch.setenv("PAPER_ENTRY_EVIDENCE_TEST_ONLY", "1")
+    monkeypatch.setenv("PAPER_LEDGER_TEST_ISOLATED", "1")
+    risk_url = make_url(os.environ["RISK_TEST_POSTGRES_URL"])
+    risk_engine = create_engine(risk_url, pool_pre_ping=True)
+    app_url = make_url(os.environ["TEST_POSTGRES_URL"])
+    profile_version = _configure_e3t4_profile(risk_engine)
+    try:
+        # PostgreSQL sends CommandComplete("COMMIT") only after the transaction
+        # commits. With synchronous_commit enabled this is the durable boundary.
+        with engine.connect() as connection:
+            assert connection.execute(text("SHOW synchronous_commit")).scalar_one() == "on"
+        request, _ = _reserve_e3t4_intent(
+            engine,
+            risk_engine,
+            profile_version=profile_version,
+            quantity=Decimal("0.1"),
+            stop_price=Decimal("99.05"),
+        )
+        before = _ledger_counts(engine)
+        with engine.connect() as connection:
+            cash_before = Decimal(
+                connection.execute(
+                    text("SELECT cash_usdt FROM paper_spot_accounts WHERE id=1")
+                ).scalar_one()
+            )
+        proxy = _CommitAckDropProxy(app_url.host or "127.0.0.1", app_url.port or 55444)
+        marker = tmp_path / "commit-ack-client-outcome"
+        worker_code = """
+import os
+from pathlib import Path
+import psycopg
+from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
+from sqlalchemy.pool import NullPool
+from binance_ai_trader.paper_entry_coordinator import commit_risk_reserved_for_isolated_test
+direct = make_url(os.environ['TEST_POSTGRES_URL'])
+def connect():
+    return psycopg.connect(host='127.0.0.1', port=int(os.environ['E3T4_PROXY_PORT']),
+        dbname=direct.database, user=direct.username, password=direct.password,
+        sslmode='disable', application_name='e3t4_commit_ack_loss')
+app = create_engine(direct, creator=connect, poolclass=NullPool)
+risk = create_engine(os.environ['RISK_TEST_POSTGRES_URL'], pool_pre_ping=True)
+try:
+    result = commit_risk_reserved_for_isolated_test(app, risk,
+        request_id=os.environ['E3T4_REQUEST_ID'])
+    Path(os.environ['E3T4_MARKER']).write_text('UNEXPECTED_SUCCESS:' + result.current_state)
+except Exception as exc:
+    Path(os.environ['E3T4_MARKER']).write_text(type(exc).__name__ + ':' + str(exc))
+finally:
+    app.dispose()
+    risk.dispose()
+"""
+        child = subprocess.Popen(
+            [sys.executable, "-c", worker_code],
+            env={
+                **os.environ,
+                "E3T4_PROXY_PORT": str(proxy.port),
+                "E3T4_REQUEST_ID": request.request_id,
+                "E3T4_MARKER": str(marker),
+            },
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            assert proxy.commit_observed.wait(timeout=30), "proxy did not observe ledger COMMIT"
+            # Independent direct DB read proves the app commit is durable while
+            # the child has not received its COMMIT response.
+            with engine.connect() as connection:
+                assert (
+                    connection.execute(
+                        text(
+                            "SELECT count(*) FROM paper_entry_ledger_commits WHERE request_id=:id"
+                        ),
+                        {"id": request.request_id},
+                    ).scalar_one()
+                    == 1
+                )
+                assert (
+                    connection.execute(
+                        text("SELECT count(*) FROM paper_spot_positions WHERE trade_id=:id"),
+                        {"id": request.request_id},
+                    ).scalar_one()
+                    == 1
+                )
+                assert (
+                    connection.execute(
+                        text(
+                            "SELECT count(*) FROM paper_spot_journal "
+                            "WHERE idempotency_key=:key AND event_type='spot_buy'"
+                        ),
+                        {"key": f"entry-{request.request_id}"},
+                    ).scalar_one()
+                    == 1
+                )
+                assert (
+                    connection.execute(
+                        text(
+                            "SELECT to_state FROM paper_entry_intent_events "
+                            "WHERE request_id=:id ORDER BY sequence DESC LIMIT 1"
+                        ),
+                        {"id": request.request_id},
+                    ).scalar_one()
+                    == "LEDGER_COMMITTED"
+                )
+                cash_after_commit = Decimal(
+                    connection.execute(
+                        text("SELECT cash_usdt FROM paper_spot_accounts WHERE id=1")
+                    ).scalar_one()
+                )
+                assert cash_after_commit < cash_before
+            proxy.release.set()
+            outcome = _wait_for_marker(child, marker)
+            assert not outcome.startswith("UNEXPECTED_SUCCESS"), outcome
+            assert any(
+                term in outcome for term in ("OperationalError", "InterfaceError", "Connection")
+            ), outcome
+        finally:
+            proxy.release.set()
+            if child.poll() is None:
+                _kill_process(child)
+            proxy.close()
+
+        restarted = create_engine(app_url, pool_pre_ping=True)
+        try:
+            committed_counts = _ledger_counts(restarted)
+            completed = recover_committed_entry(restarted, request_id=request.request_id)
+            assert completed.current_state == "COMPLETED"
+            assert (
+                _ledger_counts(restarted)
+                == committed_counts
+                == (before[0], before[1] + 1, before[2] + 1)
+            )
+            assert (
+                commit_risk_reserved_for_isolated_test(
+                    restarted, risk_engine, request_id=request.request_id
+                ).current_state
+                == "COMPLETED"
+            )
+            assert _ledger_counts(restarted) == committed_counts
+            with risk_engine.connect() as connection:
+                assert (
+                    connection.execute(
+                        text(
+                            "SELECT count(*) FROM ai_risk_reservation_events "
+                            "WHERE reservation_id=:id AND event_type='RESERVE'"
+                        ),
+                        {"id": request.request_id},
+                    ).scalar_one()
+                    == 1
+                )
+                assert (
+                    connection.execute(
+                        text(
+                            "SELECT count(*) FROM ai_risk_reservation_events "
+                            "WHERE reservation_id=:id AND event_type='RELEASE'"
+                        ),
+                        {"id": request.request_id},
+                    ).scalar_one()
+                    == 0
+                )
+            with Session(restarted) as session:
+                close_paper_spot(
+                    session,
+                    request.request_id,
+                    Decimal("101"),
+                    f"e3t4_ack_close_{uuid4().hex}",
+                    explicit_approval=True,
+                    costs=PaperCosts(),
+                )
+        finally:
+            restarted.dispose()
+
+        # Each worker has its own process-local SQLAlchemy engines. Hold the
+        # settings/account rows until both are observed waiting at the actual
+        # ledger lock, then release both requests against one limited balance.
+        # The disposable account requires >0.35% notional in modeled costs;
+        # use the schema's maximum explicitly in this isolated test fixture.
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE trading_settings SET data="
+                    "jsonb_set(data::jsonb,'{risk_per_trade_pct}','2'::jsonb)::json "
+                    "WHERE id=1"
+                )
+            )
+        # Each order consumes just over half the available cash, so only one fits.
+        with engine.connect() as connection:
+            cash = Decimal(
+                str(
+                    connection.execute(
+                        text("SELECT cash_usdt FROM paper_spot_accounts WHERE id=1")
+                    ).scalar_one()
+                )
+            )
+        # Snap to an exchange-valid cent quantity and preserve one-order-only
+        # capital: two such orders cost more than the live disposable cash.
+        quantity = (cash / Decimal("100.05") * Decimal("0.51")).quantize(Decimal("0.01"))
+        assert quantity * Decimal("100.05") <= cash
+        assert 2 * quantity * Decimal("100.05") > cash
+        racing: list[tuple[Any, PaperEntryIntent]] = []
+        for _ in range(2):
+            racing.append(
+                _reserve_e3t4_intent(
+                    engine,
+                    risk_engine,
+                    profile_version=profile_version,
+                    quantity=quantity,
+                    stop_price=Decimal("100.04"),
+                )
+            )
+        race_before = _ledger_counts(engine)
+        with engine.connect() as connection:
+            buy_count_before = int(
+                connection.execute(
+                    text("SELECT count(*) FROM paper_spot_journal WHERE event_type='spot_buy'")
+                ).scalar_one()
+            )
+            cash_before_race = Decimal(
+                str(
+                    connection.execute(
+                        text("SELECT cash_usdt FROM paper_spot_accounts WHERE id=1")
+                    ).scalar_one()
+                )
+            )
+        assert quantity * Decimal("100.05") <= cash_before_race
+        assert 2 * quantity * Decimal("100.05") > cash_before_race
+
+        child_envs: list[dict[str, str]] = []
+        ready_paths = [tmp_path / f"e3t4-race-{i}.ready" for i in range(2)]
+        go_path = tmp_path / "e3t4-race.go"
+        result_paths = [tmp_path / f"e3t4-race-{i}.result" for i in range(2)]
+        application_names = [f"e3t4_buy_{uuid4().hex[:10]}" for _ in range(2)]
+        race_worker = """
+import os,time
+from pathlib import Path
+from sqlalchemy import create_engine
+from binance_ai_trader.paper_entry_coordinator import commit_risk_reserved_for_isolated_test
+app=create_engine(os.environ['TEST_POSTGRES_URL'],pool_pre_ping=True)
+risk=create_engine(os.environ['RISK_TEST_POSTGRES_URL'],pool_pre_ping=True)
+Path(os.environ['E3T4_READY']).write_text('ready')
+deadline=time.monotonic()+30
+while not Path(os.environ['E3T4_GO']).exists() and time.monotonic()<deadline: time.sleep(.005)
+try:
+    result=commit_risk_reserved_for_isolated_test(app,risk,request_id=os.environ['E3T4_REQUEST_ID'])
+    outcome='OK:'+result.trade_id
+except Exception as exc:
+    outcome=type(exc).__name__+':'+str(exc)
+Path(os.environ['E3T4_RESULT']).write_text(outcome)
+app.dispose(); risk.dispose()
+"""
+        processes: list[subprocess.Popen[bytes]] = []
+        blocker = engine.connect()
+        blocker_tx = blocker.begin()
+        blocker.execute(text("SELECT id FROM trading_settings WHERE id=1 FOR UPDATE"))
+        blocker.execute(text("SELECT id FROM paper_spot_accounts WHERE id=1 FOR UPDATE"))
+        try:
+            for index, ((intent_record, _intent_payload), app_name) in enumerate(
+                zip(racing, application_names, strict=True)
+            ):
+                child_app = app_url.set(query={"application_name": app_name})
+                child_risk = risk_url.set(query={"application_name": f"{app_name}_risk"})
+                child_envs.append(
+                    {
+                        **os.environ,
+                        "TEST_POSTGRES_URL": child_app.render_as_string(hide_password=False),
+                        "RISK_TEST_POSTGRES_URL": child_risk.render_as_string(hide_password=False),
+                        "E3T4_REQUEST_ID": intent_record.request_id,
+                        "E3T4_READY": str(ready_paths[index]),
+                        "E3T4_GO": str(go_path),
+                        "E3T4_RESULT": str(result_paths[index]),
+                    }
+                )
+                processes.append(
+                    subprocess.Popen(
+                        [sys.executable, "-c", race_worker],
+                        env=child_envs[-1],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                    )
+                )
+            for process, ready in zip(processes, ready_paths, strict=True):
+                assert _wait_for_marker(process, ready) == "ready"
+            go_path.write_text("go", encoding="utf-8")
+            deadline = time.monotonic() + 30
+            waiting_names: set[str] = set()
+            while time.monotonic() < deadline:
+                with engine.connect() as connection:
+                    waiting_names = set(
+                        connection.execute(
+                            text(
+                                "SELECT application_name FROM pg_stat_activity "
+                                "WHERE application_name = ANY(:names) AND wait_event_type='Lock'"
+                            ),
+                            {"names": application_names},
+                        ).scalars()
+                    )
+                if len(waiting_names) == 2:
+                    break
+                if any(process.poll() is not None for process in processes):
+                    break
+                time.sleep(0.02)
+            assert waiting_names == set(application_names), (
+                "both independent workers must reach and wait on the PAPER account lock",
+                waiting_names,
+            )
+        finally:
+            blocker_tx.rollback()
+            blocker.close()
+        outcomes = [
+            _wait_for_marker(process, result_path)
+            for process, result_path in zip(processes, result_paths, strict=True)
+        ]
+        assert sum(outcome.startswith("OK:") for outcome in outcomes) == 1, outcomes
+        assert sum(not outcome.startswith("OK:") for outcome in outcomes) == 1, outcomes
+        winner_index = next(i for i, outcome in enumerate(outcomes) if outcome.startswith("OK:"))
+        winner = racing[winner_index][0]
+        loser_index = 1 - winner_index
+        loser = racing[loser_index][0]
+        assert _ledger_counts(engine) == (race_before[0], race_before[1] + 1, race_before[2] + 1)
+        with engine.connect() as connection:
+            assert (
+                connection.execute(
+                    text("SELECT count(*) FROM paper_spot_journal WHERE event_type='spot_buy'")
+                ).scalar_one()
+                == buy_count_before + 1
+            )
+            assert (
+                connection.execute(
+                    text("SELECT cash_usdt FROM paper_spot_accounts WHERE id=1")
+                ).scalar_one()
+                < cash_before_race
+            )
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM paper_entry_ledger_commits "
+                        "WHERE request_id IN (:a,:b)"
+                    ),
+                    {"a": racing[0][0].request_id, "b": racing[1][0].request_id},
+                ).scalar_one()
+                == 1
+            )
+        with risk_engine.connect() as connection:
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM ai_risk_reservation_events "
+                        "WHERE reservation_id IN (:a,:b) AND event_type='RESERVE'"
+                    ),
+                    {"a": racing[0][0].request_id, "b": racing[1][0].request_id},
+                ).scalar_one()
+                == 2
+            )
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM ai_risk_reservation_events "
+                        "WHERE reservation_id IN (:a,:b) AND event_type='RELEASE'"
+                    ),
+                    {"a": racing[0][0].request_id, "b": racing[1][0].request_id},
+                ).scalar_one()
+                == 0
+            )
+        winner_after = get_intent(engine, winner.request_id)
+        loser_after = get_intent(engine, loser.request_id)
+        assert winner_after is not None and winner_after.current_state == "COMPLETED"
+        assert loser_after is not None and loser_after.current_state in {
+            "RISK_RESERVED",
+            "RECONCILIATION_REQUIRED",
+        }
+        assert (
+            create_intent(
+                engine,
+                racing[winner_index][1],
+            ).request_id
+            == winner.request_id
+        )
+        with pytest.raises(EntryCoordinatorRejected, match="idempotency_key_payload_conflict"):
+            create_intent(
+                engine,
+                replace(
+                    racing[winner_index][1],
+                    quantity=quantity + Decimal("0.01"),
+                    order_notional_usdt=(quantity + Decimal("0.01")) * Decimal("100.05"),
+                ),
+            )
+    finally:
+        risk_engine.dispose()
+
+
+def test_e3t4_disposable_postgres_server_kill_and_wal_recovery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Kill a dedicated PG16 server before and after commit using its own volume."""
+    run_id = uuid4().hex
+    container_name = f"tradepilot-e3t4-pg-{run_id[:12]}"
+    volume_name = f"tradepilot-e3t4-vol-{run_id[:12]}"
+    fixture_password = "ci_only_password_not_a_secret"
+    created_volume = False
+    created_container = False
+    app_engine: Engine | None = None
+    risk_engine: Engine | None = None
+
+    def docker(*args: str) -> str:
+        completed = subprocess.run(
+            ["docker", *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        return completed.stdout.strip()
+
+    def wait_ready(database: str) -> None:
+        deadline = time.monotonic() + 60
+        last_error = ""
+        while time.monotonic() < deadline:
+            try:
+                with psycopg.connect(
+                    host="127.0.0.1",
+                    port=pg_port,
+                    dbname=database,
+                    user="trader_test",
+                    password=fixture_password,
+                    connect_timeout=2,
+                    sslmode="disable",
+                ) as connection:
+                    connection.execute("SELECT 1")
+                return
+            except psycopg.Error as exc:
+                last_error = type(exc).__name__
+                time.sleep(0.25)
+        raise AssertionError(f"disposable PostgreSQL did not recover: {last_error}")
+
+    try:
+        port_probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        port_probe.bind(("127.0.0.1", 0))
+        pg_port = port_probe.getsockname()[1]
+        port_probe.close()
+        volume_created_name = docker(
+            "volume",
+            "create",
+            "--label",
+            f"com.tradepilot.bt027e3t4={run_id}",
+            volume_name,
+        )
+        assert volume_created_name == volume_name
+        created_volume = True
+        docker(
+            "run",
+            "--detach",
+            "--name",
+            container_name,
+            "--label",
+            f"com.tradepilot.bt027e3t4={run_id}",
+            "--mount",
+            f"type=volume,source={volume_name},target=/var/lib/postgresql/data",
+            "--publish",
+            f"127.0.0.1:{pg_port}:5432",
+            "--env",
+            "POSTGRES_DB=trader_test",
+            "--env",
+            "POSTGRES_USER=trader_test",
+            "--env",
+            f"POSTGRES_PASSWORD={fixture_password}",
+            "postgres:16-alpine",
+        )
+        created_container = True
+        mapping = docker("port", container_name, "5432/tcp").splitlines()[0]
+        assert int(mapping.rsplit(":", maxsplit=1)[1]) == pg_port
+        wait_ready("trader_test")
+        with psycopg.connect(
+            host="127.0.0.1",
+            port=pg_port,
+            dbname="trader_test",
+            user="trader_test",
+            password=fixture_password,
+            autocommit=True,
+            sslmode="disable",
+        ) as admin:
+            admin.execute("CREATE DATABASE trader_paper_entry_coordinator_test")
+            admin.execute("CREATE DATABASE trader_paper_entry_risk_test")
+
+        app_url = (
+            f"postgresql+psycopg://trader_test:{fixture_password}@127.0.0.1:{pg_port}/"
+            "trader_paper_entry_coordinator_test"
+        )
+        risk_url = (
+            f"postgresql+psycopg://trader_test:{fixture_password}@127.0.0.1:{pg_port}/"
+            "trader_paper_entry_risk_test"
+        )
+        for migration_url in (app_url, risk_url):
+            migration_env = {**os.environ, "DATABASE_URL": migration_url}
+            migration = subprocess.run(
+                [sys.executable, "-m", "alembic", "upgrade", "head"],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=migration_env,
+                timeout=90,
+            )
+            assert "Traceback" not in migration.stderr
+
+        monkeypatch.setenv("TEST_POSTGRES_URL", app_url)
+        monkeypatch.setenv("RISK_TEST_POSTGRES_URL", risk_url)
+        monkeypatch.setenv("PAPER_ENTRY_E3T4_DISPOSABLE_SERVER", "1")
+        monkeypatch.setenv("PAPER_ENTRY_E3T4_DISPOSABLE_SERVER_PORT", str(pg_port))
+        monkeypatch.setenv("PAPER_ENTRY_E3_TEST_ONLY", "1")
+        monkeypatch.setenv("PAPER_ENTRY_COORDINATOR_TEST_ISOLATED", "1")
+        monkeypatch.setenv("PAPER_ENTRY_EVIDENCE_TEST_ONLY", "1")
+        monkeypatch.setenv("PAPER_LEDGER_TEST_ISOLATED", "1")
+        monkeypatch.setenv("TRADEPILOT_PAPER_ENTRY_RISK_TEST_DB", "1")
+
+        app_engine = create_engine(app_url, pool_pre_ping=True)
+        risk_engine = create_engine(risk_url, pool_pre_ping=True)
+        with Session(app_engine) as session, session.begin():
+            session.add(
+                TradingSettingsRow(
+                    id=1,
+                    version=7,
+                    data={
+                        "mode": "paper",
+                        "market_type": "spot",
+                        "bot_enabled": False,
+                        "spot_capital_usdt": 10000,
+                        "futures_capital_usdt": 0,
+                        "risk_per_trade_pct": 0.25,
+                        "daily_loss_limit_pct": 1.5,
+                        "max_drawdown_pct": 5,
+                        "max_open_positions": 3,
+                        "max_leverage": 1,
+                        "stop_loss_required": True,
+                        "manual_approval": True,
+                        "allowed_symbols": ["BTCUSDT", "ETHUSDT"],
+                    },
+                )
+            )
+        with Session(app_engine) as session:
+            ensure_paper_spot_account(session)
+        profile_version = _configure_e3t4_profile(risk_engine)
+
+        # Kill the actual PostgreSQL process while the real ledger transaction
+        # waits inside a trigger before COMMIT. Recovery must see no partial BUY.
+        before = _ledger_counts(app_engine)
+        pending, _ = _reserve_e3t4_intent(
+            app_engine,
+            risk_engine,
+            profile_version=profile_version,
+            quantity=Decimal("0.1"),
+            stop_price=Decimal("99.05"),
+        )
+        lock_key = 270027428
+        blocker = app_engine.connect()
+        blocker.execute(text("SELECT pg_advisory_lock(:key)"), {"key": lock_key})
+        with app_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "CREATE FUNCTION bt027_e3t4_wait_entry_journal() RETURNS trigger "
+                    "LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(270027428); "
+                    "RETURN NEW; END $$"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE TRIGGER bt027_e3t4_wait_entry_journal BEFORE INSERT "
+                    "ON paper_spot_journal FOR EACH ROW "
+                    "EXECUTE FUNCTION bt027_e3t4_wait_entry_journal()"
+                )
+            )
+        blocked_name = f"e3t4_server_crash_{uuid4().hex[:8]}"
+        blocked_url = make_url(app_url).set(query={"application_name": blocked_name})
+        blocked_risk_url = make_url(risk_url).set(
+            query={"application_name": f"{blocked_name}_risk"}
+        )
+        blocked_marker = tmp_path / "server-crash-before-commit"
+        child_code = """
+import os
+from pathlib import Path
+from sqlalchemy import create_engine
+from binance_ai_trader.paper_entry_coordinator import commit_risk_reserved_for_isolated_test
+app=create_engine(os.environ['TEST_POSTGRES_URL'],pool_pre_ping=True)
+risk=create_engine(os.environ['RISK_TEST_POSTGRES_URL'],pool_pre_ping=True)
+try:
+    commit_risk_reserved_for_isolated_test(app,risk,request_id=os.environ['E3T4_REQUEST_ID'])
+    Path(os.environ['E3T4_MARKER']).write_text('UNEXPECTED_SUCCESS')
+except Exception as exc:
+    Path(os.environ['E3T4_MARKER']).write_text(type(exc).__name__+':'+str(exc))
+"""
+        blocked_child = subprocess.Popen(
+            [sys.executable, "-c", child_code],
+            env={
+                **os.environ,
+                "TEST_POSTGRES_URL": blocked_url.render_as_string(hide_password=False),
+                "RISK_TEST_POSTGRES_URL": blocked_risk_url.render_as_string(hide_password=False),
+                "E3T4_REQUEST_ID": pending.request_id,
+                "E3T4_MARKER": str(blocked_marker),
+            },
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        blocked = False
+        try:
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                with app_engine.connect() as connection:
+                    blocked = bool(
+                        connection.execute(
+                            text(
+                                "SELECT count(*) FROM pg_stat_activity "
+                                "WHERE application_name=:name AND wait_event_type='Lock'"
+                            ),
+                            {"name": blocked_name},
+                        ).scalar_one()
+                    )
+                if blocked:
+                    break
+                if blocked_child.poll() is not None:
+                    break
+                time.sleep(0.02)
+            assert blocked, "coordinator child was not observed inside ledger transaction"
+            docker("kill", "--signal=KILL", container_name)
+            docker("start", container_name)
+            wait_ready("trader_paper_entry_coordinator_test")
+            docker("exec", container_name, "pg_isready", "-U", "trader_test", "-d", "trader_test")
+            with suppress(Exception):
+                blocker.close()
+            outcome = _wait_for_marker(blocked_child, blocked_marker)
+            assert not outcome.startswith("UNEXPECTED_SUCCESS"), outcome
+        finally:
+            if blocked_child.poll() is None:
+                _kill_process(blocked_child)
+            with suppress(Exception):
+                blocker.close()
+
+        app_engine.dispose()
+        risk_engine.dispose()
+        app_engine = create_engine(app_url, pool_pre_ping=True)
+        risk_engine = create_engine(risk_url, pool_pre_ping=True)
+        with app_engine.connect() as connection:
+            assert _ledger_counts(app_engine) == before
+            assert (
+                connection.execute(
+                    text("SELECT count(*) FROM paper_entry_ledger_commits WHERE request_id=:id"),
+                    {"id": pending.request_id},
+                ).scalar_one()
+                == 0
+            )
+        pending_after = get_intent(app_engine, pending.request_id)
+        assert pending_after is not None and pending_after.current_state == "RISK_RESERVED"
+        with risk_engine.connect() as connection:
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM ai_risk_reservation_events "
+                        "WHERE reservation_id=:id AND event_type='RELEASE'"
+                    ),
+                    {"id": pending.request_id},
+                ).scalar_one()
+                == 0
+            )
+        with app_engine.begin() as connection:
+            connection.execute(
+                text("DROP TRIGGER bt027_e3t4_wait_entry_journal ON paper_spot_journal")
+            )
+            connection.execute(text("DROP FUNCTION bt027_e3t4_wait_entry_journal()"))
+
+        # For the post-commit case the protocol proxy sees CommandComplete(COMMIT)
+        # and withholds it. Independent DB read-back proves the durable commit;
+        # then kill/restart the server before the client receives any ack.
+        committed, _ = _reserve_e3t4_intent(
+            app_engine,
+            risk_engine,
+            profile_version=profile_version,
+            quantity=Decimal("0.1"),
+            stop_price=Decimal("99.05"),
+        )
+        after_pending = _ledger_counts(app_engine)
+        with app_engine.connect() as connection:
+            before_cash = Decimal(
+                str(
+                    connection.execute(
+                        text("SELECT cash_usdt FROM paper_spot_accounts WHERE id=1")
+                    ).scalar_one()
+                )
+            )
+        proxy = _CommitAckDropProxy("127.0.0.1", pg_port)
+        commit_marker = tmp_path / "server-crash-after-commit"
+        commit_app_url = make_url(app_url).set(
+            query={"application_name": "e3t4_server_commit_ack_loss"}
+        )
+        commit_risk_url = make_url(risk_url).set(
+            query={"application_name": "e3t4_server_commit_risk"}
+        )
+        proxy_child_code = """
+import os
+from pathlib import Path
+import psycopg
+from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
+from sqlalchemy.pool import NullPool
+from binance_ai_trader.paper_entry_coordinator import commit_risk_reserved_for_isolated_test
+direct=make_url(os.environ['TEST_POSTGRES_URL'])
+def connect():
+    return psycopg.connect(host='127.0.0.1',port=int(os.environ['E3T4_PROXY_PORT']),
+        dbname=direct.database,user=direct.username,password=direct.password,
+        sslmode='disable',application_name='e3t4_server_commit_ack_loss')
+app=create_engine(direct,creator=connect,poolclass=NullPool)
+risk=create_engine(os.environ['RISK_TEST_POSTGRES_URL'],pool_pre_ping=True)
+try:
+    commit_risk_reserved_for_isolated_test(app,risk,request_id=os.environ['E3T4_REQUEST_ID'])
+    Path(os.environ['E3T4_MARKER']).write_text('UNEXPECTED_SUCCESS')
+except Exception as exc:
+    Path(os.environ['E3T4_MARKER']).write_text(type(exc).__name__+':'+str(exc))
+"""
+        commit_child = subprocess.Popen(
+            [sys.executable, "-c", proxy_child_code],
+            env={
+                **os.environ,
+                "TEST_POSTGRES_URL": commit_app_url.render_as_string(hide_password=False),
+                "RISK_TEST_POSTGRES_URL": commit_risk_url.render_as_string(hide_password=False),
+                "E3T4_PROXY_PORT": str(proxy.port),
+                "E3T4_REQUEST_ID": committed.request_id,
+                "E3T4_MARKER": str(commit_marker),
+            },
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            assert proxy.commit_observed.wait(timeout=30), "PG commit response was not intercepted"
+            with app_engine.connect() as connection:
+                assert (
+                    connection.execute(
+                        text(
+                            "SELECT count(*) FROM paper_entry_ledger_commits WHERE request_id=:id"
+                        ),
+                        {"id": committed.request_id},
+                    ).scalar_one()
+                    == 1
+                )
+                assert (
+                    connection.execute(
+                        text("SELECT count(*) FROM paper_spot_positions WHERE trade_id=:id"),
+                        {"id": committed.request_id},
+                    ).scalar_one()
+                    == 1
+                )
+                assert (
+                    connection.execute(
+                        text(
+                            "SELECT count(*) FROM paper_spot_journal "
+                            "WHERE idempotency_key=:key AND event_type='spot_buy'"
+                        ),
+                        {"key": f"entry-{committed.request_id}"},
+                    ).scalar_one()
+                    == 1
+                )
+                assert (
+                    connection.execute(
+                        text(
+                            "SELECT to_state FROM paper_entry_intent_events "
+                            "WHERE request_id=:id ORDER BY sequence DESC LIMIT 1"
+                        ),
+                        {"id": committed.request_id},
+                    ).scalar_one()
+                    == "LEDGER_COMMITTED"
+                )
+                assert (
+                    Decimal(
+                        str(
+                            connection.execute(
+                                text("SELECT cash_usdt FROM paper_spot_accounts WHERE id=1")
+                            ).scalar_one()
+                        )
+                    )
+                    < before_cash
+                )
+            docker("kill", "--signal=KILL", container_name)
+            docker("start", container_name)
+            wait_ready("trader_paper_entry_coordinator_test")
+            proxy.release.set()
+            outcome = _wait_for_marker(commit_child, commit_marker)
+            assert not outcome.startswith("UNEXPECTED_SUCCESS"), outcome
+        finally:
+            proxy.release.set()
+            if commit_child.poll() is None:
+                _kill_process(commit_child)
+            proxy.close()
+
+        app_engine.dispose()
+        risk_engine.dispose()
+        app_engine = create_engine(app_url, pool_pre_ping=True)
+        risk_engine = create_engine(risk_url, pool_pre_ping=True)
+        assert _ledger_counts(app_engine) == (
+            after_pending[0],
+            after_pending[1] + 1,
+            after_pending[2] + 1,
+        )
+        assert get_intent(app_engine, committed.request_id).current_state == "LEDGER_COMMITTED"  # type: ignore[union-attr]
+        assert (
+            recover_committed_entry(app_engine, request_id=committed.request_id).current_state
+            == "COMPLETED"
+        )
+        final_counts = _ledger_counts(app_engine)
+        assert final_counts == (after_pending[0], after_pending[1] + 1, after_pending[2] + 1)
+        assert (
+            commit_risk_reserved_for_isolated_test(
+                app_engine, risk_engine, request_id=committed.request_id
+            ).current_state
+            == "COMPLETED"
+        )
+        assert _ledger_counts(app_engine) == final_counts
+        with risk_engine.connect() as connection:
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM ai_risk_reservation_events "
+                        "WHERE reservation_id=:id AND event_type='RESERVE'"
+                    ),
+                    {"id": committed.request_id},
+                ).scalar_one()
+                == 1
+            )
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM ai_risk_reservation_events "
+                        "WHERE reservation_id=:id AND event_type='RELEASE'"
+                    ),
+                    {"id": committed.request_id},
+                ).scalar_one()
+                == 0
+            )
+    finally:
+        if app_engine is not None:
+            with suppress(Exception):
+                app_engine.dispose()
+        if risk_engine is not None:
+            with suppress(Exception):
+                risk_engine.dispose()
+        if created_container:
+            with suppress(subprocess.CalledProcessError):
+                docker("rm", "--force", container_name)
+        if created_volume:
+            label = docker(
+                "volume",
+                "inspect",
+                "--format",
+                '{{ index .Labels "com.tradepilot.bt027e3t4" }}',
+                volume_name,
+            )
+            assert label == run_id, "refusing to remove a volume not created by this test"
+            docker("volume", "rm", volume_name)
