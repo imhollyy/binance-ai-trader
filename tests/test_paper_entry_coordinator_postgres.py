@@ -919,8 +919,8 @@ def test_evidenced_intent_persists_real_snapshot_and_cost_receipts_without_buy(
             "TRUNCATE paper_entry_market_evidence",
             "UPDATE paper_entry_ledger_commits SET commit_sha256='"
             + "f" * 64
-            + f"' WHERE request_id='{record.request_id}'",
-            f"DELETE FROM paper_entry_ledger_commits WHERE request_id='{record.request_id}'",
+            + f"' WHERE request_id='{active_request_id}'",
+            f"DELETE FROM paper_entry_ledger_commits WHERE request_id='{active_request_id}'",
             "TRUNCATE paper_entry_ledger_commits",
         ):
             with pytest.raises(DBAPIError), engine.begin() as connection:
