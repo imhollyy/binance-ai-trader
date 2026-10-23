@@ -461,9 +461,9 @@ def test_migration_downgrade_preserves_append_only_history(engine: Engine) -> No
         )
 
     with pytest.raises(
-        RuntimeError, match="coordination intent and audit history must not be dropped"
+        RuntimeError, match="BT-027 pre-entry evidence is append-only and must not be dropped"
     ):
-        command.downgrade(Config("alembic.ini"), "0015_bt024_risk_store")
+        command.downgrade(Config("alembic.ini"), "0019_bt027_paper_entry_intents")
 
     with engine.connect() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
