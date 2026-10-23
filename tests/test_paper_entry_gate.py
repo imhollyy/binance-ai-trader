@@ -28,8 +28,9 @@ def test_core_open_denies_even_without_adapter_preflight(
     monkeypatch.setattr(execution, "_locked_state", lambda _session: (None, None, [], []))
     engine = create_engine("sqlite+pysqlite:///:memory:")
     try:
-        with Session(engine) as session, pytest.raises(
-            PaperExecutionRejected, match="riskguard_paper_atomicity_unavailable"
+        with (
+            Session(engine) as session,
+            pytest.raises(PaperExecutionRejected, match="riskguard_paper_atomicity_unavailable"),
         ):
             execution.open_paper_spot(
                 session,
