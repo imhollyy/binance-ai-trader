@@ -34,9 +34,7 @@ def test_core_open_denies_even_without_adapter_preflight(
         ):
             execution.open_paper_spot(
                 session,
-                SpotBuyIntent(
-                    "trade-1", "BTCUSDT", Decimal("100"), Decimal("1"), Decimal("90")
-                ),
+                SpotBuyIntent("trade-1", "BTCUSDT", Decimal("100"), Decimal("1"), Decimal("90")),
                 "core-direct-entry-1",
             )
     finally:
