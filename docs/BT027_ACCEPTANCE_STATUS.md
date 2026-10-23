@@ -95,3 +95,27 @@ and an operational circuit breaker on reconciliation uncertainty. The current
 `risk_store.evaluate_and_reserve` and PAPER journal do not yet expose a
 complete cross-store, recovery-safe transaction protocol. The existing
 `open_paper_spot` denial remains active. START remains unsupported.
+
+### BT-027E1 durable intent journal
+
+Migration `0019_bt027_paper_entry_intents` adds an immutable PAPER application
+database intent record and append-only state-event history. The coordinator
+hashes canonical, exact Decimal intent fields, deduplicates by idempotency key,
+serializes state transitions under a row lock, and exposes nonterminal intents
+for restart recovery review. Database triggers enforce immutable intent rows,
+append-only audit events, contiguous state history, and the declared transition
+graph. This is an intent journal only: it does not contact RiskGuard, reserve
+capacity, commit a PAPER ledger mutation, or authorize BUY. `RECONCILIATION_REQUIRED`
+is terminal in this stage until a later independently attested recovery contract
+exists. Caller supplied ledger/cost hashes are stored as claims, not verified
+accounting evidence. START remains disabled.
+
+The next E2 coordinator can build on `create_intent`, `get_intent`,
+`transition_intent`, `list_status_events`, `list_recovery_candidates`, and
+`assess_cross_store_evidence`. The durable contract is `request_id` plus unique
+`idempotency_key` and canonical intent SHA-256, immutable amount/version/source
+fields, account/settings-version binding, and serialized append-only event
+sequence with a database-enforced transition graph. E2 still needs independently
+verified RiskGuard reservation references, ledger receipt attestation, and
+cross-store crash reconciliation; the current claims alone must not authorize
+a ledger write.
