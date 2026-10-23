@@ -1,8 +1,9 @@
-"""Durable PAPER entry intent journal; deliberately performs no trading writes.
+"""Durable PAPER entry journal and dual-store coordinator.
 
-Intent creation is inert. A separate explicit method can record a RISK_RESERVED
-event only after read-back verification from the isolated RiskGuard database.
-This module never mutates the PAPER ledger or authorizes a BUY.
+Intent creation is inert. Risk reservation recording requires independent
+RiskGuard read-back. The only ledger-mutating coordinator is an explicitly
+isolated disposable dual-PostgreSQL test seam; production entry remains
+fail-closed and this module does not authorize a production BUY.
 """
 
 from __future__ import annotations
@@ -889,6 +890,20 @@ def commit_risk_reserved_for_isolated_test(
     record = get_intent(engine, request_id)
     if record is None:
         raise EntryCoordinatorRejected("entry_intent_not_found")
+    with engine.connect() as connection:
+        worker_fence = (
+            connection.execute(
+                text(
+                    "SELECT worker_id,worker_generation FROM paper_entry_intents "
+                    "WHERE request_id=:id"
+                ),
+                {"id": request_id},
+            )
+            .mappings()
+            .one()
+        )
+    if worker_fence["worker_id"] is not None or worker_fence["worker_generation"] is not None:
+        raise EntryCoordinatorRejected("worker_fencing_validation_unavailable")
     if record.current_state == "LEDGER_COMMITTED":
         recover_committed_entry(engine, request_id=request_id)
         return get_intent(engine, request_id)

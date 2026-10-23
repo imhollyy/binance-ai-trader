@@ -152,12 +152,47 @@ after COMPLETED, post-close replay, AI-intent rejection, and ledger
 immutability. Separate RiskGuard PostgreSQL tests cover same-ID concurrent
 retries and different IDs competing for a limited budget.
 
-This is not the complete E3T acceptance matrix: it does not yet inject every
-RiskGuard-reservation crash boundary, race two full ledger commits, simulate
-PAPER database loss independently, or cover every stale/missing cost, broken
-receipt, profile-change and worker-fencing case through the coordinator. E3
-remains incomplete; production BUY and START stay disabled pending those tests
-and BT-027F fencing/process-manager work.
+#### BT-027E3T3 crash and outage matrix
+
+Executed in the explicitly whitelisted disposable application and RiskGuard
+PostgreSQL databases. The tests use separate Python child processes, hard
+process termination (`Popen.kill`, SIGKILL on POSIX / process termination on
+Windows), newly constructed SQLAlchemy engines after restart, and temporary
+database locks. Test profile limits are explicitly confirmed fixture values
+written only to the disposable RiskGuard database.
+
+| Boundary / fault | Result | Evidence and limit |
+| --- | --- | --- |
+| Before intent persistence | PASS | Child is killed before write; idempotency key has no intent/event and PAPER ledger is unchanged. |
+| After PREPARED | PASS | Child persists intent, is killed, and a new engine reads the immutable PREPARED event; no ledger mutation. |
+| During RiskGuard reservation transaction | PASS | Separate PostgreSQL session holds an audit table lock; child is observed waiting in PostgreSQL, then killed. Transaction rolls back with zero audit/reservation rows. |
+| After RiskGuard reservation commit, before app RISK_RESERVED | PASS | Child is killed after its reservation call returns. Restart finds exactly one verified hold; app remains PREPARED and no RELEASE is written. |
+| After app RISK_RESERVED event | PASS | Child is killed after the state event commits; a new engine reads RISK_RESERVED. |
+| During PAPER ledger transaction | PASS | Disposable-only journal INSERT trigger blocks the actual coordinator transaction. Child is killed while PostgreSQL reports a lock wait; account cash, position/journal counts and RISK_RESERVED remain unchanged, and the hold is retained. |
+| After PAPER commit, before COMPLETED | PASS | Child returns at the explicit test-only after-commit boundary, then is killed. New engine verifies the immutable receipt and completes recovery; repeated commit creates no second BUY. |
+| After COMPLETED | PASS | Completed replay child is killed after returning; restart preserves COMPLETED and exact ledger counts. |
+| RiskGuard database unavailable | PASS | Disposable DB refuses connections after existing sessions are terminated; no release occurs. Once restored, the original reservation verifies. |
+| PAPER application database unavailable | PASS | Disposable DB refuses connections after existing sessions are terminated; no ledger mutation occurs. Once restored, the PREPARED intent and ledger counts persist. |
+| Same RiskGuard ID/hash across processes | PASS | Two gated child processes retry concurrently; one original audit/reservation remains. A separate process with changed payload is rejected as a conflict. |
+| Different request IDs competing for one PAPER account | PASS | Existing three-caller PostgreSQL race (two identical calls plus another request) produces at most one BUY, position and commit receipt; concurrent callers are threads in one process, not separate OS processes. |
+| STOP/profile revision | PASS | RiskGuard verification rejects PAUSED state and a reservation tied to an older active profile. No release event is generated. |
+| Worker fence | PASS for denial | Any intent containing worker identity/generation is rejected by the test coordinator because a DB-backed supervisor fence is not implemented. Valid worker execution is not claimed. |
+
+The process-kill tests prove process loss at the listed checkpoints. They do not
+simulate a network proxy dropping PostgreSQL's COMMIT response after the server
+commits, nor a PostgreSQL server crash/recovery during WAL flush. A risk or PAPER
+database outage is tested as an actual refused connection with backend sessions
+terminated, not as host or storage failure. Corrupt receipt/journal rows cannot
+be updated through normal SQL because append-only guards reject such writes;
+coordinator and migration tests reject forged/mismatched receipts/events. No
+trigger bypass or replication-role mutation is used to manufacture corrupted
+history.
+
+E3 remains incomplete. Production BUY stays disabled: expected net advantage is
+not independently verified, and the two stores have no distributed ACID
+transaction. Worker intents are fail-closed because there is no persisted
+supervisor fencing proof at the execution boundary. BT-027F process-manager
+fencing and START remain separate acceptance gates.
 
 ### BT-027E3T2 transition evidence guard
 
