@@ -158,3 +158,23 @@ PAPER database loss independently, or cover every stale/missing cost, broken
 receipt, profile-change and worker-fencing case through the coordinator. E3
 remains incomplete; production BUY and START stay disabled pending those tests
 and BT-027F fencing/process-manager work.
+
+### BT-027E3T2 transition evidence guard
+
+Migration `0022_bt027_entry_guard` strengthens the application
+database event trigger. `LEDGER_COMMITTED` and `COMPLETED` now require the event
+evidence reference to equal an immutable receipt hash whose request and intent
+match the intent row and whose journal, position, account, idempotency key,
+quantity, fee, and cash movement match the immutable PAPER ledger records.
+`transition_intent()` refuses these two states regardless of a caller-provided
+text reference; only the ledger commit callback and receipt recovery path may
+append them. The PostgreSQL trigger also rejects direct SQL event inserts that
+lack a matching ledger receipt.
+
+The trigger runs only in the application database. It cannot query or prove the
+independent RiskGuard database. The coordinator must verify the actual
+RiskGuard reservation and audit before it enters `RISK_RESERVED`; the local
+trigger verifies only the persisted RiskGuard reference identifiers in the
+ledger receipt. The trigger also checks that the receipt hash matches the
+event reference, but does not recompute the application's canonical SHA-256
+encoding. Production BUY remains disabled.

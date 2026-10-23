@@ -323,6 +323,28 @@ def test_intent_create_retry_conflict_transition_and_audit(engine: Engine) -> No
             reason_code="missing_risk_receipt",
             evidence_reference="forged-receipt-reference",
         )
+    with pytest.raises(
+        EntryCoordinatorRejected, match="ledger_commit_requires_coordinator_receipt"
+    ):
+        transition_intent(
+            engine,
+            request_id=first.request_id,
+            expected_state="RISK_RESERVED",
+            new_state="LEDGER_COMMITTED",
+            reason_code="forged_ledger_commit",
+            evidence_reference="f" * 64,
+        )
+    with pytest.raises(
+        EntryCoordinatorRejected, match="completion_requires_receipt_reconciliation"
+    ):
+        transition_intent(
+            engine,
+            request_id=first.request_id,
+            expected_state="LEDGER_COMMITTED",
+            new_state="COMPLETED",
+            reason_code="forged_completion",
+            evidence_reference="f" * 64,
+        )
 
     events = list_status_events(engine, first.request_id)
     assert [event.to_state for event in events] == ["PREPARED"]
@@ -347,6 +369,28 @@ def test_concurrent_same_key_is_idempotent_and_different_keys_are_distinct(
             pool.map(lambda index: create_intent(engine, _intent()).request_id, range(2))
         )
     assert distinct_ids[0] != distinct_ids[1]
+
+    conflicting_key = f"race_conflict_{uuid4().hex}"
+    payloads = (
+        replace(_intent(conflicting_key), quantity=Decimal("0.125")),
+        replace(_intent(conflicting_key), quantity=Decimal("0.25")),
+    )
+    conflict_barrier = Barrier(2)
+
+    def conflicting_request(payload: PaperEntryIntent) -> tuple[str, str]:
+        conflict_barrier.wait()
+        try:
+            result = create_intent(engine, payload)
+            return "created", result.request_id
+        except EntryCoordinatorRejected as exc:
+            return "rejected", str(exc)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        conflict_results = list(pool.map(conflicting_request, payloads))
+    assert sorted(result[0] for result in conflict_results) == ["created", "rejected"]
+    assert next(result[1] for result in conflict_results if result[0] == "rejected") == (
+        "idempotency_key_payload_conflict"
+    )
 
 
 def test_idempotent_replay_survives_later_paper_settings_revision(engine: Engine) -> None:
@@ -459,6 +503,14 @@ def test_evidenced_intent_persists_real_snapshot_and_cost_receipts_without_buy(
         book_client=clients[1],
         depth_client=clients[2],
     )
+    competing_clients = _entry_observation_clients()
+    competing_record = create_evidenced_intent_for_test(
+        engine,
+        _costed_intent(),
+        candle_client=competing_clients[0],
+        book_client=competing_clients[1],
+        depth_client=competing_clients[2],
+    )
     with engine.connect() as connection:
         account = (
             connection.execute(
@@ -533,6 +585,10 @@ def test_evidenced_intent_persists_real_snapshot_and_cost_receipts_without_buy(
         assert set_bot_state(risk_engine, state=BotState.PAUSED, expected_revision=1) == 2
         assert set_bot_state(risk_engine, state=BotState.RUNNING, expected_revision=2) == 3
         snapshot = capture_paper_account_evidence(engine, account_id=1, expected_settings_version=7)
+        competing_snapshot = capture_paper_account_evidence(
+            engine, account_id=1, expected_settings_version=7
+        )
+        assert competing_snapshot.snapshot_sha256 == snapshot.snapshot_sha256
         record_account_snapshot(
             risk_engine,
             snapshot_id=record.request_id,
@@ -543,6 +599,17 @@ def test_evidenced_intent_persists_real_snapshot_and_cost_receipts_without_buy(
             open_positions=int(snapshot.payload["open_positions"]),
             consecutive_losses=int(snapshot.payload["consecutive_losses"]),
             source_sha256=snapshot.snapshot_sha256,
+        )
+        record_account_snapshot(
+            risk_engine,
+            snapshot_id=competing_record.request_id,
+            equity=Decimal(competing_snapshot.payload["risk_equity_usdt"]),
+            day_start_equity=Decimal(competing_snapshot.payload["day_start_equity_usdt"]),
+            peak_equity=Decimal(competing_snapshot.payload["peak_equity_usdt"]),
+            open_capital=Decimal(competing_snapshot.payload["open_capital_usdt"]),
+            open_positions=int(competing_snapshot.payload["open_positions"]),
+            consecutive_losses=int(competing_snapshot.payload["consecutive_losses"]),
+            source_sha256=competing_snapshot.snapshot_sha256,
         )
         net_advantage = Decimal("1")
         fee_bps = Decimal("10")
@@ -590,11 +657,46 @@ def test_evidenced_intent_persists_real_snapshot_and_cost_receipts_without_buy(
             paper_snapshot_sha256=snapshot.snapshot_sha256,
         )
         assert decision.allowed
+        competing_decision = evaluate_and_reserve(
+            risk_engine,
+            request_id=competing_record.request_id,
+            signal_id=competing_record.request_id,
+            profile_version=1,
+            request=risk_request,
+            intent_sha256=competing_record.intent_sha256,
+            paper_snapshot_sha256=competing_snapshot.snapshot_sha256,
+        )
+        assert competing_decision.allowed
         reserved = record_verified_risk_reservation(
             engine, risk_engine, request_id=record.request_id
         )
         assert reserved.current_state == "RISK_RESERVED"
+        competing_reserved = record_verified_risk_reservation(
+            engine, risk_engine, request_id=competing_record.request_id
+        )
+        assert competing_reserved.current_state == "RISK_RESERVED"
         assert _ledger_counts(engine) == before
+        with pytest.raises(
+            EntryCoordinatorRejected, match="ledger_commit_requires_coordinator_receipt"
+        ):
+            transition_intent(
+                engine,
+                request_id=record.request_id,
+                expected_state="RISK_RESERVED",
+                new_state="LEDGER_COMMITTED",
+                reason_code="fake_ledger_receipt",
+                evidence_reference="f" * 64,
+            )
+        with pytest.raises(DBAPIError), engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO paper_entry_intent_events "
+                    "(event_id,request_id,sequence,from_state,to_state,reason_code,"
+                    "evidence_reference) VALUES (:event,:request,3,'RISK_RESERVED',"
+                    "'LEDGER_COMMITTED','fake_ledger_receipt',:evidence)"
+                ),
+                {"event": str(uuid4()), "request": record.request_id, "evidence": "f" * 64},
+            )
         assert set_bot_state(risk_engine, state=BotState.PAUSED, expected_revision=3) == 4
         with pytest.raises(
             EntryCoordinatorRejected, match="independent_risk_reservation_unverified"
@@ -658,28 +760,114 @@ def test_evidenced_intent_persists_real_snapshot_and_cost_receipts_without_buy(
                 )
             assert get_intent(engine, record.request_id).current_state == "RISK_RESERVED"  # type: ignore[union-attr]
             assert _ledger_counts(engine) == before_commit
-        committed = commit_risk_reserved_for_isolated_test(
-            engine,
-            risk_engine,
-            request_id=record.request_id,
-            _simulate_crash_at="after_ledger_commit",
-        )
-        assert committed.event_type == "spot_buy"
-        assert get_intent(engine, record.request_id).current_state == "LEDGER_COMMITTED"  # type: ignore[union-attr]
+        buy_barrier = Barrier(3)
+
+        def concurrent_buy(request_id: str) -> tuple[str, str]:
+            try:
+                result = commit_risk_reserved_for_isolated_test(
+                    engine,
+                    risk_engine,
+                    request_id=request_id,
+                    _simulate_crash_at="after_ledger_commit",
+                    _test_start_barrier=buy_barrier,
+                )
+                return "committed", str(result.trade_id)
+            except (EntryCoordinatorRejected, EntryEvidenceRejected) as exc:
+                return "rejected", str(exc)
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            concurrent_results = list(
+                pool.map(
+                    concurrent_buy,
+                    (record.request_id, record.request_id, competing_record.request_id),
+                )
+            )
+        successful_trade_ids = {
+            trade_id for status, trade_id in concurrent_results if status == "committed"
+        }
+        assert len(successful_trade_ids) == 1
+        active_request_id = successful_trade_ids.pop()
+        assert get_intent(engine, active_request_id).current_state == "LEDGER_COMMITTED"  # type: ignore[union-attr]
+        with engine.connect() as connection:
+            assert (
+                connection.execute(
+                    text("SELECT count(*) FROM paper_entry_ledger_commits WHERE request_id=:id"),
+                    {"id": active_request_id},
+                ).scalar_one()
+                == 1
+            )
+            assert (
+                connection.execute(
+                    text("SELECT count(*) FROM paper_entry_ledger_commits")
+                ).scalar_one()
+                == 1
+            )
+            assert (
+                connection.execute(
+                    text("SELECT count(*) FROM paper_spot_journal WHERE event_type='spot_buy'")
+                ).scalar_one()
+                == 1
+            )
+            assert (
+                connection.execute(text("SELECT count(*) FROM paper_spot_positions")).scalar_one()
+                == 1
+            )
+        with risk_engine.connect() as connection:
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM ai_risk_reservation_events "
+                        "WHERE reservation_id IN (:first,:second) AND event_type='RESERVE'"
+                    ),
+                    {"first": record.request_id, "second": competing_record.request_id},
+                ).scalar_one()
+                == 2
+            )
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM ai_risk_reservation_events "
+                        "WHERE reservation_id IN (:first,:second) AND event_type='RELEASE'"
+                    ),
+                    {"first": record.request_id, "second": competing_record.request_id},
+                ).scalar_one()
+                == 0
+            )
+        with pytest.raises(
+            EntryCoordinatorRejected, match="completion_requires_receipt_reconciliation"
+        ):
+            transition_intent(
+                engine,
+                request_id=active_request_id,
+                expected_state="LEDGER_COMMITTED",
+                new_state="COMPLETED",
+                reason_code="fake_completion",
+                evidence_reference="f" * 64,
+            )
+        with pytest.raises(DBAPIError), engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO paper_entry_intent_events "
+                    "(event_id,request_id,sequence,from_state,to_state,reason_code,"
+                    "evidence_reference) VALUES (:event,:request,4,'LEDGER_COMMITTED',"
+                    "'COMPLETED','fake_completion',:evidence)"
+                ),
+                {"event": str(uuid4()), "request": active_request_id, "evidence": "f" * 64},
+            )
         # Simulate process restart: rebuild the SQLAlchemy engine and reconcile
         # the committed app receipt without touching RiskGuard or replaying BUY.
         engine.dispose()
         restarted_engine = create_engine(URL, pool_pre_ping=True)
         assert (
-            recover_committed_entry(restarted_engine, request_id=record.request_id).current_state
+            recover_committed_entry(restarted_engine, request_id=active_request_id).current_state
             == "COMPLETED"
         )
-        assert get_intent(engine, record.request_id).current_state == "COMPLETED"  # type: ignore[union-attr]
+        assert get_intent(engine, active_request_id).current_state == "COMPLETED"  # type: ignore[union-attr]
         after_commit = _ledger_counts(engine)
         assert after_commit[1] == before_commit[1] + 1
         assert after_commit[2] == before_commit[2] + 1
         replayed = commit_risk_reserved_for_isolated_test(
-            engine, risk_engine, request_id=record.request_id
+            engine, risk_engine, request_id=active_request_id
         )
         assert replayed.current_state == "COMPLETED"
         assert _ledger_counts(engine) == after_commit
@@ -687,30 +875,30 @@ def test_evidenced_intent_persists_real_snapshot_and_cost_receipts_without_buy(
             commit_risk_reserved_for_isolated_test(
                 engine,
                 risk_engine,
-                request_id=record.request_id,
+                request_id=active_request_id,
                 _simulate_crash_at="after_completed",
             )
         assert (
-            recover_committed_entry(engine, request_id=record.request_id).current_state
+            recover_committed_entry(engine, request_id=active_request_id).current_state
             == "COMPLETED"
         )
         with Session(engine) as session:
             close_paper_spot(
                 session,
-                record.request_id,
+                active_request_id,
                 Decimal("101"),
                 f"close_{uuid4().hex}",
                 explicit_approval=True,
                 costs=PaperCosts(),
             )
         closed_replay = commit_risk_reserved_for_isolated_test(
-            engine, risk_engine, request_id=record.request_id
+            engine, risk_engine, request_id=active_request_id
         )
         assert closed_replay.current_state == "COMPLETED"
         with engine.connect() as connection:
             position_status: str = connection.execute(
                 text("SELECT status FROM paper_spot_positions WHERE trade_id=:id"),
-                {"id": record.request_id},
+                {"id": active_request_id},
             ).scalar_one()
         assert position_status == "closed"
         assert _ledger_counts(engine)[2] == after_commit[2] + 1

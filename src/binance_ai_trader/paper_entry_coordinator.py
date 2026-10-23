@@ -566,6 +566,10 @@ def transition_intent(
         raise EntryCoordinatorRejected("invalid_entry_state_transition")
     if new_state == "RISK_RESERVED":
         raise EntryCoordinatorRejected("risk_reservation_requires_independent_store_verification")
+    if new_state == "LEDGER_COMMITTED":
+        raise EntryCoordinatorRejected("ledger_commit_requires_coordinator_receipt")
+    if new_state == "COMPLETED":
+        raise EntryCoordinatorRejected("completion_requires_receipt_reconciliation")
     if _REASON.fullmatch(reason_code) is None:
         raise EntryCoordinatorRejected("invalid_reason_code")
     if evidence_reference is not None and (not evidence_reference or len(evidence_reference) > 256):
@@ -833,6 +837,7 @@ def commit_risk_reserved_for_isolated_test(
     request_id: str,
     _simulate_crash_after_ledger_commit: bool = False,
     _simulate_crash_at: str | None = None,
+    _test_start_barrier: Any | None = None,
 ) -> Any:
     """Commit one coordinated BUY only in the dedicated dual-PostgreSQL fixture.
 
@@ -894,6 +899,11 @@ def commit_risk_reserved_for_isolated_test(
         return completed
     if record.current_state != "RISK_RESERVED":
         raise EntryCoordinatorRejected("risk_reserved_state_required")
+    if _test_start_barrier is not None:
+        wait = getattr(_test_start_barrier, "wait", None)
+        if not callable(wait):
+            raise EntryCoordinatorRejected("invalid_test_concurrency_control")
+        wait(timeout=10)
     if crash_at == "before_ledger":
         raise RuntimeError("simulated_crash_before_ledger")
 

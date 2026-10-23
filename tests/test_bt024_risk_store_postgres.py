@@ -461,13 +461,13 @@ def test_migration_downgrade_preserves_append_only_history(engine: Engine) -> No
         )
 
     with pytest.raises(
-        RuntimeError, match="PAPER entry commit receipts are append-only audit history"
+        RuntimeError, match="PAPER entry transition evidence guard must not be weakened"
     ):
         command.downgrade(Config("alembic.ini"), "0019_bt027_paper_entry_intents")
 
     with engine.connect() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "0021_bt027_entry_ledger"
+            "0022_bt027_entry_guard"
         )
         assert (
             conn.execute(
