@@ -83,9 +83,24 @@ try {
 
     & docker info --format "{{.ServerVersion}}" *> $null
     if ($LASTEXITCODE -ne 0) { throw "Docker Desktop engine is not available." }
-    $cloudflared = Get-Command "cloudflared" -ErrorAction SilentlyContinue
-    if (-not $cloudflared) { throw "Install the current cloudflared client first." }
-    $helpText = (& cloudflared tunnel --help 2>&1 | Out-String)
+    $cloudflaredCommand = Get-Command "cloudflared" -ErrorAction SilentlyContinue
+    $cloudflaredPath = if ($cloudflaredCommand) { $cloudflaredCommand.Source } else { $null }
+    if (-not $cloudflaredPath) {
+        $linkPath = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Links\cloudflared.exe"
+        if (Test-Path -LiteralPath $linkPath) { $cloudflaredPath = $linkPath }
+    }
+    if (-not $cloudflaredPath) {
+        $packageRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+        $package = Get-ChildItem -LiteralPath $packageRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object Name -like "Cloudflare.cloudflared*" | Select-Object -First 1
+        if ($package) {
+            $binary = Get-ChildItem -LiteralPath $package.FullName -Filter "cloudflared.exe" `
+                -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($binary) { $cloudflaredPath = $binary.FullName }
+        }
+    }
+    if (-not $cloudflaredPath) { throw "Install the current cloudflared client first." }
+    $helpText = (& $cloudflaredPath tunnel --help 2>&1 | Out-String)
     if ($helpText -notmatch "allowed-mail") { throw "This cloudflared version lacks the required email-PIN gate." }
     $python = Get-Command "python" -ErrorAction SilentlyContinue
     if (-not $python) { throw "Python 3 is required to hash the viewer password locally." }
@@ -100,7 +115,7 @@ try {
         throw "Allowed email format is invalid."
     }
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-    $tunnel = Start-Process -FilePath $cloudflared.Source -ArgumentList @(
+    $tunnel = Start-Process -FilePath $cloudflaredPath -ArgumentList @(
         "tunnel", "--url", "http://127.0.0.1:8877", "--allowed-mail", $email
     ) -RedirectStandardError $stderr -RedirectStandardOutput $stdout -PassThru -WindowStyle Hidden
 
