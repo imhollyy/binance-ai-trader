@@ -5,10 +5,13 @@ import os
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
+from threading import Barrier
+from uuid import uuid4
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import DBAPIError
@@ -16,10 +19,14 @@ from sqlalchemy.exc import DBAPIError
 from binance_ai_trader.ai_constitution import BotState
 from binance_ai_trader.ai_shadow_preflight import ShadowPreflightResult
 from binance_ai_trader.ai_trainable_model import ModelAction, ResearchPrediction
+from binance_ai_trader.api import create_app
+from binance_ai_trader.api_config import ApiConfig
+from binance_ai_trader.paper_supervisor import claim_worker, release_worker
 from binance_ai_trader.risk_guard import RiskProfile, RiskRequest
 from binance_ai_trader.risk_store import (
     RiskStoreRejected,
     evaluate_and_reserve,
+    get_verified_reservation,
     install_profile,
     record_account_snapshot,
     record_shadow_preflight,
@@ -125,11 +132,79 @@ def test_confirmed_profile_atomic_concurrency_audit_and_restart(engine: Engine) 
                     signal_id=f"risk_signal_{n:04d}",
                     profile_version=1,
                     request=_request(f"risk_signal_{n:04d}"),
+                    intent_sha256=f"{n:064x}",
                 ),
                 (1, 2),
             )
         )
     assert sum(decision.allowed for decision in decisions) == 1
+    winner = next(index for index, decision in enumerate(decisions, start=1) if decision.allowed)
+    original_request_id = f"risk_request_{winner:04d}"
+    original_signal_id = f"risk_signal_{winner:04d}"
+    retry = evaluate_and_reserve(
+        engine,
+        request_id=original_request_id,
+        signal_id=original_signal_id,
+        profile_version=1,
+        request=_request(original_signal_id),
+        intent_sha256=f"{winner:064x}",
+    )
+    # A changed canonical request under the same reservation ID is rejected.
+    with pytest.raises(RiskStoreRejected, match="reservation_id_payload_conflict"):
+        evaluate_and_reserve(
+            engine,
+            request_id=original_request_id,
+            signal_id=original_signal_id,
+            profile_version=1,
+            request=_request(original_signal_id),
+            intent_sha256="e" * 64,
+        )
+    assert retry.allowed == decisions[winner - 1].allowed
+    assert retry.allowed_notional == decisions[winner - 1].allowed_notional
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        same_id_retries = list(
+            pool.map(
+                lambda _: evaluate_and_reserve(
+                    engine,
+                    request_id=original_request_id,
+                    signal_id=original_signal_id,
+                    profile_version=1,
+                    request=_request(original_signal_id),
+                    intent_sha256=f"{winner:064x}",
+                ),
+                range(2),
+            )
+        )
+    assert all(decision.allowed for decision in same_id_retries)
+    with engine.connect() as conn:
+        assert (
+            conn.execute(
+                text(
+                    "SELECT count(*) FROM ai_risk_reservation_events "
+                    "WHERE reservation_id=:id AND event_type='RESERVE'"
+                ),
+                {"id": original_request_id},
+            ).scalar_one()
+            == 1
+        )
+    receipt = get_verified_reservation(
+        engine,
+        request_id=original_request_id,
+        signal_id=original_signal_id,
+        profile_version=1,
+        intent_sha256=f"{winner:064x}",
+    )
+    assert receipt.amount_usdt == retry.allowed_notional
+    assert receipt.audit_event_id == original_request_id
+    assert receipt.reservation_event_id == original_request_id + "_reserve"
+    with pytest.raises(RiskStoreRejected, match="reservation_audit_missing_or_mismatched"):
+        get_verified_reservation(
+            engine,
+            request_id="risk_missing_receipt_01",
+            signal_id="risk_missing_receipt_01",
+            profile_version=1,
+            intent_sha256="f" * 64,
+        )
     stale = evaluate_and_reserve(
         engine,
         request_id="risk_stale_request_01",
@@ -225,7 +300,7 @@ def test_confirmed_profile_atomic_concurrency_audit_and_restart(engine: Engine) 
         )
         assert not denied.allowed
         with restarted.connect() as conn:
-            assert conn.execute(text("SELECT count(*) FROM ai_risk_audit")).scalar_one() == 19
+            assert conn.execute(text("SELECT count(*) FROM ai_risk_audit")).scalar_one() == 21
             assert (
                 conn.execute(
                     text(
@@ -238,6 +313,103 @@ def test_confirmed_profile_atomic_concurrency_audit_and_restart(engine: Engine) 
         restarted.dispose()
     with pytest.raises(RiskStoreRejected):
         install_profile(engine, _profile(3), user_confirmed=False, expected_runtime_revision=16)
+
+
+def test_user_confirmed_profile_api_persists_version_and_rejects_stale_revision(
+    engine: Engine,
+) -> None:
+    token = "r" * 40
+    app = create_app(
+        config=ApiConfig(database_url=None, admin_token=token), engine=engine, risk_engine=engine
+    )
+    payload = {
+        "expected_revision": 16,
+        "risk_level": 5,
+        "max_positions": 1,
+        "risk_per_trade_pct": "0.5",
+        "max_open_capital": "250",
+        "spot_budget": "300",
+        "daily_loss_pct": "1",
+        "max_drawdown_pct": "5",
+        "max_consecutive_losses": 2,
+        "user_hard_limits": {"manual_cap": "250"},
+        "user_confirmed": True,
+    }
+    with TestClient(app) as client:
+        unauthorized = client.get("/api/v1/risk/profiles")
+        before = client.get("/api/v1/risk/profiles", headers={"X-Admin-Token": token})
+        no_approval = client.put(
+            "/api/v1/risk/profiles", json=payload, headers={"X-Admin-Token": token}
+        )
+        stale = client.put(
+            "/api/v1/risk/profiles",
+            json={**payload, "expected_revision": 15},
+            headers={
+                "X-Admin-Token": token,
+                "X-Risk-Profile-Approval": "I_CONFIRM_RISK_LIMITS",
+            },
+        )
+        active_worker = str(uuid4())
+        claim_worker(engine, active_worker)
+        worker_running = client.put(
+            "/api/v1/risk/profiles",
+            json=payload,
+            headers={
+                "X-Admin-Token": token,
+                "X-Risk-Profile-Approval": "I_CONFIRM_RISK_LIMITS",
+            },
+        )
+        release_worker(engine, active_worker)
+        updated = client.put(
+            "/api/v1/risk/profiles",
+            json=payload,
+            headers={
+                "X-Admin-Token": token,
+                "X-Risk-Profile-Approval": "I_CONFIRM_RISK_LIMITS",
+            },
+        )
+        concurrent_payload = {**payload, "expected_revision": 17, "risk_level": 4}
+        concurrent_headers = {
+            "X-Admin-Token": token,
+            "X-Risk-Profile-Approval": "I_CONFIRM_RISK_LIMITS",
+        }
+        barrier = Barrier(2)
+
+        def concurrent_update() -> int:
+            barrier.wait()
+            return int(
+                client.put(
+                    "/api/v1/risk/profiles",
+                    json=concurrent_payload,
+                    headers=concurrent_headers,
+                ).status_code
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            concurrent_statuses = list(pool.map(lambda _index: concurrent_update(), range(2)))
+    assert unauthorized.status_code == 401
+    assert before.json()["active_profile_version"] == 2
+    assert before.json()["bot_state"] == "STOPPED"
+    assert no_approval.status_code == 403
+    assert stale.status_code == 409
+    assert worker_running.status_code == 409
+    assert updated.status_code == 200
+    assert updated.json()["active_risk_level"] == 5
+    assert updated.json()["active_profile_version"] == 3
+    assert updated.json()["bot_state"] == "STOPPED"
+    assert sorted(concurrent_statuses) == [200, 409]
+    with engine.connect() as conn:
+        audit: str = conn.execute(
+            text("SELECT decision_json->>'action' FROM ai_risk_audit WHERE event_id='profile_5_3'")
+        ).scalar_one()
+        assert audit == "PROFILE_INSTALLED"
+        actor: str = conn.execute(
+            text(
+                "SELECT decision_json->>'actor_sha256' FROM ai_risk_audit "
+                "WHERE event_id='profile_5_3'"
+            )
+        ).scalar_one()
+        assert actor != token and len(actor) == 64
 
 
 def test_append_only_risk_tables_reject_update_delete_and_truncate(engine: Engine) -> None:
@@ -288,12 +460,14 @@ def test_migration_downgrade_preserves_append_only_history(engine: Engine) -> No
             )
         )
 
-    with pytest.raises(RuntimeError, match="append-only TRUNCATE protections must not be removed"):
-        command.downgrade(Config("alembic.ini"), "0015_bt024_risk_store")
+    with pytest.raises(
+        RuntimeError, match="PAPER entry transition evidence guard must not be weakened"
+    ):
+        command.downgrade(Config("alembic.ini"), "0019_bt027_paper_entry_intents")
 
     with engine.connect() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "0017_paper_spread_cost"
+            "0023_bt027_observer_fencing"
         )
         assert (
             conn.execute(
@@ -306,7 +480,8 @@ def test_migration_downgrade_preserves_append_only_history(engine: Engine) -> No
                 "SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal AND tgname IN "
                 "('bt023_prediction_no_truncate','bt023_outcome_no_truncate',"
                 "'bt024_profile_no_truncate','bt024_reservation_no_truncate',"
-                "'bt024_snapshot_no_truncate','bt024_audit_no_truncate')"
+                "'bt024_snapshot_no_truncate','bt024_audit_no_truncate',"
+                "'bt027_worker_events_no_truncate')"
             )
         ).scalar_one()
-        assert guards == 6
+        assert guards == 7

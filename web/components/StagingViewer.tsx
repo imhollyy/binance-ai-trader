@@ -9,7 +9,7 @@ const consoleMenu = [
   {id:"market",label:"Piyasa Verileri",Icon:Activity},
   {id:"bot",label:"Bot Yönetimi",Icon:Bot},
   {id:"risk",label:"Risk Yönetimi",Icon:ShieldCheck},
-  {id:"strategies",label:"Stratejiler",Icon:Layers3},
+  {id:"strategies",label:"AI Araştırma",Icon:Layers3},
   {id:"positions",label:"Pozisyonlar",Icon:Wallet},
   {id:"logs",label:"Olay Kayıtları",Icon:History},
 ] as const;
@@ -335,12 +335,11 @@ export default function StagingViewer({apiOrigin}: {apiOrigin?: string}) {
           <button onClick={()=>void signOut()} disabled={busy}><LogOut size={16}/> Çıkış</button>
         </div>
         {(page === "market" || page === "bot" || page === "risk" || page === "strategies") && base &&
-          <StagingConsoleSections section={page} base={base} role={session.role}
-            csrf={session.csrf} onExpired={onSessionExpired}/>}
+          <StagingConsoleSections section={page} base={base} onExpired={onSessionExpired}/>}
         {page !== "market" && page !== "bot" && page !== "risk" && page !== "strategies" &&
           (!snapshot ? <p>Kayıtlı PAPER özeti henüz yüklenmedi.</p> : <>
           {page === "logs" && base && <StagingConsoleSections section="logs" base={base}
-            role={session.role} csrf={session.csrf} onExpired={onSessionExpired}/>}
+            onExpired={onSessionExpired}/>}
 
           {page === "dashboard" && (snapshot.initialized && snapshot.account ? <div className="staging-metrics">
             <article><span>Başlangıç (sanal)</span><strong>{formatPaperUsdt(snapshot.account.initial_capital_usdt)} USDT</strong></article>

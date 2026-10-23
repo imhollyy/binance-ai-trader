@@ -256,6 +256,52 @@ jobs:
           TEST_POSTGRES_URL: postgresql+psycopg://trader_test:ci_only_password_not_a_secret@127.0.0.1:5432/trader_worker_test
         run: python -m pytest -q tests/test_paper_worker_postgres.py
 
+      - name: Create disposable worker supervisor database
+        env:
+          PGPASSWORD: ci_only_password_not_a_secret
+        run: |
+          psql -h 127.0.0.1 -U trader_test -d trader_test -v ON_ERROR_STOP=1 -c 'CREATE DATABASE trader_worker_supervisor_test'
+      - name: Migrate isolated worker supervisor database
+        env:
+          DATABASE_URL: postgresql+psycopg://trader_test:ci_only_password_not_a_secret@127.0.0.1:5432/trader_worker_supervisor_test
+        run: python -m alembic upgrade head
+      - name: Worker lease, heartbeat, STOP and audit PostgreSQL tests
+        env:
+          TEST_POSTGRES_URL: postgresql+psycopg://trader_test:ci_only_password_not_a_secret@127.0.0.1:5432/trader_worker_supervisor_test
+          PAPER_SUPERVISOR_TEST_ISOLATED: "1"
+        run: python -m pytest -q tests/test_paper_worker_supervisor_postgres.py
+
+      - name: Create disposable PAPER entry coordinator database
+        env:
+          PGPASSWORD: ci_only_password_not_a_secret
+        run: |
+          psql -h 127.0.0.1 -U trader_test -d trader_test -v ON_ERROR_STOP=1 -c 'CREATE DATABASE trader_paper_entry_coordinator_test'
+      - name: Migrate isolated PAPER entry coordinator database
+        env:
+          DATABASE_URL: postgresql+psycopg://trader_test:ci_only_password_not_a_secret@127.0.0.1:55444/trader_paper_entry_coordinator_test
+        run: python -m alembic upgrade head
+      - name: Create independent PAPER entry RiskGuard test database
+        env:
+          PGPASSWORD: ci_only_password_not_a_secret
+        run: |
+          psql -h 127.0.0.1 -U trader_test -d trader_test -v ON_ERROR_STOP=1 -c 'CREATE DATABASE trader_paper_entry_risk_test'
+      - name: Migrate independent PAPER entry RiskGuard database
+        env:
+          DATABASE_URL: postgresql+psycopg://trader_test:ci_only_password_not_a_secret@127.0.0.1:55444/trader_paper_entry_risk_test
+        run: python -m alembic upgrade head
+      - name: Durable PAPER entry intent and append-only state history PostgreSQL tests
+        env:
+          TEST_POSTGRES_URL: postgresql+psycopg://trader_test:ci_only_password_not_a_secret@127.0.0.1:55444/trader_paper_entry_coordinator_test
+          RISK_TEST_POSTGRES_URL: postgresql+psycopg://trader_test:ci_only_password_not_a_secret@127.0.0.1:55444/trader_paper_entry_risk_test
+          TRADEPILOT_BT023_TEST_DB: "1"
+          TRADEPILOT_RISK_STORE: "1"
+          TRADEPILOT_PAPER_ENTRY_RISK_TEST_DB: "1"
+          PAPER_ENTRY_COORDINATOR_TEST_ISOLATED: "1"
+          PAPER_ENTRY_EVIDENCE_TEST_ONLY: "1"
+          PAPER_ENTRY_E3_TEST_ONLY: "1"
+          PAPER_LEDGER_TEST_ISOLATED: "1"
+        run: python -m pytest -q tests/test_paper_entry_coordinator_postgres.py
+
       - name: Create disposable PAPER scheduler database
         env:
           PGPASSWORD: ci_only_password_not_a_secret

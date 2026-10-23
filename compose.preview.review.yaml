@@ -1,0 +1,31 @@
+# A separate owner-review preview. Never use the tradepilot_quick project.
+# The external Quick Tunnel is started separately only after explicit approval.
+services:
+  preview-db:
+    profiles: ["review"]
+    networks: !override [review_private]
+
+  preview-api:
+    profiles: ["review"]
+    networks: !override [review_private]
+
+  preview-web:
+    profiles: ["review"]
+    networks: !override [review_private]
+
+  preview-ingress:
+    profiles: ["review"]
+    ports:
+      - "${PREVIEW_INGRESS_BIND:?Review ingress must bind to loopback}"
+    networks: !override
+      review_private:
+        ipv4_address: 172.30.220.10
+
+networks:
+  preview_private: !reset null
+  review_private:
+    ipam:
+      config:
+        - subnet: 172.30.220.0/24
+
+# Compose scopes these named volumes by the unique review project name.

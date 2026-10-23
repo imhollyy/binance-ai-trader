@@ -3,11 +3,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Any, cast
 
@@ -20,6 +21,7 @@ from binance_ai_trader.ai_trainable_model import ResearchPrediction
 from binance_ai_trader.risk_guard import (
     RiskDecision,
     RiskProfile,
+    RiskReason,
     RiskRequest,
     evaluate_risk,
     validate_profile,
@@ -34,6 +36,53 @@ class RiskStoreRejected(ValueError):
     """Persistent risk operation rejected."""
 
 
+@dataclass(frozen=True, slots=True)
+class VerifiedReservation:
+    """Read-back proof derived from the independent append-only risk store."""
+
+    request_id: str
+    signal_id: str
+    profile_version: int
+    amount_usdt: Decimal
+    request_sha256: str
+    intent_sha256: str | None
+    paper_snapshot_sha256: str | None
+    snapshot_id: str | None
+    audit_event_id: str
+    reservation_event_id: str
+
+
+def _canonical_request_hash(
+    *,
+    request_id: str,
+    signal_id: str,
+    profile_version: int,
+    request: RiskRequest,
+    intent_sha256: str | None,
+    paper_snapshot_sha256: str | None,
+) -> str:
+    values: dict[str, object] = {}
+    for name in request.__dataclass_fields__:
+        value = getattr(request, name)
+        if isinstance(value, BotState):
+            values[name] = value.value
+        elif isinstance(value, Decimal):
+            values[name] = "0" if value == 0 else format(value.normalize(), "f")
+        else:
+            values[name] = value
+    payload = {
+        "request_id": request_id,
+        "signal_id": signal_id,
+        "profile_version": profile_version,
+        "intent_sha256": intent_sha256,
+        "paper_snapshot_sha256": paper_snapshot_sha256,
+        "request": values,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 def _isolated(engine: Engine) -> None:
     test_store = (
         engine.url.database == "trader_ai_bt023_test"
@@ -43,10 +92,14 @@ def _isolated(engine: Engine) -> None:
         engine.url.database == "trader_ai_research"
         and os.environ.get("TRADEPILOT_RISK_STORE") == "1"
     )
+    paper_entry_test_store = (
+        engine.url.database == "trader_paper_entry_risk_test"
+        and os.environ.get("TRADEPILOT_PAPER_ENTRY_RISK_TEST_DB") == "1"
+    )
     if (
         engine.dialect.name != "postgresql"
         or engine.url.host not in ("127.0.0.1", "localhost")
-        or not (test_store or research_store)
+        or not (test_store or research_store or paper_entry_test_store)
     ):
         raise RiskStoreRejected("dedicated_local_bt023_test_database_required")
 
@@ -90,20 +143,27 @@ def install_profile(
     *,
     user_confirmed: bool,
     expected_runtime_revision: int,
+    actor_sha256: str | None = None,
     state: BotState = BotState.STOPPED,
 ) -> int:
     """Store explicitly confirmed profile without enabling the bot."""
     _isolated(engine)
     if state is not BotState.STOPPED:
         raise RiskStoreRejected("initial_profile_must_start_stopped")
-    if type(user_confirmed) is not bool or not user_confirmed or not validate_profile(profile):
+    if (
+        type(user_confirmed) is not bool
+        or not user_confirmed
+        or not validate_profile(profile)
+        or (actor_sha256 is not None and _HASH.fullmatch(actor_sha256) is None)
+    ):
         raise RiskStoreRejected("explicitly_confirmed_complete_profile_required")
     with Session(engine) as session, session.begin():
         session.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": _LOCK_ID})
         runtime = (
             session.execute(
                 text(
-                    "SELECT revision,active_profile_version FROM ai_risk_runtime WHERE id=1 FOR UPDATE"
+                    "SELECT revision,active_profile_version,bot_state "
+                    "FROM ai_risk_runtime WHERE id=1 FOR UPDATE"
                 )
             )
             .mappings()
@@ -132,9 +192,32 @@ def install_profile(
                     "state": state.value,
                 },
             )
+            session.execute(
+                text(
+                    "INSERT INTO ai_risk_audit(event_id,signal_id,profile_version,bot_revision,decision_json) "
+                    "VALUES(:event,:signal,:version,1,CAST(:payload AS json))"
+                ),
+                {
+                    "event": f"profile_{profile.risk_level}_{profile.profile_version}",
+                    "signal": f"profile_{profile.risk_level}_{profile.profile_version}",
+                    "version": profile.profile_version,
+                    "payload": json.dumps(
+                        {
+                            "action": "PROFILE_INSTALLED",
+                            "risk_level": profile.risk_level,
+                            "profile_version": profile.profile_version,
+                            "user_confirmed": True,
+                            "actor_sha256": actor_sha256,
+                            "bot_state": state.value,
+                        }
+                    ),
+                },
+            )
             return 1
         current_revision = int(runtime["revision"])
         active_profile_version = int(runtime["active_profile_version"])
+        if BotState(str(runtime["bot_state"])) is not BotState.STOPPED:
+            raise RiskStoreRejected("profile_changes_require_stopped_bot")
         if (
             current_revision != expected_runtime_revision
             or profile.profile_version != active_profile_version + 1
@@ -162,7 +245,53 @@ def install_profile(
         ).scalar_one_or_none()
         if updated_revision is None:
             raise RiskStoreRejected("stale_profile_revision")
+        session.execute(
+            text(
+                "INSERT INTO ai_risk_audit(event_id,signal_id,profile_version,bot_revision,decision_json) "
+                "VALUES(:event,:signal,:version,:revision,CAST(:payload AS json))"
+            ),
+            {
+                "event": f"profile_{profile.risk_level}_{profile.profile_version}",
+                "signal": f"profile_{profile.risk_level}_{profile.profile_version}",
+                "version": profile.profile_version,
+                "revision": int(updated_revision),
+                "payload": json.dumps(
+                    {
+                        "action": "PROFILE_INSTALLED",
+                        "risk_level": profile.risk_level,
+                        "profile_version": profile.profile_version,
+                        "user_confirmed": True,
+                        "actor_sha256": actor_sha256,
+                        "bot_state": BotState.STOPPED.value,
+                    }
+                ),
+            },
+        )
         return int(updated_revision)
+
+
+def active_profile(engine: Engine) -> tuple[RiskProfile, BotState, int] | None:
+    """Return the currently selected, validated profile from the isolated store."""
+    _isolated(engine)
+    with Session(engine) as session:
+        row = (
+            session.execute(
+                text(
+                    "SELECT p.profile_json,r.bot_state,r.revision "
+                    "FROM ai_risk_runtime r JOIN ai_risk_profiles p "
+                    "ON p.risk_level=r.active_risk_level "
+                    "AND p.profile_version=r.active_profile_version WHERE r.id=1"
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+    if row is None:
+        return None
+    profile = _profile(row["profile_json"])
+    if not validate_profile(profile):
+        raise RiskStoreRejected("stored_profile_invalid")
+    return profile, BotState(str(row["bot_state"])), int(row["revision"])
 
 
 def set_bot_state(engine: Engine, *, state: BotState, expected_revision: int) -> int:
@@ -250,14 +379,94 @@ def record_account_snapshot(
 
 
 def evaluate_and_reserve(
-    engine: Engine, *, request_id: str, signal_id: str, profile_version: int, request: RiskRequest
+    engine: Engine,
+    *,
+    request_id: str,
+    signal_id: str,
+    profile_version: int,
+    request: RiskRequest,
+    intent_sha256: str | None = None,
+    paper_snapshot_sha256: str | None = None,
 ) -> RiskDecision:
     """Lock config/exposure, audit every result, and reserve atomically if allowed."""
     _isolated(engine)
     if _ID.fullmatch(request_id) is None or _ID.fullmatch(signal_id) is None:
         raise RiskStoreRejected("invalid_request_or_signal_id")
+    if intent_sha256 is not None and _HASH.fullmatch(intent_sha256) is None:
+        raise RiskStoreRejected("invalid_intent_sha256")
+    if paper_snapshot_sha256 is not None and _HASH.fullmatch(paper_snapshot_sha256) is None:
+        raise RiskStoreRejected("invalid_paper_snapshot_sha256")
+    request_sha256 = _canonical_request_hash(
+        request_id=request_id,
+        signal_id=signal_id,
+        profile_version=profile_version,
+        request=request,
+        intent_sha256=intent_sha256,
+        paper_snapshot_sha256=paper_snapshot_sha256,
+    )
     with Session(engine) as session, session.begin():
         session.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": _LOCK_ID})
+        prior = (
+            session.execute(
+                text(
+                    "SELECT signal_id,profile_version,decision_json FROM ai_risk_audit WHERE event_id=:id FOR UPDATE"
+                ),
+                {"id": request_id},
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if prior is not None:
+            prior_payload = prior["decision_json"]
+            if isinstance(prior_payload, str):
+                prior_payload = json.loads(prior_payload)
+            if (
+                prior["signal_id"] != signal_id
+                or prior["profile_version"] != profile_version
+                or prior_payload.get("request_sha256") != request_sha256
+                or prior_payload.get("intent_sha256") != intent_sha256
+                or prior_payload.get("paper_snapshot_sha256") != paper_snapshot_sha256
+            ):
+                raise RiskStoreRejected("reservation_id_payload_conflict")
+            rows = (
+                session.execute(
+                    text(
+                        "SELECT event_id,event_type,amount_usdt,profile_version FROM ai_risk_reservation_events WHERE reservation_id=:id ORDER BY id"
+                    ),
+                    {"id": request_id},
+                )
+                .mappings()
+                .all()
+            )
+            allowed = prior_payload.get("allowed") is True
+            if allowed:
+                if (
+                    len(rows) != 1
+                    or rows[0]["event_id"] != request_id + "_reserve"
+                    or rows[0]["event_type"] != "RESERVE"
+                    or int(rows[0]["profile_version"]) != profile_version
+                    or Decimal(rows[0]["amount_usdt"])
+                    != Decimal(str(prior_payload.get("allowed_notional")))
+                ):
+                    raise RiskStoreRejected("reservation_audit_inconsistent")
+            elif rows:
+                raise RiskStoreRejected("denied_decision_has_reservation")
+            try:
+                return RiskDecision(
+                    allowed,
+                    RiskReason(str(prior_payload["reason"])),
+                    str(prior_payload["audit_code"]),
+                    None
+                    if prior_payload.get("decision_profile_version") is None
+                    else int(prior_payload["decision_profile_version"]),
+                    BotState(str(prior_payload["bot_state"])),
+                    Decimal(str(prior_payload["allowed_notional"])),
+                    None
+                    if prior_payload.get("net_edge_bps") is None
+                    else Decimal(str(prior_payload["net_edge_bps"])),
+                )
+            except (KeyError, ValueError, TypeError) as exc:
+                raise RiskStoreRejected("reservation_audit_malformed") from exc
         runtime = (
             session.execute(text("SELECT * FROM ai_risk_runtime WHERE id=1 FOR UPDATE"))
             .mappings()
@@ -293,6 +502,10 @@ def evaluate_and_reserve(
             .mappings()
             .one_or_none()
         )
+        if paper_snapshot_sha256 is not None and (
+            snapshot is None or snapshot["source_sha256"] != paper_snapshot_sha256
+        ):
+            raise RiskStoreRejected("paper_snapshot_hash_not_in_risk_store")
         effective = replace(
             request,
             settings_version=request.settings_version,
@@ -309,11 +522,12 @@ def evaluate_and_reserve(
             consecutive_losses=10**9 if snapshot is None else int(snapshot["consecutive_losses"]),
         )
         decision = evaluate_risk(profile, effective)
-        if session.execute(
-            text("SELECT 1 FROM ai_risk_audit WHERE event_id=:id"), {"id": request_id}
-        ).first():
-            raise RiskStoreRejected("duplicate_risk_audit_id")
         payload = {
+            "request_sha256": request_sha256,
+            "intent_sha256": intent_sha256,
+            "paper_snapshot_sha256": paper_snapshot_sha256,
+            "bot_state": decision.bot_state.value,
+            "decision_profile_version": decision.profile_version,
             "allowed": decision.allowed,
             "reason": decision.reason.value,
             "audit_code": decision.audit_code,
@@ -372,6 +586,136 @@ def evaluate_and_reserve(
                 },
             )
         return decision
+
+
+def get_verified_reservation(
+    engine: Engine,
+    *,
+    request_id: str,
+    signal_id: str,
+    profile_version: int,
+    intent_sha256: str | None,
+    paper_snapshot_sha256: str | None = None,
+    expected_request_fields: Mapping[str, object] | None = None,
+    expected_account_snapshot: Mapping[str, object] | None = None,
+) -> VerifiedReservation:
+    """Verify a committed allow audit and its exact active reservation event."""
+    _isolated(engine)
+    if _ID.fullmatch(request_id) is None or _ID.fullmatch(signal_id) is None:
+        raise RiskStoreRejected("invalid_request_or_signal_id")
+    if intent_sha256 is not None and _HASH.fullmatch(intent_sha256) is None:
+        raise RiskStoreRejected("invalid_intent_sha256")
+    if paper_snapshot_sha256 is not None and _HASH.fullmatch(paper_snapshot_sha256) is None:
+        raise RiskStoreRejected("invalid_paper_snapshot_sha256")
+    with Session(engine) as session:
+        audit = (
+            session.execute(
+                text(
+                    "SELECT signal_id,profile_version,decision_json FROM ai_risk_audit WHERE event_id=:id"
+                ),
+                {"id": request_id},
+            )
+            .mappings()
+            .one_or_none()
+        )
+        rows = (
+            session.execute(
+                text(
+                    "SELECT event_id,event_type,amount_usdt,profile_version FROM ai_risk_reservation_events WHERE reservation_id=:id ORDER BY id"
+                ),
+                {"id": request_id},
+            )
+            .mappings()
+            .all()
+        )
+        runtime = (
+            session.execute(
+                text("SELECT active_profile_version,bot_state FROM ai_risk_runtime WHERE id=1")
+            )
+            .mappings()
+            .one_or_none()
+        )
+    if (
+        audit is None
+        or audit["signal_id"] != signal_id
+        or audit["profile_version"] != profile_version
+    ):
+        raise RiskStoreRejected("reservation_audit_missing_or_mismatched")
+    if (
+        runtime is None
+        or int(runtime["active_profile_version"]) != profile_version
+        or runtime["bot_state"] != BotState.RUNNING.value
+    ):
+        raise RiskStoreRejected("reservation_profile_or_bot_state_stale")
+    payload = audit["decision_json"]
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    if payload.get("allowed") is not True or payload.get("intent_sha256") != intent_sha256:
+        raise RiskStoreRejected("reservation_not_allowed_or_intent_mismatch")
+    if payload.get("paper_snapshot_sha256") != paper_snapshot_sha256:
+        raise RiskStoreRejected("reservation_paper_snapshot_mismatch")
+    request_payload = payload.get("request")
+    if not isinstance(request_payload, Mapping):
+        raise RiskStoreRejected("reservation_request_payload_missing")
+    if expected_request_fields is not None:
+        for name, expected in expected_request_fields.items():
+            actual = request_payload.get(name)
+            if actual is None:
+                raise RiskStoreRejected("reservation_request_field_missing")
+            try:
+                if Decimal(str(actual)) != Decimal(str(expected)):
+                    raise RiskStoreRejected("reservation_request_field_mismatch")
+            except (ValueError, TypeError) as exc:
+                raise RiskStoreRejected("reservation_request_field_invalid") from exc
+    snapshot_id = request_payload.get("account_snapshot_id")
+    if paper_snapshot_sha256 is not None:
+        if not isinstance(snapshot_id, str):
+            raise RiskStoreRejected("reservation_account_snapshot_missing")
+        with Session(engine) as session:
+            snapshot = (
+                session.execute(
+                    text(
+                        "SELECT equity_usdt,day_start_equity_usdt,peak_equity_usdt,"
+                        "open_capital_usdt,open_positions,consecutive_losses,source_sha256 "
+                        "FROM ai_risk_account_snapshots WHERE snapshot_id=:id"
+                    ),
+                    {"id": snapshot_id},
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if snapshot is None or snapshot["source_sha256"] != paper_snapshot_sha256:
+            raise RiskStoreRejected("reservation_account_snapshot_hash_mismatch")
+        if expected_account_snapshot is not None:
+            for name, expected in expected_account_snapshot.items():
+                actual = snapshot.get(name)
+                if actual is None or Decimal(str(actual)) != Decimal(str(expected)):
+                    raise RiskStoreRejected("reservation_account_snapshot_value_mismatch")
+    if (
+        len(rows) != 1
+        or rows[0]["event_id"] != request_id + "_reserve"
+        or rows[0]["event_type"] != "RESERVE"
+        or int(rows[0]["profile_version"]) != profile_version
+    ):
+        raise RiskStoreRejected("reservation_event_missing_or_mismatched")
+    amount = Decimal(rows[0]["amount_usdt"])
+    if amount <= 0 or amount != Decimal(str(payload.get("allowed_notional"))):
+        raise RiskStoreRejected("reservation_amount_mismatch")
+    digest = payload.get("request_sha256")
+    if not isinstance(digest, str) or _HASH.fullmatch(digest) is None:
+        raise RiskStoreRejected("reservation_request_hash_missing")
+    return VerifiedReservation(
+        request_id,
+        signal_id,
+        profile_version,
+        amount,
+        digest,
+        intent_sha256,
+        paper_snapshot_sha256,
+        snapshot_id if isinstance(snapshot_id, str) else None,
+        request_id,
+        request_id + "_reserve",
+    )
 
 
 def release_reservation(

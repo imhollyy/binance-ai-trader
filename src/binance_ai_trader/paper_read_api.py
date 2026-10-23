@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from binance_ai_trader.models import (
     PaperSpotAccountRow,
     PaperSpotJournalRow,
+    PaperSpotObservedQuoteRow,
     PaperSpotPositionRow,
 )
 
@@ -44,6 +45,7 @@ class PaperSpotPositionView(BaseModel):
     exit_fee_usdt: Decimal | None
     net_proceeds_usdt: Decimal | None
     realized_pnl_usdt: Decimal | None
+    gross_realized_pnl_usdt: Decimal | None
     opened_at: datetime
     closed_at: datetime | None
 
@@ -58,6 +60,18 @@ class PaperSpotJournalEvent(BaseModel):
     realized_pnl_delta_usdt: Decimal
     quantity_delta: Decimal
     created_at: datetime
+    observed_quote: PaperSpotQuoteView | None
+
+
+class PaperSpotQuoteView(BaseModel):
+    source: str
+    symbol: str
+    interval: str
+    observed_at_ms: int
+    reference_price: Decimal
+    fee_bps: int
+    slippage_bps: int
+    spread_bps: int | None
 
 
 class PaperSpotLedgerView(BaseModel):
@@ -121,6 +135,16 @@ def register_paper_spot_read_route(
                     .order_by(PaperSpotJournalRow.id.desc())
                     .limit(events_limit)
                 ).all()
+                quotes = (
+                    session.scalars(
+                        select(PaperSpotObservedQuoteRow).where(
+                            PaperSpotObservedQuoteRow.journal_id.in_([row.id for row in events])
+                        )
+                    ).all()
+                    if events
+                    else []
+                )
+                quote_by_journal = {quote.journal_id: quote for quote in quotes}
                 total_positions = (
                     session.scalar(
                         select(func.count())
@@ -178,6 +202,12 @@ def register_paper_spot_read_route(
                             exit_fee_usdt=row.exit_fee_usdt,
                             net_proceeds_usdt=row.net_proceeds_usdt,
                             realized_pnl_usdt=row.realized_pnl_usdt,
+                            gross_realized_pnl_usdt=(
+                                row.realized_pnl_usdt + row.entry_fee_usdt + row.exit_fee_usdt
+                                if row.realized_pnl_usdt is not None
+                                and row.exit_fee_usdt is not None
+                                else None
+                            ),
                             opened_at=row.opened_at,
                             closed_at=row.closed_at,
                         )
@@ -194,6 +224,20 @@ def register_paper_spot_read_route(
                             realized_pnl_delta_usdt=row.realized_pnl_delta_usdt,
                             quantity_delta=row.quantity_delta,
                             created_at=row.created_at,
+                            observed_quote=(
+                                PaperSpotQuoteView(
+                                    source=quote_by_journal[row.id].source,
+                                    symbol=quote_by_journal[row.id].symbol,
+                                    interval=quote_by_journal[row.id].interval,
+                                    observed_at_ms=quote_by_journal[row.id].received_at_ms,
+                                    reference_price=quote_by_journal[row.id].reference_price,
+                                    fee_bps=quote_by_journal[row.id].fee_bps,
+                                    slippage_bps=quote_by_journal[row.id].slippage_bps,
+                                    spread_bps=quote_by_journal[row.id].spread_bps,
+                                )
+                                if row.id in quote_by_journal
+                                else None
+                            ),
                         )
                         for row in events
                     ],

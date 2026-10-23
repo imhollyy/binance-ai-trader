@@ -152,7 +152,9 @@ def _run(db: Engine, clock_ms: int, *, ticker: str = "102.2") -> ObservedPaperRe
     )
 
 
-def test_public_sample_atomic_account_audit_rollback_and_sell(engine: Engine) -> None:
+def test_public_sample_atomic_account_audit_rollback_and_sell(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
     start = (time.time_ns() // 60_000_000_000) * 60_000
     clock = start + 100
 
@@ -173,6 +175,17 @@ def test_public_sample_atomic_account_audit_rollback_and_sell(engine: Engine) ->
         ensure_paper_spot_account(session)
     initial = _counts(engine)
     assert initial == (1, 0, 1, 0)
+
+    # The actual observed execution path reaches its locked preflight and
+    # rejects the BUY without changing any ledger record.
+    with pytest.raises(PaperExecutionRejected, match="riskguard_paper_atomicity_unavailable"):
+        _run(engine, clock)
+    assert _counts(engine) == initial
+
+    # The remainder exercises ledger mechanics behind a test-only fixture.
+    import binance_ai_trader.paper_observed_execution as observed_execution
+
+    monkeypatch.setattr(observed_execution, "require_atomic_riskguard_authorization", lambda: None)
 
     # Public rate limits, price outliers and gap-down risk MUST NOT debit cash.
     with pytest.raises(PaperExecutionRejected, match="public_spot_observation_blocked"):

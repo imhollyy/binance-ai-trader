@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import time
 from collections.abc import Iterator
-from decimal import Decimal
 
 import httpx
 import pytest
@@ -165,27 +164,26 @@ def test_explicit_scheduler_two_ticks_429_restart_and_permission_revoke(db: Engi
     assert scheduler(enabled=True, ticks=2) is SchedulerStatus.LIMIT_REACHED
     assert [x.status for x in logs] == [
         PaperWorkerStatus.NO_SIGNAL,
-        PaperWorkerStatus.PAPER_RECORDED,
+        PaperWorkerStatus.SOURCE_BLOCKED,
     ]
-    assert _counts(db) == (61, 1, 2, 1, 1)
+    assert _counts(db) == (61, 0, 1, 0, 1)
     assert paths.count("/api/v3/ticker/price") == 2
     with Session(db) as session:
         position = session.scalar(select(PaperSpotPositionRow))
-        assert position is not None and position.status == "open"
-        assert position.entry_fill_price == Decimal("102.2") * Decimal("1.0005")
+        assert position is None
         guard = session.get(PaperWorkerGuardRow, 1)
-        assert guard is not None and guard.last_status == "paper_recorded"
+        assert guard is not None and guard.last_status == "source_blocked"
 
-    # Running at the same clock after a successful tick cannot duplicate.
+    # A rejected entry remains under a durable cooldown; no ledger is changed.
     prev_http = len(paths)
     logs.clear()
     assert scheduler(enabled=True, ticks=1) is SchedulerStatus.LIMIT_REACHED
     assert [result.status for result in logs] == [PaperWorkerStatus.READY]
     assert len(paths) == prev_http
-    assert _counts(db) == (61, 1, 2, 1, 1)
+    assert _counts(db) == (61, 0, 1, 0, 1)
 
     # Next candle source throttled, even across Engine/process restart.
-    clock[0] += 60_000
+    clock[0] += 180_000
     status[0] = 429
     logs.clear()
     assert scheduler(enabled=True, ticks=1) is SchedulerStatus.LIMIT_REACHED
@@ -219,4 +217,4 @@ def test_explicit_scheduler_two_ticks_429_restart_and_permission_revoke(db: Engi
         ).model_dump(mode="json")
     assert scheduler(enabled=True, ticks=3) is SchedulerStatus.DISABLED
     assert len(paths) == before
-    assert _counts(db) == (61, 1, 2, 1, 1)
+    assert _counts(db) == (61, 0, 1, 0, 1)

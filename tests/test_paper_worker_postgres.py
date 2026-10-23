@@ -118,7 +118,13 @@ def _fixture_transport(
 
 def test_disabled_optin_no_http_readonly_cooldown_restart_and_concurrent(
     engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Explicitly test the existing worker and ledger behavior with a test-only
+    # RiskGuard fixture. Production execution adapters do not install this.
+    import binance_ai_trader.paper_observed_execution as observed_execution
+
+    monkeypatch.setattr(observed_execution, "require_atomic_riskguard_authorization", lambda: None)
     base = time.time_ns() // 60_000_000_000 * 60_000
     clock = [base + 100]
     calls: list[str] = []

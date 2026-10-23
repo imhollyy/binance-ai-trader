@@ -314,6 +314,15 @@ def open_paper_spot(
             previous = _existing(events, key, digest, intent.trade_id, "spot_buy")
             if previous is not None:
                 return previous
+            # This is the shared ledger mutation boundary, not just an adapter.
+            # A newly added caller must not bypass the independent RiskGuard
+            # atomicity requirement by directly invoking open_paper_spot().
+            # Local import avoids the intentional PaperExecutionRejected cycle.
+            from binance_ai_trader.paper_entry_gate import (
+                require_atomic_riskguard_authorization,
+            )
+
+            require_atomic_riskguard_authorization(isolated_ledger_test_session=session)
             if _signal_preflight is not None:
                 _signal_preflight(session, settings, account, positions, events)
             if any(position.trade_id == intent.trade_id for position in positions):
