@@ -4,6 +4,62 @@ This branch adds guarded research and control APIs while keeping automatic
 PAPER execution unavailable. All unknown information is represented as
 unavailable rather than inferred.
 
+## BT-027G — authoritative issue #106 acceptance status
+
+This section is the current status after BT-027F at the BT-027G review point.
+The earlier BT-027A/B and E3 checkpoints below are historical snapshots; where
+they say START or the process manager is unsupported, the later BT-027F section
+supersedes them. Production trading remains out of scope and disabled.
+
+| Original issue #106 criterion | Evidence in this branch | Status |
+| --- | --- | --- |
+| Dashboard uses persisted PAPER data and does not invent an empty account | `/api/v1/paper/dashboard`; `PaperDashboardOverview`, `PaperSpotLedger`, `StagingViewer`; `paper-overview.spec.ts`, `staging-preview.spec.ts`, Full Stack PAPER E2E | PASS for truthful reads; unknown values remain unavailable |
+| Bot state distinguishes verified process from preference/last result; START and STOP are safe | `/api/v1/paper/worker`, supervisor lease/generation and stop acknowledgement; `PaperWorkerSupervisor`; `paper_worker_supervisor_postgres.py` and Full Stack E2E | PASS for normal local API and isolated observation tests; staging viewer does not expose START and does not claim its last-result record is a process heartbeat |
+| Risk levels 1–5 are versioned and controlled by independent RiskGuard | `/api/v1/risk/profiles`, `RiskCapabilitiesPanel`; staging viewer now reads this endpoint and no longer treats `/settings` as a RiskGuard profile | BLOCKED in the current private preview: no isolated RiskGuard database is configured there, so the endpoint reports unavailable and selection remains disabled. Local profile administration remains local-only. |
+| Spot budget and ledger remain persistent and immutable | PAPER dashboard/ledger read API; append-only journal and database guards; `paper-ledger.spec.ts`, PostgreSQL ledger tests | PASS; no ledger reset or mutation was performed for this review |
+| AI research shows real provenance, outcomes, approval status and recorded metrics only | `/api/v1/ai/research/predictions`; staging viewer now reads the authenticated endpoint; `AiResearchPanel`; `test_bt027_research_risk_api.py`; staging Playwright fixtures | PASS for provenance-safe UI and no-data behavior. Current preview has no isolated research source/metrics, so it must show unavailable/empty and `RESEARCH ONLY — NOT APPROVED`; no performance is claimed. |
+| Charts use recorded, closed Spot candles with timestamps | stored candle API and `StoredCloseChart`; `recorded-charts.spec.ts`, staging console Playwright | PASS; no live-price label or fabricated connecting value |
+| Portfolio/history separate gross/net P&L and costs; unknown spread is not zero | persisted Decimal-string PAPER events and ledger view; `paper-ledger.spec.ts` checks gross/net, recorded fees/slippage and unknown spread | PASS for supported records; mark-to-market remains unavailable without a trusted mark |
+| Mobile/desktop, empty/error/loading and accessible navigation | Playwright 360/390/768/1280 and keyboard/reduced-motion tests; staging tests exercise login, panels and empty/error states | PASS locally on this review head (26 default UI tests; 18 staging-viewer tests) |
+| Password/session/admin values are absent from browser persistent storage, URL and staging bundle | staging viewer keeps session material in component state and uses the server cookie; Playwright asserts empty local/session storage and no credential in URL; staging production bundle scan rejects local admin token markers | PASS locally for tested browser flows and staging bundle scan; no secret was printed |
+| Preview is private/local and usable by the owner | loopback-only ingress and exact-host Caddy routing in `compose.preview.yaml` / `Caddyfile.quick`; private HTTPS smoke workflow | BLOCKED for manual acceptance: local port `127.0.0.1:8765` currently returns 404 without the generated allowed Host, and the current worktree has no Quick Tunnel origin log/PID record. Existing containers alone do not provide a usable URL. |
+| Auth, Origin/CSRF, roles, idempotency, audit and fail-closed behavior | `staging_auth.py`, staging auth/API/HTTPS ingress tests, profile/worker integration tests, preview preflight and CI | PASS in automated tests; user review of the current private preview is still pending |
+
+### BT-027G browser acceptance and remaining blockers
+
+On the BT-027G worktree, the default Playwright suite passed 26 tests and
+skipped 23 fixture-gated cases; the opt-in staging UI suite passed 18/18 after
+providing only a mock HTTPS API origin. The 23 default skips include staging
+tests that were separately run and passed, plus tests requiring the isolated
+connected backend. The Full Stack PAPER E2E workflow is the authoritative
+browser-to-API-to-PostgreSQL test for those connected cases; do not report a
+local skip as a pass. Re-run and verify all five required Actions on the final
+BT-027G commit.
+
+Two original issue #106 acceptance blockers remain: (1) the private preview has
+no configured, independent RiskGuard database, so its real 1–5 profile cannot
+be selected there; (2) a current private preview URL could not be verified and
+manual browser acceptance has not happened. Do not merge or mark BT-027 accepted
+until these are resolved/reviewed. This is distinct from future production
+automatic BUY, independent positive-net-edge approval, scheduler activation,
+model approval, Binance private orders and Futures, all of which remain disabled
+and are not requirements for original issue #106.
+
+Current safe owner access path (not yet available in this checkout): use the
+HTTPS Quick Tunnel URL printed by `Start-TradePilotQuickPreview.ps1`; Cloudflare
+requires the explicitly allowed email's PIN, followed by the separate preview
+viewer password. The URL is ephemeral and must not be guessed. The script must
+be reviewed against the existing `tradepilot_quick` project/volume before a
+restart because this review intentionally did not restart or rebuild the
+current preview. Browser checklist: (1) sign in as viewer; (2) verify empty
+ledger is not rendered as zero capital; (3) inspect recorded candle timestamps;
+(4) inspect Risk Management and confirm unavailable RiskGuard is disabled;
+(5) inspect AI Research and confirm `RESEARCH ONLY — NOT APPROVED` plus empty/
+unavailable data and no fabricated metrics; (6) inspect worker state and ensure
+it is never shown RUNNING without a verified heartbeat; (7) check history costs
+and unknown spread; (8) confirm no local admin token field, no START, no data in
+browser storage/URL; (9) sign out. Use only the isolated preview account.
+
 ## Risk profiles (BT-027A)
 
 `GET/PUT /api/v1/risk/profiles` reads and writes complete, versioned RiskGuard
@@ -14,13 +70,15 @@ audited with a hashed actor identifier. A PostgreSQL advisory lock serializes
 profile changes with worker claims. Missing profile values are never filled in.
 This configures RiskGuard; it does not authorize or activate trading.
 
-## Worker status and stop (BT-027B)
+## Worker status and stop (BT-027B historical baseline; superseded by BT-027F)
 
 `GET /api/v1/paper/worker` reports database-backed worker identity, heartbeat,
 lease, revision and stale state. Authorized, idempotent STOP requests record an
 append-only audit event and remain `STOP_REQUESTED` until the worker observes
 the request and releases its lease. An expired lease is reported as stale.
-There is deliberately no START endpoint or scheduler activation. A heartbeat
+At this BT-027B checkpoint there was no START endpoint. BT-027F later added an
+observation-only child lifecycle under exact disposable database sentinels;
+normal local/staging configurations still do not expose START. A heartbeat
 does not grant trading authority.
 
 ## AI research API (BT-027C)
@@ -35,15 +93,12 @@ This API has no execution capability.
 
 ## Web integration and remaining acceptance
 
-The dashboard contains an explicit user-confirmed profile form, verified worker
-status with STOP request, and stored research receipt view. These views fail
-closed when their APIs or isolated stores are unavailable. START remains
-disabled because a complete safe start contract is not implemented. The
-research database currently has no persisted performance metric evidence.
-PostgreSQL integration tests must run in their disposable CI services; they are
-not claimed as local passes when those services are absent. BT-027 must remain
-unmerged until the disposable PostgreSQL, required CI, and browser checks all
-pass and the remaining acceptance decision is reviewed.
+The local dashboard has a user-confirmed independent profile form, worker
+status/STOP request, and stored research receipt view. The staging viewer now
+reads the independent RiskGuard and AI research APIs, showing unavailable data
+without using application settings as a substitute. Normal staging START stays
+disabled; the disposable observation lifecycle is only exposed by exact test
+sentinels. Research metrics remain unavailable unless persisted evidence exists.
 
 ## BT-027E / BT-027F security integration
 
