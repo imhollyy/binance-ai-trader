@@ -6,6 +6,8 @@ type Status = {
   state: string; revision: number; worker_id: string | null;
   heartbeat_at_ms: number | null; lease_until_ms: number | null;
   verified_running: boolean; stale: boolean; start_supported: boolean;
+  generation: number; manager_id: string | null; process_pid: number | null;
+  process_manager_verified: boolean; observation_only: boolean;
 };
 
 export default function PaperWorkerSupervisor({connected, apiAddress, token}: {
@@ -59,7 +61,7 @@ export default function PaperWorkerSupervisor({connected, apiAddress, token}: {
           "Idempotency-Key": `stop_${crypto.randomUUID()}`,
         },
         cache: "no-store",
-        body: JSON.stringify({expected_revision: status.revision}),
+        body: JSON.stringify({expected_revision: status.revision, expected_generation: status.generation}),
       });
       if (response.status === 409) throw new Error("stale");
       if (!response.ok) throw new Error("rejected");
@@ -76,11 +78,42 @@ export default function PaperWorkerSupervisor({connected, apiAddress, token}: {
     } finally { setBusy(false); }
   }
 
+  async function start() {
+    if (!status || !status.start_supported || busy) return;
+    setBusy(true);
+    try {
+      const response = await fetch(url() + "/start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json", "X-Admin-Token": token,
+          "Idempotency-Key": `start_${crypto.randomUUID()}`,
+        },
+        cache: "no-store",
+        body: JSON.stringify({expected_revision: status.revision, mode: "OBSERVATION_ONLY"}),
+      });
+      if (!response.ok) throw new Error("rejected");
+      const value = await response.json() as Status;
+      setStatus(value);
+      setMessage(value.verified_running && value.observation_only
+        ? "Gözlem worker'ı doğrulandı; bu durum işlem açma yetkisi vermez."
+        : "Worker başlatma isteği process attestation ile doğrulanmadı.");
+    } catch {
+      setMessage("Gözlem worker'ı başlatılamadı; durum fail-closed kaldı.");
+      void refresh();
+    } finally { setBusy(false); }
+  }
+
+  useEffect(() => {
+    if (!connected) return;
+    const timer = window.setInterval(() => void refresh(), 1500);
+    return () => window.clearInterval(timer);
+  }, [connected, refresh]);
+
   return <div className="worker-supervisor" aria-live="polite">
     <strong>{status?.verified_running ? "RUNNING · heartbeat doğrulandı" : status?.state ?? "UNKNOWN"}</strong>
     <p>{message}</p>
-    {status?.worker_id && <small>Worker {status.worker_id} · rev {status.revision} · heartbeat {status.heartbeat_at_ms ? new Date(status.heartbeat_at_ms).toLocaleString("tr-TR") : "yok"}</small>}
-    <div><button type="button" disabled title="Otomatik başlatma bu sürümde kapalı">Başlatma kapalı</button>
+    {status?.worker_id && <small>Worker {status.worker_id} · nesil {status.generation} · rev {status.revision} · heartbeat {status.heartbeat_at_ms ? new Date(status.heartbeat_at_ms).toLocaleString("tr-TR") : "yok"}{status.observation_only ? " · yalnız gözlem" : ""}</small>}
+    <div><button type="button" disabled={!status?.start_supported || busy || status?.verified_running} onClick={() => void start()} title={status?.start_supported ? "G\u00f6zlem worker'\u0131n\u0131 ba\u015flat" : "Ba\u015flatma kapal\u0131"}>{status?.start_supported ? "G\u00f6zlem worker'\u0131n\u0131 ba\u015flat" : "Ba\u015flatma kapal\u0131"}</button>
       <button type="button" disabled={!status?.verified_running || busy} onClick={() => void stop()}>
         {busy ? "Durdurma isteniyor..." : "Güvenli durdurma iste"}
       </button>

@@ -247,3 +247,64 @@ trigger verifies only the persisted RiskGuard reference identifiers in the
 ledger receipt. The trigger also checks that the receipt hash matches the
 event reference, but does not recompute the application's canonical SHA-256
 encoding. Production BUY remains disabled.
+
+### BT-027F observation-only process lifecycle (isolated acceptance)
+
+Migration `0023_bt027_observer_fencing` adds a monotonic runtime generation,
+manager UUID/PID/process-start token, child PID/process-start token and an
+explicit `OBSERVATION_ONLY` execution mode. Supervisor events bind to the
+generation. START claims serialize under the supervisor advisory lock and
+runtime row lock; only one fresh generation can be claimed for the expected
+revision. STOP requires the current generation, persists an idempotent audited
+request, and remains pending until the child observes it and appends its STOP
+acknowledgement. Heartbeat and STOP acknowledgements compare worker ID and
+generation; expired or stale generations cannot revive a lease. A legacy
+generationless worker claim is not process-attested and cannot replace an
+observer generation.
+
+`PaperObservationProcessManager` launches a separate Python child process.
+That child imports only process-identity and supervisor/database modules; it
+does not import market data, strategy, ledger, RiskGuard or exchange code. It
+attests its own OS process-start identity, sends database-backed heartbeats,
+and exits after STOP acknowledgement. The manager detects child exit; the
+child detects manager loss and records failure. Linux process identity rejects
+zombie processes, and Windows identity checks the process exit code as well as
+the creation time so a terminated PID is not considered live.
+
+The START route is registered only when both explicit observer/supervisor test
+sentinels are set and `DATABASE_URL` exactly matches the provided SQLAlchemy
+engine for loopback PostgreSQL database `trader_worker_supervisor_test`.
+Staging, preview and normal application configurations do not register START;
+the UI keeps it disabled when the API reports `start_supported=false`. In the
+isolated test mode the only accepted mode is `OBSERVATION_ONLY`. This is an
+acceptance harness, not a deployable production process supervisor or a
+production START capability. START never grants trading permission.
+
+The disposable PostgreSQL 16 integration suite ran the migration from an
+empty database and passed 2 tests without skips. It exercised authorized and
+unauthorized START/STOP, untrusted Origin rejection, same-request replay and
+payload conflict, duplicate and concurrent controller claims from separate
+OS processes, child crash and generation replacement, manager-process crash
+and automatic child failure, manager restart/replay without a new generation,
+STOP racing START while heartbeat is active, expired lease and delayed heartbeat
+rejection, stale generation rejection, legacy claim denial after observer
+generation, a protocol relay dropping live PostgreSQL connections, safe failure
+and idempotent restart after the outage, and unchanged PAPER journal/commit-
+receipt counts. No PAPER BUY, strategy scheduler or exchange request is made
+by this observation worker.
+
+The common PAPER ledger entry guard remains fail-closed and worker-origin
+coordinator intents still reject because durable supervisor fencing has not
+been integrated into the separate E3 entry authorization contract. During the
+tested database connection outage, the observation child exited on its database
+error; once connectivity returned, the manager persisted failure and replayed
+the same START without allocating a new generation. The test drops database
+connections through a local TCP relay while PostgreSQL itself remains running;
+host/server crash behavior is not claimed. The process manager is hosted inside
+the local API process rather than an independently supervised service, so
+host-level process supervision/HA is not claimed. Production PAPER BUY,
+automatic strategies, scheduler activation, AI model execution, Binance
+private orders and Futures remain disabled. BT-027F's isolated observation
+lifecycle is implemented; overall BT-027 and production execution acceptance
+remain open pending the separate dashboard/security and BUY authorization
+gates.

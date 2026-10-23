@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from hmac import compare_digest
 from os import environ
+from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -32,9 +33,11 @@ from binance_ai_trader.models import (
 )
 from binance_ai_trader.paper_bot_control_test_api import register_bot_control_test_routes
 from binance_ai_trader.paper_dashboard_api import register_paper_dashboard_route
+from binance_ai_trader.paper_observation_manager import PaperObservationProcessManager
 from binance_ai_trader.paper_read_api import register_paper_spot_read_route
 from binance_ai_trader.paper_supervisor import (
     SupervisorRejected,
+    observer_start_enabled,
     read_worker_status,
     request_worker_stop,
 )
@@ -93,10 +96,21 @@ class WorkerStatusView(BaseModel):
     verified_running: bool
     stale: bool
     start_supported: bool = False
+    generation: int = 0
+    manager_id: str | None = None
+    process_pid: int | None = None
+    process_manager_verified: bool = False
+    observation_only: bool = False
 
 
 class WorkerStopRequest(BaseModel):
     expected_revision: int
+    expected_generation: int | None = None
+
+
+class WorkerStartRequest(BaseModel):
+    expected_revision: int
+    mode: Literal["OBSERVATION_ONLY"]
 
 
 def create_app(
@@ -143,6 +157,12 @@ def create_app(
         )
 
     staging = settings.auth_mode == "staging"
+    observer_manager: PaperObservationProcessManager | None = None
+    if not staging and db_engine is not None and observer_start_enabled(db_engine):
+        try:
+            observer_manager = PaperObservationProcessManager(db_engine)
+        except SupervisorRejected:
+            observer_manager = None
     staging_access = StagingAccess(settings, db_engine) if staging else None
     app = FastAPI(
         title="Binance AI Trader — Paper API",
@@ -157,7 +177,9 @@ def create_app(
             [settings.staging_origin or ""] if staging else list(settings.allowed_origins)
         ),
         allow_credentials=staging,
-        allow_methods=["GET", "POST", "PUT"] if staging else ["GET", "PUT"],
+        allow_methods=(
+            ["GET", "POST", "PUT"] if staging or observer_manager is not None else ["GET", "PUT"]
+        ),
         allow_headers=(
             [
                 "Content-Type",
@@ -455,9 +477,42 @@ def create_app(
         if db_engine is None:
             raise HTTPException(status_code=503, detail="Worker status unavailable")
         try:
-            return WorkerStatusView(**asdict(read_worker_status(db_engine)))
+            status = (
+                observer_manager.status() if observer_manager else read_worker_status(db_engine)
+            )
+            return WorkerStatusView(**asdict(status))
         except SQLAlchemyError as exc:
             raise HTTPException(status_code=503, detail="Worker status unavailable") from exc
+
+    if observer_manager is not None:
+
+        @app.post(
+            "/api/v1/paper/worker/start",
+            response_model=WorkerStatusView,
+            dependencies=[Depends(require_write)],
+        )
+        def start_observation_worker(
+            payload: WorkerStartRequest,
+            response: Response,
+            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+            x_admin_token: str | None = Header(default=None),
+        ) -> WorkerStatusView:
+            response.headers["Cache-Control"] = "no-store, private"
+            if not idempotency_key or not x_admin_token:
+                raise HTTPException(status_code=422, detail="Idempotency key required")
+            try:
+                result = observer_manager.start(
+                    expected_revision=payload.expected_revision,
+                    idempotency_key=idempotency_key,
+                    actor_token=x_admin_token,
+                )
+                return WorkerStatusView(**asdict(result))
+            except SupervisorRejected as exc:
+                raise HTTPException(status_code=409, detail="Observation start rejected") from exc
+            except SQLAlchemyError as exc:
+                raise HTTPException(status_code=503, detail="Worker status unavailable") from exc
+
+        app.router.on_shutdown.append(observer_manager.shutdown)
 
     @app.post(
         "/api/v1/paper/worker/stop",
@@ -476,12 +531,24 @@ def create_app(
         if not idempotency_key or not x_admin_token:
             raise HTTPException(status_code=422, detail="Idempotency key required")
         try:
-            result = request_worker_stop(
-                db_engine,
-                expected_revision=payload.expected_revision,
-                idempotency_key=idempotency_key,
-                actor_token=x_admin_token,
+            result = (
+                observer_manager.stop(
+                    expected_revision=payload.expected_revision,
+                    expected_generation=payload.expected_generation or 0,
+                    idempotency_key=idempotency_key,
+                    actor_token=x_admin_token,
+                )
+                if observer_manager is not None
+                else request_worker_stop(
+                    db_engine,
+                    expected_revision=payload.expected_revision,
+                    expected_generation=payload.expected_generation,
+                    idempotency_key=idempotency_key,
+                    actor_token=x_admin_token,
+                )
             )
+            if result.state == "STOP_REQUESTED":
+                response.status_code = 202
             return WorkerStatusView(**asdict(result))
         except SupervisorRejected as exc:
             raise HTTPException(status_code=409, detail="Worker stop request rejected") from exc
