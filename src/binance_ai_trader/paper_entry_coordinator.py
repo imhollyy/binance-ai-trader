@@ -439,7 +439,8 @@ def record_verified_risk_reservation(
         row = (
             session.execute(
                 text(
-                    "SELECT i.intent_sha256,i.risk_profile_version,i.source_type,e.to_state "
+                    "SELECT i.intent_sha256,i.risk_profile_version,i.source_type,e.to_state,"
+                    "i.claimed_ledger_snapshot_sha256,i.claimed_cost_evidence_sha256 "
                     "FROM paper_entry_intents i JOIN paper_entry_intent_events e "
                     "ON e.request_id=i.request_id WHERE i.request_id=:id "
                     "AND e.sequence=(SELECT max(e2.sequence) FROM paper_entry_intent_events e2 "
@@ -471,6 +472,11 @@ def record_verified_risk_reservation(
         )
     except RiskStoreRejected as exc:
         raise EntryCoordinatorRejected("independent_risk_reservation_unverified") from exc
+    # E1 only persisted caller claims for ledger/cost hashes; it has no trusted
+    # attestation linking these values to ledger rows or a market-cost source.
+    # A valid risk-store receipt alone cannot upgrade those claims to evidence.
+    if row["claimed_ledger_snapshot_sha256"] or row["claimed_cost_evidence_sha256"]:
+        raise EntryCoordinatorRejected("paper_snapshot_and_cost_provenance_unverified")
     evidence = f"{receipt.audit_event_id}:{receipt.reservation_event_id}:{receipt.request_sha256}"
     if row["to_state"] == "RISK_RESERVED":
         record = get_intent(engine, request_id)

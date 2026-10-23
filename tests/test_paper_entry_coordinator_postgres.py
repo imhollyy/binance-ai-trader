@@ -121,7 +121,9 @@ def _ledger_counts(engine: Engine) -> tuple[int, int, int]:
         )  # type: ignore[return-value]
 
 
-def test_intent_create_retry_conflict_transition_and_audit(engine: Engine) -> None:
+def test_intent_create_retry_conflict_transition_and_audit(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
     payload = _intent()
     with pytest.raises(EntryCoordinatorRejected, match="stale_paper_settings_version"):
         create_intent(
@@ -144,6 +146,30 @@ def test_intent_create_retry_conflict_transition_and_audit(engine: Engine) -> No
             with pytest.raises(
                 EntryCoordinatorRejected,
                 match="independent_risk_reservation_unverified",
+            ):
+                record_verified_risk_reservation(engine, risk_engine, request_id=first.request_id)
+            assert get_intent(engine, first.request_id).current_state == "PREPARED"  # type: ignore[union-attr]
+            # Even an otherwise valid risk-store receipt cannot promote E1's
+            # unverified caller-supplied ledger/cost hashes to trusted evidence.
+            from binance_ai_trader import risk_store
+
+            monkeypatch.setattr(
+                risk_store,
+                "get_verified_reservation",
+                lambda *_args, **_kwargs: risk_store.VerifiedReservation(
+                    first.request_id,
+                    first.request_id,
+                    first.risk_profile_version,
+                    Decimal("8000"),
+                    "c" * 64,
+                    first.intent_sha256,
+                    first.request_id,
+                    first.request_id + "_reserve",
+                ),
+            )
+            with pytest.raises(
+                EntryCoordinatorRejected,
+                match="paper_snapshot_and_cost_provenance_unverified",
             ):
                 record_verified_risk_reservation(engine, risk_engine, request_id=first.request_id)
             assert get_intent(engine, first.request_id).current_state == "PREPARED"  # type: ignore[union-attr]
