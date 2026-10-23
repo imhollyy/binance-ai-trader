@@ -502,6 +502,25 @@ while True: time.sleep(1)
             recovered = read_worker_status(engine)
         assert recovered.state == "FAILED"
         assert recovered.generation == manager_generation
+        # FAILED is persisted just before the observer process returns from
+        # its manager-loss path. Do not try to replace that generation until
+        # the OS confirms the old PID/start-token pair has exited; the
+        # supervisor correctly fences a still-live child during this window.
+        with engine.connect() as connection:
+            orphan = connection.execute(
+                text(
+                    "SELECT process_pid,process_start_token FROM paper_worker_runtime "
+                    "WHERE id=1 AND generation=:generation"
+                ),
+                {"generation": manager_generation},
+            ).one()
+        deadline = time.monotonic() + 5
+        while (
+            time.monotonic() < deadline
+            and process_start_token(orphan.process_pid) == orphan.process_start_token
+        ):
+            time.sleep(0.02)
+        assert process_start_token(orphan.process_pid) != orphan.process_start_token
         with engine.connect() as connection:
             assert (
                 connection.execute(
