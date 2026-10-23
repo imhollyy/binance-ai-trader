@@ -46,6 +46,8 @@ class VerifiedReservation:
     amount_usdt: Decimal
     request_sha256: str
     intent_sha256: str | None
+    paper_snapshot_sha256: str | None
+    snapshot_id: str | None
     audit_event_id: str
     reservation_event_id: str
 
@@ -57,6 +59,7 @@ def _canonical_request_hash(
     profile_version: int,
     request: RiskRequest,
     intent_sha256: str | None,
+    paper_snapshot_sha256: str | None,
 ) -> str:
     values: dict[str, object] = {}
     for name in request.__dataclass_fields__:
@@ -72,6 +75,7 @@ def _canonical_request_hash(
         "signal_id": signal_id,
         "profile_version": profile_version,
         "intent_sha256": intent_sha256,
+        "paper_snapshot_sha256": paper_snapshot_sha256,
         "request": values,
     }
     return hashlib.sha256(
@@ -378,6 +382,7 @@ def evaluate_and_reserve(
     profile_version: int,
     request: RiskRequest,
     intent_sha256: str | None = None,
+    paper_snapshot_sha256: str | None = None,
 ) -> RiskDecision:
     """Lock config/exposure, audit every result, and reserve atomically if allowed."""
     _isolated(engine)
@@ -385,12 +390,15 @@ def evaluate_and_reserve(
         raise RiskStoreRejected("invalid_request_or_signal_id")
     if intent_sha256 is not None and _HASH.fullmatch(intent_sha256) is None:
         raise RiskStoreRejected("invalid_intent_sha256")
+    if paper_snapshot_sha256 is not None and _HASH.fullmatch(paper_snapshot_sha256) is None:
+        raise RiskStoreRejected("invalid_paper_snapshot_sha256")
     request_sha256 = _canonical_request_hash(
         request_id=request_id,
         signal_id=signal_id,
         profile_version=profile_version,
         request=request,
         intent_sha256=intent_sha256,
+        paper_snapshot_sha256=paper_snapshot_sha256,
     )
     with Session(engine) as session, session.begin():
         session.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": _LOCK_ID})
@@ -413,6 +421,7 @@ def evaluate_and_reserve(
                 or prior["profile_version"] != profile_version
                 or prior_payload.get("request_sha256") != request_sha256
                 or prior_payload.get("intent_sha256") != intent_sha256
+                or prior_payload.get("paper_snapshot_sha256") != paper_snapshot_sha256
             ):
                 raise RiskStoreRejected("reservation_id_payload_conflict")
             rows = (
@@ -489,6 +498,10 @@ def evaluate_and_reserve(
             .mappings()
             .one_or_none()
         )
+        if paper_snapshot_sha256 is not None and (
+            snapshot is None or snapshot["source_sha256"] != paper_snapshot_sha256
+        ):
+            raise RiskStoreRejected("paper_snapshot_hash_not_in_risk_store")
         effective = replace(
             request,
             settings_version=request.settings_version,
@@ -508,6 +521,7 @@ def evaluate_and_reserve(
         payload = {
             "request_sha256": request_sha256,
             "intent_sha256": intent_sha256,
+            "paper_snapshot_sha256": paper_snapshot_sha256,
             "bot_state": decision.bot_state.value,
             "decision_profile_version": decision.profile_version,
             "allowed": decision.allowed,
@@ -577,6 +591,9 @@ def get_verified_reservation(
     signal_id: str,
     profile_version: int,
     intent_sha256: str | None,
+    paper_snapshot_sha256: str | None = None,
+    expected_request_fields: Mapping[str, object] | None = None,
+    expected_account_snapshot: Mapping[str, object] | None = None,
 ) -> VerifiedReservation:
     """Verify a committed allow audit and its exact active reservation event."""
     _isolated(engine)
@@ -584,6 +601,8 @@ def get_verified_reservation(
         raise RiskStoreRejected("invalid_request_or_signal_id")
     if intent_sha256 is not None and _HASH.fullmatch(intent_sha256) is None:
         raise RiskStoreRejected("invalid_intent_sha256")
+    if paper_snapshot_sha256 is not None and _HASH.fullmatch(paper_snapshot_sha256) is None:
+        raise RiskStoreRejected("invalid_paper_snapshot_sha256")
     with Session(engine) as session:
         audit = (
             session.execute(
@@ -629,6 +648,45 @@ def get_verified_reservation(
         payload = json.loads(payload)
     if payload.get("allowed") is not True or payload.get("intent_sha256") != intent_sha256:
         raise RiskStoreRejected("reservation_not_allowed_or_intent_mismatch")
+    if payload.get("paper_snapshot_sha256") != paper_snapshot_sha256:
+        raise RiskStoreRejected("reservation_paper_snapshot_mismatch")
+    request_payload = payload.get("request")
+    if not isinstance(request_payload, Mapping):
+        raise RiskStoreRejected("reservation_request_payload_missing")
+    if expected_request_fields is not None:
+        for name, expected in expected_request_fields.items():
+            actual = request_payload.get(name)
+            if actual is None:
+                raise RiskStoreRejected("reservation_request_field_missing")
+            try:
+                if Decimal(str(actual)) != Decimal(str(expected)):
+                    raise RiskStoreRejected("reservation_request_field_mismatch")
+            except (ValueError, TypeError) as exc:
+                raise RiskStoreRejected("reservation_request_field_invalid") from exc
+    snapshot_id = request_payload.get("account_snapshot_id")
+    if paper_snapshot_sha256 is not None:
+        if not isinstance(snapshot_id, str):
+            raise RiskStoreRejected("reservation_account_snapshot_missing")
+        with Session(engine) as session:
+            snapshot = (
+                session.execute(
+                    text(
+                        "SELECT equity_usdt,day_start_equity_usdt,peak_equity_usdt,"
+                        "open_capital_usdt,open_positions,consecutive_losses,source_sha256 "
+                        "FROM ai_risk_account_snapshots WHERE snapshot_id=:id"
+                    ),
+                    {"id": snapshot_id},
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if snapshot is None or snapshot["source_sha256"] != paper_snapshot_sha256:
+            raise RiskStoreRejected("reservation_account_snapshot_hash_mismatch")
+        if expected_account_snapshot is not None:
+            for name, expected in expected_account_snapshot.items():
+                actual = snapshot.get(name)
+                if actual is None or Decimal(str(actual)) != Decimal(str(expected)):
+                    raise RiskStoreRejected("reservation_account_snapshot_value_mismatch")
     if (
         len(rows) != 1
         or rows[0]["event_id"] != request_id + "_reserve"
@@ -649,6 +707,8 @@ def get_verified_reservation(
         amount,
         digest,
         intent_sha256,
+        paper_snapshot_sha256,
+        snapshot_id if isinstance(snapshot_id, str) else None,
         request_id,
         request_id + "_reserve",
     )
