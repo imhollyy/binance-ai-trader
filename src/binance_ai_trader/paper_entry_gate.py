@@ -29,6 +29,7 @@ _DISPOSABLE_ENTRY_TEST_DBS = frozenset(
         "trader_ai_atomic_test",
         "trader_protective_close_test",
         "trader_signal_test",
+        "trader_paper_entry_coordinator_test",
     }
 )
 
@@ -51,6 +52,10 @@ def _disposable_test_only(session: Session) -> bool:
         and actual.get_backend_name() == "postgresql"
         and actual.host in ("127.0.0.1", "localhost")
         and actual.database in _DISPOSABLE_ENTRY_TEST_DBS
+        and (
+            actual.database != "trader_paper_entry_coordinator_test"
+            or environ.get("PAPER_ENTRY_E3_TEST_ONLY") == "1"
+        )
     )
 
 

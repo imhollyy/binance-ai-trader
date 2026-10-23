@@ -826,6 +826,340 @@ def record_verified_risk_reservation(
         return _record(session, request_id)
 
 
+def commit_risk_reserved_for_isolated_test(
+    engine: Engine,
+    risk_engine: Engine,
+    *,
+    request_id: str,
+    _simulate_crash_after_ledger_commit: bool = False,
+) -> Any:
+    """Commit one coordinated BUY only in the dedicated dual-PostgreSQL fixture.
+
+    This is deliberately not a production entry API. The exact local database
+    names, ports, independent risk DB, and explicit test sentinels are required.
+    The ledger write, immutable receipt, and LEDGER_COMMITTED event share one
+    application transaction. COMPLETED is a second append-only step so restart
+    recovery can finish it without replaying a BUY.
+    """
+    from binance_ai_trader.paper_execution import open_paper_spot
+    from binance_ai_trader.paper_spot import PaperCosts, SpotBuyIntent
+    from binance_ai_trader.risk_store import RiskStoreRejected, get_verified_reservation
+
+    _require_postgresql(engine)
+    app_url = make_url(os.environ.get("TEST_POSTGRES_URL", ""))
+    risk_url = make_url(os.environ.get("RISK_TEST_POSTGRES_URL", ""))
+    if not (
+        os.environ.get("PAPER_ENTRY_E3_TEST_ONLY") == "1"
+        and os.environ.get("PAPER_ENTRY_COORDINATOR_TEST_ISOLATED") == "1"
+        and os.environ.get("TRADEPILOT_PAPER_ENTRY_RISK_TEST_DB") == "1"
+        and app_url.host in {"127.0.0.1", "localhost"}
+        and app_url.port == 55444
+        and app_url.database == "trader_paper_entry_coordinator_test"
+        and risk_url.host in {"127.0.0.1", "localhost"}
+        and risk_url.port == 55444
+        and risk_url.database == "trader_paper_entry_risk_test"
+        and engine.url == app_url
+        and risk_engine.url == risk_url
+        and app_url.database != risk_url.database
+    ):
+        raise EntryCoordinatorRejected("isolated_dual_postgresql_test_required")
+    if type(_simulate_crash_after_ledger_commit) is not bool:
+        raise EntryCoordinatorRejected("invalid_test_crash_control")
+
+    record = get_intent(engine, request_id)
+    if record is None:
+        raise EntryCoordinatorRejected("entry_intent_not_found")
+    if record.current_state == "LEDGER_COMMITTED":
+        recover_committed_entry(engine, request_id=request_id)
+        return get_intent(engine, request_id)
+    if record.current_state == "COMPLETED":
+        return get_intent(engine, request_id)
+    if record.current_state != "RISK_RESERVED":
+        raise EntryCoordinatorRejected("risk_reserved_state_required")
+
+    # Re-run the full E2P cross-store verification, including the exact stored
+    # snapshot/cost receipts, profile, STOP state, reservation and audit linkage.
+    record_verified_risk_reservation(engine, risk_engine, request_id=request_id)
+
+    # Re-read the independent append-only decision immediately before opening
+    # the app transaction. RiskGuard outages or STOP/stale profile fail closed.
+    with Session(engine) as session:
+        row = (
+            session.execute(
+                text("SELECT * FROM paper_entry_intents WHERE request_id=:id"), {"id": request_id}
+            )
+            .mappings()
+            .one()
+        )
+        cost = (
+            session.execute(
+                text("SELECT * FROM paper_entry_market_evidence WHERE request_id=:id"),
+                {"id": request_id},
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if cost is None:
+            raise EntryCoordinatorRejected("pre_entry_evidence_missing")
+        now_ms = int(
+            session.execute(
+                text("SELECT floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint")
+            ).scalar_one()
+        )
+        if not 0 <= now_ms - int(cost["observed_at_ms"]) <= 3_000:
+            raise EntryCoordinatorRejected("paper_market_cost_evidence_stale")
+        payload = cost["evidence_payload"]
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        if (
+            payload.get("expected_net_advantage_verified") is not False
+            or payload.get("trade_authorized") is not False
+        ):
+            raise EntryCoordinatorRejected("expected_net_advantage_not_independently_verified")
+        fee_bps = Decimal(cost["fee_assumption_bps"])
+        slippage_bps = Decimal(cost["slippage_assumption_bps"])
+        spread_bps = Decimal(cost["spread_bps"])
+        if any(value != value.to_integral_value() for value in (fee_bps, slippage_bps, spread_bps)):
+            raise EntryCoordinatorRejected("paper_cost_precision_unsupported")
+        if row["source_type"] != "MANUAL":
+            raise EntryCoordinatorRejected("isolated_test_commit_requires_manual_source")
+        if row["worker_id"] is not None:
+            # E3 does not yet bind the reservation to supervisor fencing state.
+            raise EntryCoordinatorRejected("worker_fencing_validation_unavailable")
+        account_snapshot = capture_snapshot_for_commit(
+            session,
+            account_id=int(row["paper_account_id"]),
+            settings_version=int(row["paper_settings_version"]),
+        )
+        if account_snapshot != row["claimed_ledger_snapshot_sha256"]:
+            raise EntryCoordinatorRejected("paper_account_snapshot_mismatch")
+
+    try:
+        reservation = get_verified_reservation(
+            risk_engine,
+            request_id=request_id,
+            signal_id=request_id,
+            profile_version=record.risk_profile_version,
+            intent_sha256=record.intent_sha256,
+            paper_snapshot_sha256=row["claimed_ledger_snapshot_sha256"],
+        )
+    except RiskStoreRejected as exc:
+        raise EntryCoordinatorRejected("independent_risk_reservation_unverified") from exc
+    if reservation.amount_usdt != Decimal(row["order_notional_usdt"]):
+        raise EntryCoordinatorRejected("risk_reservation_amount_mismatch")
+    with Session(risk_engine) as risk_session:
+        audit_payload: Any = risk_session.execute(
+            text("SELECT decision_json FROM ai_risk_audit WHERE event_id=:id"),
+            {"id": reservation.audit_event_id},
+        ).scalar_one()
+    if isinstance(audit_payload, str):
+        audit_payload = json.loads(audit_payload)
+    try:
+        stop_price = Decimal(str(audit_payload["request"]["stop_loss_price"]))
+    except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
+        raise EntryCoordinatorRejected("risk_reservation_stop_evidence_missing") from exc
+    reference_price = Decimal(row["reference_price"])
+    if stop_price <= 0 or stop_price >= reference_price:
+        raise EntryCoordinatorRejected("risk_reservation_stop_evidence_invalid")
+
+    from binance_ai_trader.models import PaperSpotJournalRow, PaperSpotPositionRow
+    from binance_ai_trader.paper_entry_evidence import paper_account_evidence_in_session
+
+    def preflight(
+        session: Session, _settings: Any, _account: Any, _positions: list[Any], _events: list[Any]
+    ) -> None:
+        intent_row = session.execute(
+            text("SELECT intent_sha256 FROM paper_entry_intents WHERE request_id=:id FOR UPDATE"),
+            {"id": request_id},
+        ).one_or_none()
+        if intent_row is None or intent_row[0] != record.intent_sha256:
+            raise EntryCoordinatorRejected("entry_intent_changed")
+        current = paper_account_evidence_in_session(
+            session,
+            account_id=int(row["paper_account_id"]),
+            expected_settings_version=int(row["paper_settings_version"]),
+        )
+        if current.snapshot_sha256 != row["claimed_ledger_snapshot_sha256"]:
+            raise EntryCoordinatorRejected("paper_account_snapshot_changed")
+
+    def postwrite(session: Session, journal: PaperSpotJournalRow) -> None:
+        position = session.execute(
+            select(PaperSpotPositionRow).where(PaperSpotPositionRow.trade_id == request_id)
+        ).scalar_one()
+        commit_payload = {
+            "request_id": request_id,
+            "intent_sha256": record.intent_sha256,
+            "risk_audit_event_id": reservation.audit_event_id,
+            "risk_reservation_event_id": reservation.reservation_event_id,
+            "journal_id": journal.id,
+            "position_id": position.id,
+            "ledger_event_id": journal.event_id,
+        }
+        commit_hash = hashlib.sha256(
+            json.dumps(commit_payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        session.execute(
+            text(
+                "INSERT INTO paper_entry_ledger_commits(request_id,intent_sha256,"
+                "risk_audit_event_id,"
+                "risk_reservation_event_id,journal_id,position_id,ledger_event_id,commit_sha256,"
+                "cash_after_usdt,fee_usdt) VALUES(:id,:intent,:audit,:reserve,:journal,:position,"
+                ":ledger,:hash,:cash,:fee)"
+            ),
+            {
+                "id": request_id,
+                "intent": record.intent_sha256,
+                "audit": reservation.audit_event_id,
+                "reserve": reservation.reservation_event_id,
+                "journal": journal.id,
+                "position": position.id,
+                "ledger": journal.event_id,
+                "hash": commit_hash,
+                "cash": journal.balance_after_usdt,
+                "fee": journal.fee_usdt,
+            },
+        )
+        latest = _latest_event(session, request_id)
+        if latest.to_state != "RISK_RESERVED":
+            raise EntryCoordinatorRejected("stale_entry_intent_state")
+        session.execute(
+            text(
+                "INSERT INTO paper_entry_intent_events(event_id,request_id,sequence,from_state,"
+                "to_state,reason_code,evidence_reference) VALUES(:event,:id,:seq,'RISK_RESERVED',"
+                "'LEDGER_COMMITTED','paper_ledger_committed',:evidence)"
+            ),
+            {
+                "event": str(uuid4()),
+                "id": request_id,
+                "seq": latest.sequence + 1,
+                "evidence": commit_hash,
+            },
+        )
+
+    from sqlalchemy import select
+
+    with Session(engine) as app_session:
+        receipt = open_paper_spot(
+            app_session,
+            SpotBuyIntent(
+                request_id,
+                str(row["symbol"]),
+                reference_price,
+                Decimal(row["quantity"]),
+                stop_price,
+            ),
+            f"entry-{request_id}",
+            explicit_approval=True,
+            manual_paper_trade=True,
+            costs=PaperCosts(int(fee_bps), int(slippage_bps), int(spread_bps)),
+            _signal_preflight=preflight,
+            _signal_postwrite=postwrite,
+        )
+    if not _simulate_crash_after_ledger_commit:
+        recover_committed_entry(engine, request_id=request_id)
+    return receipt
+
+
+def capture_snapshot_for_commit(session: Session, *, account_id: int, settings_version: int) -> str:
+    from binance_ai_trader.paper_entry_evidence import (
+        EntryEvidenceRejected,
+        paper_account_evidence_in_session,
+    )
+
+    try:
+        return paper_account_evidence_in_session(
+            session, account_id=account_id, expected_settings_version=settings_version
+        ).snapshot_sha256
+    except EntryEvidenceRejected as exc:
+        raise EntryCoordinatorRejected(str(exc)) from exc
+
+
+def recover_committed_entry(engine: Engine, *, request_id: str) -> EntryIntentRecord:
+    """Complete an already committed app-ledger saga step without replaying BUY."""
+    _require_postgresql(engine)
+    with Session(engine) as session, session.begin():
+        session.execute(
+            text("SELECT request_id FROM paper_entry_intents WHERE request_id=:id FOR UPDATE"),
+            {"id": request_id},
+        ).one()
+        current = _latest_event(session, request_id)
+        if current.to_state == "COMPLETED":
+            return _record(session, request_id)
+        if current.to_state != "LEDGER_COMMITTED":
+            raise EntryCoordinatorRejected("committed_ledger_receipt_required")
+        receipt = (
+            session.execute(
+                text(
+                    "SELECT c.intent_sha256,c.journal_id,c.position_id,c.ledger_event_id,"
+                    "c.commit_sha256,"
+                    "j.event_id,j.event_type,p.status,p.trade_id FROM paper_entry_ledger_commits c "
+                    "JOIN paper_spot_journal j ON j.id=c.journal_id "
+                    "JOIN paper_spot_positions p ON p.id=c.position_id WHERE c.request_id=:id"
+                ),
+                {"id": request_id},
+            )
+            .mappings()
+            .one_or_none()
+        )
+        intent = session.execute(
+            text("SELECT intent_sha256 FROM paper_entry_intents WHERE request_id=:id"),
+            {"id": request_id},
+        ).one()
+        if (
+            receipt is None
+            or receipt["intent_sha256"] != intent[0]
+            or receipt["ledger_event_id"] != receipt["event_id"]
+            or receipt["event_type"] != "spot_buy"
+            or receipt["status"] != "open"
+            or receipt["trade_id"] != request_id
+        ):
+            raise EntryCoordinatorRejected("ledger_commit_receipt_mismatch")
+        expected_hash = hashlib.sha256(
+            json.dumps(
+                {
+                    "request_id": request_id,
+                    "intent_sha256": receipt["intent_sha256"],
+                    "risk_audit_event_id": session.execute(
+                        text(
+                            "SELECT risk_audit_event_id FROM paper_entry_ledger_commits "
+                            "WHERE request_id=:id"
+                        ),
+                        {"id": request_id},
+                    ).scalar_one(),
+                    "risk_reservation_event_id": session.execute(
+                        text(
+                            "SELECT risk_reservation_event_id FROM paper_entry_ledger_commits "
+                            "WHERE request_id=:id"
+                        ),
+                        {"id": request_id},
+                    ).scalar_one(),
+                    "journal_id": receipt["journal_id"],
+                    "position_id": receipt["position_id"],
+                    "ledger_event_id": receipt["ledger_event_id"],
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        if expected_hash != receipt["commit_sha256"]:
+            raise EntryCoordinatorRejected("ledger_commit_receipt_hash_mismatch")
+        session.execute(
+            text(
+                "INSERT INTO paper_entry_intent_events(event_id,request_id,sequence,from_state,"
+                "to_state,reason_code,evidence_reference) "
+                "VALUES(:event,:id,:seq,'LEDGER_COMMITTED',"
+                "'COMPLETED','ledger_receipt_reconciled',:evidence)"
+            ),
+            {
+                "event": str(uuid4()),
+                "id": request_id,
+                "seq": current.sequence + 1,
+                "evidence": receipt["commit_sha256"],
+            },
+        )
+        return _record(session, request_id)
+
+
 def _append_verified_reservation(
     engine: Engine, *, request_id: str, evidence: str
 ) -> EntryIntentRecord:

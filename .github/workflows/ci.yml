@@ -298,6 +298,8 @@ jobs:
           TRADEPILOT_PAPER_ENTRY_RISK_TEST_DB: "1"
           PAPER_ENTRY_COORDINATOR_TEST_ISOLATED: "1"
           PAPER_ENTRY_EVIDENCE_TEST_ONLY: "1"
+          PAPER_ENTRY_E3_TEST_ONLY: "1"
+          PAPER_LEDGER_TEST_ISOLATED: "1"
         run: python -m pytest -q tests/test_paper_entry_coordinator_postgres.py
 
       - name: Create disposable PAPER scheduler database

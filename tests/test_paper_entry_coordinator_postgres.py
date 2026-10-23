@@ -26,12 +26,14 @@ from binance_ai_trader.paper_entry_coordinator import (
     EntryCoordinatorRejected,
     PaperEntryIntent,
     assess_cross_store_evidence,
+    commit_risk_reserved_for_isolated_test,
     create_evidenced_intent_for_test,
     create_intent,
     get_intent,
     list_recovery_candidates,
     list_status_events,
     record_verified_risk_reservation,
+    recover_committed_entry,
     transition_intent,
 )
 from binance_ai_trader.paper_entry_evidence import (
@@ -583,6 +585,37 @@ def test_evidenced_intent_persists_real_snapshot_and_cost_receipts_without_buy(
                 )
         assert get_intent(engine, record.request_id).current_state == "RISK_RESERVED"  # type: ignore[union-attr]
 
+        # Execute the same fully verified reservation only in this exact dual-DB
+        # disposable fixture. Production open_paper_spot remains fail-closed.
+        monkeypatch.setenv("PAPER_ENTRY_E3_TEST_ONLY", "1")
+        monkeypatch.setenv("PAPER_LEDGER_TEST_ISOLATED", "1")
+        before_commit = _ledger_counts(engine)
+        committed = commit_risk_reserved_for_isolated_test(
+            engine,
+            risk_engine,
+            request_id=record.request_id,
+            _simulate_crash_after_ledger_commit=True,
+        )
+        assert committed.event_type == "spot_buy"
+        assert get_intent(engine, record.request_id).current_state == "LEDGER_COMMITTED"  # type: ignore[union-attr]
+        # Simulate process restart: rebuild the SQLAlchemy engine and reconcile
+        # the committed app receipt without touching RiskGuard or replaying BUY.
+        engine.dispose()
+        restarted_engine = create_engine(URL, pool_pre_ping=True)
+        assert (
+            recover_committed_entry(restarted_engine, request_id=record.request_id).current_state
+            == "COMPLETED"
+        )
+        assert get_intent(engine, record.request_id).current_state == "COMPLETED"  # type: ignore[union-attr]
+        after_commit = _ledger_counts(engine)
+        assert after_commit[1] == before_commit[1] + 1
+        assert after_commit[2] == before_commit[2] + 1
+        replayed = commit_risk_reserved_for_isolated_test(
+            engine, risk_engine, request_id=record.request_id
+        )
+        assert replayed.current_state == "COMPLETED"
+        assert _ledger_counts(engine) == after_commit
+
         for statement in (
             "UPDATE paper_entry_account_evidence SET snapshot_sha256='"
             + "f" * 64
@@ -594,6 +627,11 @@ def test_evidenced_intent_persists_real_snapshot_and_cost_receipts_without_buy(
             + f"' WHERE request_id='{record.request_id}'",
             f"DELETE FROM paper_entry_market_evidence WHERE request_id='{record.request_id}'",
             "TRUNCATE paper_entry_market_evidence",
+            "UPDATE paper_entry_ledger_commits SET commit_sha256='"
+            + "f" * 64
+            + f"' WHERE request_id='{record.request_id}'",
+            f"DELETE FROM paper_entry_ledger_commits WHERE request_id='{record.request_id}'",
+            "TRUNCATE paper_entry_ledger_commits",
         ):
             with pytest.raises(DBAPIError), engine.begin() as connection:
                 connection.execute(text(statement))
