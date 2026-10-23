@@ -32,9 +32,9 @@ skipped 23 fixture-gated cases; the opt-in staging UI suite passed 18/18 after
 providing only a mock HTTPS API origin. The 23 default skips include staging
 tests that were separately run and passed, plus tests requiring the isolated
 connected backend. The Full Stack PAPER E2E workflow is the authoritative
-browser-to-API-to-PostgreSQL test for those connected cases; do not report a
-local skip as a pass. Re-run and verify all five required Actions on the final
-BT-027G commit.
+browser-to-API-to-PostgreSQL test for those connected cases; on the current
+BT-027G head this connected workflow passed. Do not report a local skip as a
+pass. All five required Actions passed on commit `9acf10d`.
 
 Two original issue #106 acceptance blockers remain: (1) the private preview has
 no configured, independent RiskGuard database, so its real 1–5 profile cannot
