@@ -48,7 +48,12 @@ pass and the remaining acceptance decision is reviewed.
 ## BT-027E / BT-027F security integration
 
 Persistent entry adapters (manual BUY, observed-strategy BUY, and signal-plan
-BUY) fail closed with `riskguard_paper_atomicity_unavailable`. RiskGuard
+BUY) fail closed with `riskguard_paper_atomicity_unavailable`. The common
+`open_paper_spot` ledger transaction now applies the same gate after replay
+detection, preventing new callers from bypassing the adapters. Only an exact
+localhost PostgreSQL fixture URL, a named disposable database and explicit
+`PAPER_LEDGER_TEST_ISOLATED=1` allow ledger mechanics to run in tests.
+This exception is not present on normal PAPER or preview databases. RiskGuard
 reservations live in its isolated PostgreSQL database while the PAPER ledger
 lives in the application database. No distributed commit or recoverable
 reservation protocol currently binds the two writes, so RiskGuard approval
