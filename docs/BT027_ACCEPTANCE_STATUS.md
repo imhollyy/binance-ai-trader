@@ -44,3 +44,22 @@ PostgreSQL integration tests must run in their disposable CI services; they are
 not claimed as local passes when those services are absent. BT-027 must remain
 unmerged until the disposable PostgreSQL, required CI, and browser checks all
 pass and the remaining acceptance decision is reviewed.
+
+## BT-027E / BT-027F security integration
+
+Persistent entry adapters (manual BUY, observed-strategy BUY, and signal-plan
+BUY) fail closed with `riskguard_paper_atomicity_unavailable`. RiskGuard
+reservations live in its isolated PostgreSQL database while the PAPER ledger
+lives in the application database. No distributed commit or recoverable
+reservation protocol currently binds the two writes, so RiskGuard approval
+cannot safely authorize a ledger mutation. The entry gate runs in the locked
+ledger preflight after idempotent replay detection; persisted receipts remain
+replayable. Existing position reductions retain their existing price and
+account checks. Offline/test-only ledgers are not production entry adapters.
+
+Persistent START and execution activation remain unsupported; the UI must keep
+START disabled. Lease identity, heartbeat, stale detection, authorized
+idempotent STOP request, and stop acknowledgement are control/status primitives
+only. They do not grant entry authority or start an execution process. Enabling
+START still requires a process manager with persisted fencing-token enforcement
+at the execution boundary.

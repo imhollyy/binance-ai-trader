@@ -109,7 +109,9 @@ def _counts(db: Engine) -> tuple[int, int, int, int]:
         )
 
 
-def test_next_closed_candle_atomic_buy_sell_replay_and_fail_closed(engine: Engine) -> None:
+def test_next_closed_candle_atomic_buy_sell_replay_and_fail_closed(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
     start = (time.time_ns() // 60_000_000_000) * 60_000
     now_first = start + 1
 
@@ -179,6 +181,17 @@ def test_next_closed_candle_atomic_buy_sell_replay_and_fail_closed(engine: Engin
         settings.data = RiskSettings(
             bot_enabled=True, manual_approval=False, risk_per_trade_pct=2
         ).model_dump(mode="json")
+
+    # A valid candidate and fresh closed next candle still cannot create a
+    # persistent position without the independent atomic RiskGuard boundary.
+    with pytest.raises(PaperExecutionRejected, match="riskguard_paper_atomicity_unavailable"):
+        _execute(engine, buy, end)
+    assert _counts(engine) == (61, 1, 0, 1)
+
+    # Explicit test-only fixture for the existing successful ledger mechanics.
+    import binance_ai_trader.paper_signal_execution as signal_execution
+
+    monkeypatch.setattr(signal_execution, "require_atomic_riskguard_authorization", lambda: None)
 
     # Real PostgreSQL transaction lock + UNIQUE journal/position keys protect
     # one simulated buy against concurrent and repeated identical calls.

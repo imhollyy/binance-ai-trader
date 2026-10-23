@@ -25,6 +25,7 @@ from binance_ai_trader.models import (
     PaperSpotPositionRow,
     TradingSettingsRow,
 )
+from binance_ai_trader.paper_entry_gate import require_atomic_riskguard_authorization
 from binance_ai_trader.paper_execution import (
     PaperExecutionRejected,
     PaperTradeReceipt,
@@ -188,6 +189,8 @@ def run_manual_paper_once(
             replay = _existing(engine, request)
             if replay is not None:
                 return replay
+            if request.action == "buy":
+                require_atomic_riskguard_authorization()
             with Session(engine) as session:
                 account = session.get(PaperSpotAccountRow, 1)
                 if account is None:
@@ -227,6 +230,8 @@ def run_manual_paper_once(
                 positions: list[PaperSpotPositionRow],
                 _events: list[PaperSpotJournalRow],
             ) -> None:
+                if request.action == "buy":
+                    require_atomic_riskguard_authorization()
                 _config_allowed(session, account, request)
                 selected = [p for p in positions if p.status == "open"]
                 if request.action == "sell":

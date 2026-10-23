@@ -23,6 +23,7 @@ from binance_ai_trader.models import (
     PaperSpotPositionRow,
     SpotCandleRow,
 )
+from binance_ai_trader.paper_entry_gate import require_atomic_riskguard_authorization
 from binance_ai_trader.paper_execution import (
     PaperExecutionRejected,
     PaperTradeReceipt,
@@ -269,6 +270,8 @@ def execute_paper_signal_once(
             decision.quantity is not None or decision.stop_price is not None
         ):
             raise PaperExecutionRejected("invalid_sell_payload")
+        if decision.action == "buy":
+            require_atomic_riskguard_authorization()
 
     if decision.action == "buy":
         if not isinstance(decision.quantity, Decimal) or not isinstance(

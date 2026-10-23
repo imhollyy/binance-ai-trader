@@ -25,6 +25,7 @@ from binance_ai_trader.models import (
     SpotCandleRow,
     TradingSettingsRow,
 )
+from binance_ai_trader.paper_entry_gate import require_atomic_riskguard_authorization
 from binance_ai_trader.paper_execution import (
     PaperExecutionRejected,
     PaperTradeReceipt,
@@ -237,6 +238,8 @@ def run_observed_paper_spot_once(
         )
         if candidate != decision:
             raise PaperExecutionRejected("strategy_changed_under_lock")
+        if decision.action == "buy":
+            require_atomic_riskguard_authorization()
 
     def audit(session: Session, journal: PaperSpotJournalRow) -> None:
         session.add(
