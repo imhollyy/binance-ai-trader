@@ -40,7 +40,10 @@ class RiskReservationEvidence:
 
     def __post_init__(self) -> None:
         if (
-            _ID.fullmatch(self.request_id) is None
+            type(self.request_id) is not str
+            or type(self.intent_sha256) is not str
+            or type(self.reservation_id) is not str
+            or _ID.fullmatch(self.request_id) is None
             or _ID.fullmatch(self.reservation_id) is None
             or _SHA256.fullmatch(self.intent_sha256) is None
             or type(self.profile_version) is not int
@@ -61,7 +64,10 @@ class PaperLedgerEvidence:
 
     def __post_init__(self) -> None:
         if (
-            _ID.fullmatch(self.request_id) is None
+            type(self.request_id) is not str
+            or type(self.intent_sha256) is not str
+            or type(self.journal_event_id) is not str
+            or _ID.fullmatch(self.request_id) is None
             or _SHA256.fullmatch(self.intent_sha256) is None
             or _SHA256.fullmatch(self.journal_event_id) is None
             or type(self.profile_version) is not int
@@ -90,11 +96,15 @@ def assess_entry_recovery(
     certificate. A future coordinator must separately verify journal
     immutability, exact amounts, snapshots, worker fencing and risk approval.
     """
-    if _ID.fullmatch(request_id) is None:
+    if type(request_id) is not str or _ID.fullmatch(request_id) is None:
         raise RecoveryRejected("invalid_entry_request_id")
-    if risk is not None and (type(risk) is not RiskReservationEvidence or risk.request_id != request_id):
+    if risk is not None and (
+        type(risk) is not RiskReservationEvidence or risk.request_id != request_id
+    ):
         raise RecoveryRejected("risk_evidence_request_mismatch")
-    if ledger is not None and (type(ledger) is not PaperLedgerEvidence or ledger.request_id != request_id):
+    if ledger is not None and (
+        type(ledger) is not PaperLedgerEvidence or ledger.request_id != request_id
+    ):
         raise RecoveryRejected("ledger_evidence_request_mismatch")
     if risk is None and ledger is None:
         return RecoveryAssessment(RecoveryFinding.NO_EVIDENCE)
