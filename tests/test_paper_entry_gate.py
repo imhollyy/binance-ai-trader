@@ -28,17 +28,16 @@ def test_core_open_denies_even_without_adapter_preflight(
     monkeypatch.setattr(execution, "_locked_state", lambda _session: (None, None, [], []))
     engine = create_engine("sqlite+pysqlite:///:memory:")
     try:
-        with Session(engine) as session:
-            with pytest.raises(
-                PaperExecutionRejected, match="riskguard_paper_atomicity_unavailable"
-            ):
-                execution.open_paper_spot(
-                    session,
-                    SpotBuyIntent(
-                        "trade-1", "BTCUSDT", Decimal("100"), Decimal("1"), Decimal("90")
-                    ),
-                    "core-direct-entry-1",
-                )
+        with Session(engine) as session, pytest.raises(
+            PaperExecutionRejected, match="riskguard_paper_atomicity_unavailable"
+        ):
+            execution.open_paper_spot(
+                session,
+                SpotBuyIntent(
+                    "trade-1", "BTCUSDT", Decimal("100"), Decimal("1"), Decimal("90")
+                ),
+                "core-direct-entry-1",
+            )
     finally:
         engine.dispose()
 
