@@ -391,12 +391,14 @@ def test_migration_downgrade_preserves_append_only_history(engine: Engine) -> No
             )
         )
 
-    with pytest.raises(RuntimeError, match="worker supervisor history must not be dropped"):
+    with pytest.raises(
+        RuntimeError, match="coordination intent and audit history must not be dropped"
+    ):
         command.downgrade(Config("alembic.ini"), "0015_bt024_risk_store")
 
     with engine.connect() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "0018_bt027_worker_supervisor"
+            "0019_bt027_paper_entry_intents"
         )
         assert (
             conn.execute(
