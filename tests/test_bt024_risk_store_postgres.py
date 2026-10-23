@@ -461,13 +461,13 @@ def test_migration_downgrade_preserves_append_only_history(engine: Engine) -> No
         )
 
     with pytest.raises(
-        RuntimeError, match="BT-027 pre-entry evidence is append-only and must not be dropped"
+        RuntimeError, match="PAPER entry commit receipts are append-only audit history"
     ):
         command.downgrade(Config("alembic.ini"), "0019_bt027_paper_entry_intents")
 
     with engine.connect() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "0020_bt027_entry_evidence"
+            "0021_bt027_entry_ledger"
         )
         assert (
             conn.execute(
