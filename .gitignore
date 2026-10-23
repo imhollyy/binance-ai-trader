@@ -25,3 +25,7 @@ htmlcov/
 
 # Protected local preview tunnel process IDs and private logs
 .local-tradepilot/
+.local-tradepilot-review/
+
+# Independent owner-review preview credentials (scrypt hashes + local DB credential)
+.env.preview.review
