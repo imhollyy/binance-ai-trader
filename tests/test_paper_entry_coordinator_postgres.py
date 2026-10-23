@@ -25,6 +25,7 @@ from binance_ai_trader.paper_entry_coordinator import (
     get_intent,
     list_recovery_candidates,
     list_status_events,
+    record_verified_risk_reservation,
     transition_intent,
 )
 from binance_ai_trader.paper_entry_recovery import RecoveryFinding
@@ -136,6 +137,18 @@ def test_intent_create_retry_conflict_transition_and_audit(engine: Engine) -> No
     assert retry.request_id == first.request_id
     assert retry.intent_sha256 == first.intent_sha256
     assert first.current_state == "PREPARED"
+    risk_url = os.environ.get("RISK_TEST_POSTGRES_URL")
+    if risk_url:
+        risk_engine = create_engine(risk_url, pool_pre_ping=True)
+        try:
+            with pytest.raises(
+                EntryCoordinatorRejected,
+                match="independent_risk_reservation_unverified",
+            ):
+                record_verified_risk_reservation(engine, risk_engine, request_id=first.request_id)
+            assert get_intent(engine, first.request_id).current_state == "PREPARED"  # type: ignore[union-attr]
+        finally:
+            risk_engine.dispose()
 
     with pytest.raises(EntryCoordinatorRejected, match="idempotency_key_payload_conflict"):
         create_intent(engine, replace(payload, quantity=Decimal("0.25")))
@@ -148,7 +161,7 @@ def test_intent_create_retry_conflict_transition_and_audit(engine: Engine) -> No
             reason_code="skip_stages",
         )
     with pytest.raises(
-        EntryCoordinatorRejected, match="state_transition_requires_evidence_reference"
+        EntryCoordinatorRejected, match="risk_reservation_requires_independent_store_verification"
     ):
         transition_intent(
             engine,
@@ -156,28 +169,11 @@ def test_intent_create_retry_conflict_transition_and_audit(engine: Engine) -> No
             expected_state="PREPARED",
             new_state="RISK_RESERVED",
             reason_code="missing_risk_receipt",
+            evidence_reference="forged-receipt-reference",
         )
 
-    reserved = transition_intent(
-        engine,
-        request_id=first.request_id,
-        expected_state="PREPARED",
-        new_state="RISK_RESERVED",
-        reason_code="risk_hold_recorded",
-        evidence_reference="risk-request-0001",
-    )
-    with pytest.raises(EntryCoordinatorRejected, match="stale_entry_intent_state"):
-        transition_intent(
-            engine,
-            request_id=first.request_id,
-            expected_state="PREPARED",
-            new_state="RECONCILIATION_REQUIRED",
-            reason_code="stale_state_check",
-        )
-    assert reserved.current_state == "RISK_RESERVED"
     events = list_status_events(engine, first.request_id)
-    assert [event.to_state for event in events] == ["PREPARED", "RISK_RESERVED"]
-    assert events[-1].evidence_reference == "risk-request-0001"
+    assert [event.to_state for event in events] == ["PREPARED"]
 
 
 def test_concurrent_same_key_is_idempotent_and_different_keys_are_distinct(

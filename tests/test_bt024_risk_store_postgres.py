@@ -26,6 +26,7 @@ from binance_ai_trader.risk_guard import RiskProfile, RiskRequest
 from binance_ai_trader.risk_store import (
     RiskStoreRejected,
     evaluate_and_reserve,
+    get_verified_reservation,
     install_profile,
     record_account_snapshot,
     record_shadow_preflight,
@@ -131,11 +132,79 @@ def test_confirmed_profile_atomic_concurrency_audit_and_restart(engine: Engine) 
                     signal_id=f"risk_signal_{n:04d}",
                     profile_version=1,
                     request=_request(f"risk_signal_{n:04d}"),
+                    intent_sha256=f"{n:064x}",
                 ),
                 (1, 2),
             )
         )
     assert sum(decision.allowed for decision in decisions) == 1
+    winner = next(index for index, decision in enumerate(decisions, start=1) if decision.allowed)
+    original_request_id = f"risk_request_{winner:04d}"
+    original_signal_id = f"risk_signal_{winner:04d}"
+    retry = evaluate_and_reserve(
+        engine,
+        request_id=original_request_id,
+        signal_id=original_signal_id,
+        profile_version=1,
+        request=_request(original_signal_id),
+        intent_sha256=f"{winner:064x}",
+    )
+    # A changed canonical request under the same reservation ID is rejected.
+    with pytest.raises(RiskStoreRejected, match="reservation_id_payload_conflict"):
+        evaluate_and_reserve(
+            engine,
+            request_id=original_request_id,
+            signal_id=original_signal_id,
+            profile_version=1,
+            request=_request(original_signal_id),
+            intent_sha256="e" * 64,
+        )
+    assert retry.allowed == decisions[winner - 1].allowed
+    assert retry.allowed_notional == decisions[winner - 1].allowed_notional
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        same_id_retries = list(
+            pool.map(
+                lambda _: evaluate_and_reserve(
+                    engine,
+                    request_id=original_request_id,
+                    signal_id=original_signal_id,
+                    profile_version=1,
+                    request=_request(original_signal_id),
+                    intent_sha256=f"{winner:064x}",
+                ),
+                range(2),
+            )
+        )
+    assert all(decision.allowed for decision in same_id_retries)
+    with engine.connect() as conn:
+        assert (
+            conn.execute(
+                text(
+                    "SELECT count(*) FROM ai_risk_reservation_events "
+                    "WHERE reservation_id=:id AND event_type='RESERVE'"
+                ),
+                {"id": original_request_id},
+            ).scalar_one()
+            == 1
+        )
+    receipt = get_verified_reservation(
+        engine,
+        request_id=original_request_id,
+        signal_id=original_signal_id,
+        profile_version=1,
+        intent_sha256=f"{winner:064x}",
+    )
+    assert receipt.amount_usdt == retry.allowed_notional
+    assert receipt.audit_event_id == original_request_id
+    assert receipt.reservation_event_id == original_request_id + "_reserve"
+    with pytest.raises(RiskStoreRejected, match="reservation_audit_missing_or_mismatched"):
+        get_verified_reservation(
+            engine,
+            request_id="risk_missing_receipt_01",
+            signal_id="risk_missing_receipt_01",
+            profile_version=1,
+            intent_sha256="f" * 64,
+        )
     stale = evaluate_and_reserve(
         engine,
         request_id="risk_stale_request_01",

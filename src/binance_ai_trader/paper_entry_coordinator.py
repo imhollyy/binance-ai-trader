@@ -1,8 +1,8 @@
 """Durable PAPER entry intent journal; deliberately performs no trading writes.
 
-This module stores immutable intent evidence and append-only status events in
-the PAPER application database. It does not contact RiskGuard, reserve risk,
-mutate the PAPER ledger, or authorize a BUY.
+Intent creation is inert. A separate explicit method can record a RISK_RESERVED
+event only after read-back verification from the isolated RiskGuard database.
+This module never mutates the PAPER ledger or authorizes a BUY.
 """
 
 from __future__ import annotations
@@ -384,6 +384,8 @@ def transition_intent(
         raise EntryCoordinatorRejected("invalid_entry_state")
     if new_state not in _TRANSITIONS[expected_state]:
         raise EntryCoordinatorRejected("invalid_entry_state_transition")
+    if new_state == "RISK_RESERVED":
+        raise EntryCoordinatorRejected("risk_reservation_requires_independent_store_verification")
     if _REASON.fullmatch(reason_code) is None:
         raise EntryCoordinatorRejected("invalid_reason_code")
     if evidence_reference is not None and (not evidence_reference or len(evidence_reference) > 256):
@@ -418,6 +420,91 @@ def transition_intent(
                 "to_state": new_state,
                 "reason": reason_code,
                 "evidence": evidence_reference,
+            },
+        )
+        return _record(session, request_id)
+
+
+def record_verified_risk_reservation(
+    engine: Engine, risk_engine: Engine, *, request_id: str
+) -> EntryIntentRecord:
+    """Advance PREPARED only after the independent risk DB proves its reservation.
+
+    This records risk evidence only. It does not authorize or execute a PAPER BUY.
+    """
+    from binance_ai_trader.risk_store import get_verified_reservation
+
+    _require_postgresql(engine)
+    with Session(engine) as session:
+        row = (
+            session.execute(
+                text(
+                    "SELECT i.intent_sha256,i.risk_profile_version,i.source_type,e.to_state "
+                    "FROM paper_entry_intents i JOIN paper_entry_intent_events e "
+                    "ON e.request_id=i.request_id WHERE i.request_id=:id "
+                    "AND e.sequence=(SELECT max(e2.sequence) FROM paper_entry_intent_events e2 "
+                    "WHERE e2.request_id=i.request_id)"
+                ),
+                {"id": request_id},
+            )
+            .mappings()
+            .one_or_none()
+        )
+    if row is None:
+        raise EntryCoordinatorRejected("entry_intent_not_found")
+    if row["to_state"] == "RISK_RESERVED":
+        # Idempotent read-back: the service still verifies the independent store.
+        pass
+    elif row["to_state"] != "PREPARED":
+        raise EntryCoordinatorRejected("stale_entry_intent_state")
+    if row["source_type"] == "AI":
+        raise EntryCoordinatorRejected("unapproved_ai_model_cannot_reserve")
+    from binance_ai_trader.risk_store import RiskStoreRejected
+
+    try:
+        receipt = get_verified_reservation(
+            risk_engine,
+            request_id=request_id,
+            signal_id=request_id,
+            profile_version=int(row["risk_profile_version"]),
+            intent_sha256=str(row["intent_sha256"]),
+        )
+    except RiskStoreRejected as exc:
+        raise EntryCoordinatorRejected("independent_risk_reservation_unverified") from exc
+    evidence = f"{receipt.audit_event_id}:{receipt.reservation_event_id}:{receipt.request_sha256}"
+    if row["to_state"] == "RISK_RESERVED":
+        record = get_intent(engine, request_id)
+        if record is None:
+            raise EntryCoordinatorRejected("entry_intent_not_found")
+        return record
+    return _append_verified_reservation(engine, request_id=request_id, evidence=evidence)
+
+
+def _append_verified_reservation(
+    engine: Engine, *, request_id: str, evidence: str
+) -> EntryIntentRecord:
+    with Session(engine) as session, session.begin():
+        intent_row = session.execute(
+            text("SELECT request_id FROM paper_entry_intents WHERE request_id=:id FOR UPDATE"),
+            {"id": request_id},
+        ).one_or_none()
+        if intent_row is None:
+            raise EntryCoordinatorRejected("entry_intent_not_found")
+        current = _latest_event(session, request_id)
+        if current.to_state != "PREPARED":
+            raise EntryCoordinatorRejected("stale_entry_intent_state")
+        session.execute(
+            text(
+                "INSERT INTO paper_entry_intent_events(event_id,request_id,sequence,from_state,"
+                "to_state,"
+                "reason_code,evidence_reference) "
+                "VALUES(:event,:id,:sequence,'PREPARED','RISK_RESERVED','risk_store_verified',:evidence)"
+            ),
+            {
+                "event": str(uuid4()),
+                "id": request_id,
+                "sequence": current.sequence + 1,
+                "evidence": evidence,
             },
         )
         return _record(session, request_id)

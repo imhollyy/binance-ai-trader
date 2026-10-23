@@ -3,11 +3,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Any, cast
 
@@ -20,6 +21,7 @@ from binance_ai_trader.ai_trainable_model import ResearchPrediction
 from binance_ai_trader.risk_guard import (
     RiskDecision,
     RiskProfile,
+    RiskReason,
     RiskRequest,
     evaluate_risk,
     validate_profile,
@@ -32,6 +34,49 @@ _LOCK_ID = 23024024
 
 class RiskStoreRejected(ValueError):
     """Persistent risk operation rejected."""
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedReservation:
+    """Read-back proof derived from the independent append-only risk store."""
+
+    request_id: str
+    signal_id: str
+    profile_version: int
+    amount_usdt: Decimal
+    request_sha256: str
+    intent_sha256: str | None
+    audit_event_id: str
+    reservation_event_id: str
+
+
+def _canonical_request_hash(
+    *,
+    request_id: str,
+    signal_id: str,
+    profile_version: int,
+    request: RiskRequest,
+    intent_sha256: str | None,
+) -> str:
+    values: dict[str, object] = {}
+    for name in request.__dataclass_fields__:
+        value = getattr(request, name)
+        if isinstance(value, BotState):
+            values[name] = value.value
+        elif isinstance(value, Decimal):
+            values[name] = "0" if value == 0 else format(value.normalize(), "f")
+        else:
+            values[name] = value
+    payload = {
+        "request_id": request_id,
+        "signal_id": signal_id,
+        "profile_version": profile_version,
+        "intent_sha256": intent_sha256,
+        "request": values,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 
 def _isolated(engine: Engine) -> None:
@@ -326,14 +371,89 @@ def record_account_snapshot(
 
 
 def evaluate_and_reserve(
-    engine: Engine, *, request_id: str, signal_id: str, profile_version: int, request: RiskRequest
+    engine: Engine,
+    *,
+    request_id: str,
+    signal_id: str,
+    profile_version: int,
+    request: RiskRequest,
+    intent_sha256: str | None = None,
 ) -> RiskDecision:
     """Lock config/exposure, audit every result, and reserve atomically if allowed."""
     _isolated(engine)
     if _ID.fullmatch(request_id) is None or _ID.fullmatch(signal_id) is None:
         raise RiskStoreRejected("invalid_request_or_signal_id")
+    if intent_sha256 is not None and _HASH.fullmatch(intent_sha256) is None:
+        raise RiskStoreRejected("invalid_intent_sha256")
+    request_sha256 = _canonical_request_hash(
+        request_id=request_id,
+        signal_id=signal_id,
+        profile_version=profile_version,
+        request=request,
+        intent_sha256=intent_sha256,
+    )
     with Session(engine) as session, session.begin():
         session.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": _LOCK_ID})
+        prior = (
+            session.execute(
+                text(
+                    "SELECT signal_id,profile_version,decision_json FROM ai_risk_audit WHERE event_id=:id FOR UPDATE"
+                ),
+                {"id": request_id},
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if prior is not None:
+            prior_payload = prior["decision_json"]
+            if isinstance(prior_payload, str):
+                prior_payload = json.loads(prior_payload)
+            if (
+                prior["signal_id"] != signal_id
+                or prior["profile_version"] != profile_version
+                or prior_payload.get("request_sha256") != request_sha256
+                or prior_payload.get("intent_sha256") != intent_sha256
+            ):
+                raise RiskStoreRejected("reservation_id_payload_conflict")
+            rows = (
+                session.execute(
+                    text(
+                        "SELECT event_id,event_type,amount_usdt,profile_version FROM ai_risk_reservation_events WHERE reservation_id=:id ORDER BY id"
+                    ),
+                    {"id": request_id},
+                )
+                .mappings()
+                .all()
+            )
+            allowed = prior_payload.get("allowed") is True
+            if allowed:
+                if (
+                    len(rows) != 1
+                    or rows[0]["event_id"] != request_id + "_reserve"
+                    or rows[0]["event_type"] != "RESERVE"
+                    or int(rows[0]["profile_version"]) != profile_version
+                    or Decimal(rows[0]["amount_usdt"])
+                    != Decimal(str(prior_payload.get("allowed_notional")))
+                ):
+                    raise RiskStoreRejected("reservation_audit_inconsistent")
+            elif rows:
+                raise RiskStoreRejected("denied_decision_has_reservation")
+            try:
+                return RiskDecision(
+                    allowed,
+                    RiskReason(str(prior_payload["reason"])),
+                    str(prior_payload["audit_code"]),
+                    None
+                    if prior_payload.get("decision_profile_version") is None
+                    else int(prior_payload["decision_profile_version"]),
+                    BotState(str(prior_payload["bot_state"])),
+                    Decimal(str(prior_payload["allowed_notional"])),
+                    None
+                    if prior_payload.get("net_edge_bps") is None
+                    else Decimal(str(prior_payload["net_edge_bps"])),
+                )
+            except (KeyError, ValueError, TypeError) as exc:
+                raise RiskStoreRejected("reservation_audit_malformed") from exc
         runtime = (
             session.execute(text("SELECT * FROM ai_risk_runtime WHERE id=1 FOR UPDATE"))
             .mappings()
@@ -385,11 +505,11 @@ def evaluate_and_reserve(
             consecutive_losses=10**9 if snapshot is None else int(snapshot["consecutive_losses"]),
         )
         decision = evaluate_risk(profile, effective)
-        if session.execute(
-            text("SELECT 1 FROM ai_risk_audit WHERE event_id=:id"), {"id": request_id}
-        ).first():
-            raise RiskStoreRejected("duplicate_risk_audit_id")
         payload = {
+            "request_sha256": request_sha256,
+            "intent_sha256": intent_sha256,
+            "bot_state": decision.bot_state.value,
+            "decision_profile_version": decision.profile_version,
             "allowed": decision.allowed,
             "reason": decision.reason.value,
             "audit_code": decision.audit_code,
@@ -448,6 +568,90 @@ def evaluate_and_reserve(
                 },
             )
         return decision
+
+
+def get_verified_reservation(
+    engine: Engine,
+    *,
+    request_id: str,
+    signal_id: str,
+    profile_version: int,
+    intent_sha256: str | None,
+) -> VerifiedReservation:
+    """Verify a committed allow audit and its exact active reservation event."""
+    _isolated(engine)
+    if _ID.fullmatch(request_id) is None or _ID.fullmatch(signal_id) is None:
+        raise RiskStoreRejected("invalid_request_or_signal_id")
+    if intent_sha256 is not None and _HASH.fullmatch(intent_sha256) is None:
+        raise RiskStoreRejected("invalid_intent_sha256")
+    with Session(engine) as session:
+        audit = (
+            session.execute(
+                text(
+                    "SELECT signal_id,profile_version,decision_json FROM ai_risk_audit WHERE event_id=:id"
+                ),
+                {"id": request_id},
+            )
+            .mappings()
+            .one_or_none()
+        )
+        rows = (
+            session.execute(
+                text(
+                    "SELECT event_id,event_type,amount_usdt,profile_version FROM ai_risk_reservation_events WHERE reservation_id=:id ORDER BY id"
+                ),
+                {"id": request_id},
+            )
+            .mappings()
+            .all()
+        )
+        runtime = (
+            session.execute(
+                text("SELECT active_profile_version,bot_state FROM ai_risk_runtime WHERE id=1")
+            )
+            .mappings()
+            .one_or_none()
+        )
+    if (
+        audit is None
+        or audit["signal_id"] != signal_id
+        or audit["profile_version"] != profile_version
+    ):
+        raise RiskStoreRejected("reservation_audit_missing_or_mismatched")
+    if (
+        runtime is None
+        or int(runtime["active_profile_version"]) != profile_version
+        or runtime["bot_state"] != BotState.RUNNING.value
+    ):
+        raise RiskStoreRejected("reservation_profile_or_bot_state_stale")
+    payload = audit["decision_json"]
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    if payload.get("allowed") is not True or payload.get("intent_sha256") != intent_sha256:
+        raise RiskStoreRejected("reservation_not_allowed_or_intent_mismatch")
+    if (
+        len(rows) != 1
+        or rows[0]["event_id"] != request_id + "_reserve"
+        or rows[0]["event_type"] != "RESERVE"
+        or int(rows[0]["profile_version"]) != profile_version
+    ):
+        raise RiskStoreRejected("reservation_event_missing_or_mismatched")
+    amount = Decimal(rows[0]["amount_usdt"])
+    if amount <= 0 or amount != Decimal(str(payload.get("allowed_notional"))):
+        raise RiskStoreRejected("reservation_amount_mismatch")
+    digest = payload.get("request_sha256")
+    if not isinstance(digest, str) or _HASH.fullmatch(digest) is None:
+        raise RiskStoreRejected("reservation_request_hash_missing")
+    return VerifiedReservation(
+        request_id,
+        signal_id,
+        profile_version,
+        amount,
+        digest,
+        intent_sha256,
+        request_id,
+        request_id + "_reserve",
+    )
 
 
 def release_reservation(

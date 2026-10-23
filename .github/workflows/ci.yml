@@ -283,6 +283,9 @@ jobs:
       - name: Durable PAPER entry intent and append-only state history PostgreSQL tests
         env:
           TEST_POSTGRES_URL: postgresql+psycopg://trader_test:ci_only_password_not_a_secret@127.0.0.1:55444/trader_paper_entry_coordinator_test
+          RISK_TEST_POSTGRES_URL: postgresql+psycopg://trader_test:ci_only_password_not_a_secret@127.0.0.1:55444/trader_ai_bt023_test
+          TRADEPILOT_BT023_TEST_DB: "1"
+          TRADEPILOT_RISK_STORE: "1"
           PAPER_ENTRY_COORDINATOR_TEST_ISOLATED: "1"
         run: python -m pytest -q tests/test_paper_entry_coordinator_postgres.py
 
