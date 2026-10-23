@@ -150,13 +150,13 @@ def _ledger_counts(engine: Engine) -> tuple[int, int, int]:
 def _entry_observation_clients(
     delay_ms: int = 2,
 ) -> tuple[PublicSpotObservationClient, PublicSpotCostClient, PublicSpotDepthClient]:
-    clock = [time.time_ns() // 1_000_000]
-
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
-        clock[0] += delay_ms
+        if delay_ms:
+            time.sleep(delay_ms / 1_000)
+        clock_ms = time.time_ns() // 1_000_000
         if path == "/api/v3/klines":
-            last_open_ms = (clock[0] // 60_000) * 60_000 - 60_000
+            last_open_ms = (clock_ms // 60_000) * 60_000 - 60_000
             candles = []
             for index in range(60):
                 open_ms = last_open_ms - (59 - index) * 60_000
@@ -247,7 +247,10 @@ def _entry_observation_clients(
     transport = httpx.MockTransport(handler)
 
     def clock_ms() -> int:
-        return clock[0]
+        # Use observation-time wall clock, not a timestamp captured when the
+        # test client was constructed. CI scheduling delays must not turn fresh
+        # mock responses into stale evidence before the DB write.
+        return time.time_ns() // 1_000_000
 
     return (
         PublicSpotObservationClient(transport=transport, clock_ms=clock_ms),
