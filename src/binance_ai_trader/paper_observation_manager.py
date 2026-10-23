@@ -161,6 +161,11 @@ class PaperObservationProcessManager:
             self.reconcile_child_exit()
             current = self.status()
             if current.state in {"STOPPED", "FAILED", "STALE"}:
+                if self._process is not None and self._process.poll() is None:
+                    try:
+                        self._process.wait(timeout=max(0.0, deadline - time.monotonic()))
+                    except subprocess.TimeoutExpired as exc:
+                        raise SupervisorRejected("observer_stop_process_exit_unverified") from exc
                 return current
             time.sleep(0.05)
         return self.status()
