@@ -97,5 +97,11 @@ def test_existing_review_resume_requires_isolation_and_https_session() -> None:
     assert '/api/v1/auth/session' in script
     assert '"401"' in script
     assert 'docker compose @compose config --quiet' in script
-    for forbidden in ("down -v", "volume prune", "docker rm", "docker volume rm", "preview_account_bootstrap"):
+    for forbidden in (
+        "down -v",
+        "volume prune",
+        "docker rm",
+        "docker volume rm",
+        "preview_account_bootstrap",
+    ):
         assert forbidden not in script
