@@ -85,18 +85,19 @@ def test_review_proxy_trust_matches_isolated_ingress_network() -> None:
     assert "--proxy-headers --forwarded-allow-ips 172.30.220.10" in review
     assert "--forwarded-allow-ips 172.30.210.10" not in review
 
+
 def test_existing_review_resume_requires_isolation_and_https_session() -> None:
     # Static safety check. The Windows owner/PIN/browser roundtrip is a separate gate.
     root = Path(__file__).resolve().parents[1]
     script = (root / "scripts/Resume-TradePilotReviewPreview.ps1").read_text(encoding="utf-8")
-    assert 'tradepilot_bt027_review' in script
-    assert 'Compare-Object -ReferenceObject $expectedContainers -DifferenceObject $actual' in script
+    assert "tradepilot_bt027_review" in script
+    assert "Compare-Object -ReferenceObject $expectedContainers -DifferenceObject $actual" in script
     assert '$expectedVolume = $project + "_preview_postgres_data"' in script
-    assert '--allowed-mail' in script
-    assert 'up --build --no-deps -d preview-api preview-web preview-ingress' in script
-    assert '/api/v1/auth/session' in script
+    assert "--allowed-mail" in script
+    assert "up --build --no-deps -d preview-api preview-web preview-ingress" in script
+    assert "/api/v1/auth/session" in script
     assert '"401"' in script
-    assert 'docker compose @compose config --quiet' in script
+    assert "docker compose @compose config --quiet" in script
     for forbidden in (
         "down -v",
         "volume prune",
