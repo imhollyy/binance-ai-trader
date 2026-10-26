@@ -1,17 +1,20 @@
 "use client";
 
 import {
-  Activity, BarChart3, Bot, CheckCircle2, ChevronRight, CirclePause,
-  Eye, EyeOff, FileClock, Layers3, LockKeyhole, Menu, Save,
+  Activity, BarChart3, Bot, CheckCircle2, ChevronRight, CirclePause, BrainCircuit,
+  Eye, EyeOff, FileClock, LockKeyhole, Menu,
   Settings2, ShieldCheck, ShieldAlert, Wallet, X
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import PaperSpotLedger from "./PaperSpotLedger";
 import PaperDashboardOverview from "./PaperDashboardOverview";
+import RiskCapabilitiesPanel from "./RiskCapabilitiesPanel";
+import AiResearchPanel from "./AiResearchPanel";
+import PaperWorkerSupervisor from "./PaperWorkerSupervisor";
 import { StoredCloseChart } from "./RecordedPaperCharts";
 
-type Section = "dashboard" | "market" | "bot" | "risk" | "strategies" | "positions" | "logs";
+type Section = "dashboard" | "market" | "bot" | "risk" | "ai" | "positions" | "logs";
 type Market = "spot" | "futures";
 type Risk = {
   mode: "paper"; market_type: Market; bot_enabled: boolean;
@@ -53,7 +56,7 @@ const nav = [
   {key: "market", title: "Piyasa Verileri", Icon: Activity},
   {key: "bot", title: "Bot Yönetimi", Icon: Bot},
   {key: "risk", title: "Risk Yönetimi", Icon: ShieldCheck},
-  {key: "strategies", title: "Stratejiler", Icon: Layers3},
+  {key: "ai", title: "AI Araştırma", Icon: BrainCircuit},
   {key: "positions", title: "Pozisyonlar", Icon: Wallet},
   {key: "logs", title: "Olay Kayıtları", Icon: FileClock}
 ] as const;
@@ -192,28 +195,7 @@ export default function Dashboard() {
       setNotice(error instanceof Error?error.message:"Piyasa verisi okunamadı.");
     }
   }
-  async function save(){
-    if(!connected){setDialog(true);return;}
-    setBusy(true);setNotice("");
-    try{
-      const response=await fetch(localApiAddress(address)+"/api/v1/settings",{
-        method:"PUT",
-        headers:{"Content-Type":"application/json","X-Admin-Token":secret},
-        body:JSON.stringify({expected_version:version,settings:risk})
-      });
-      if(!response.ok){
-        if(response.status===409)throw new Error("Ayar sürümü değişti. Yeniden bağlanıp güncel değerleri yükle.");
-        if(response.status===422)throw new Error("Risk ayarlarından biri güvenli aralık dışında.");
-        throw new Error("Kaydedilemedi: HTTP "+response.status);
-      }
-      const data:Snapshot=await response.json();
-      setRisk(data.settings);setVersion(data.version);setNotice("Paper yapılandırması veritabanına kaydedildi.");
-    }catch(error){setNotice(error instanceof Error?error.message:"Kaydetme hatası.");}
-    finally{setBusy(false);}
-  }
   const activeTitle=nav.find(item=>item.key===section)?.title || "Genel Bakış";
-  const saveButton=<button className="button primary" disabled={!connected||busy} onClick={save}>
-    <Save size={16}/>{busy?"Kaydediliyor":"Ayarları Kaydet"}</button>;
   return <div className="shell">
     {drawer&&<button className="scrim" aria-label="Menüyü kapat" onClick={()=>setDrawer(false)}/>}
     <aside inert={dialog} className={"sidebar "+(drawer?"opened":"")}>
@@ -250,9 +232,9 @@ export default function Dashboard() {
         {section==="dashboard"&&<>
           <div className="stats">
             <article className="stat"><span>Sanal Spot Bütçesi</span><strong>{risk.spot_capital_usdt.toLocaleString("tr-TR")} USDT</strong><small>Tanımlı simülasyon limiti</small></article>
-            <article className="stat"><span>Sanal Futures Bütçesi</span><strong>{risk.futures_capital_usdt.toLocaleString("tr-TR")} USDT</strong><small>Gerçek kaldıraç kullanılmaz</small></article>
-            <article className="stat"><span>İşlem Başına Risk</span><strong>%{risk.risk_per_trade_pct.toLocaleString("tr-TR")}</strong><small>Risk kuralı</small></article>
-            <article className="stat"><span>Bot Ayarı</span><strong>{risk.bot_enabled ? "Etkin istenmiş" : "Kapalı"}</strong><small>Çalışan worker doğrulanmadı</small></article>
+            <article className="stat"><span>Spot bütçesi · ayar</span><strong>{connected ? `${risk.spot_capital_usdt.toLocaleString("tr-TR")} USDT` : "Veri yok"}</strong><small>{connected ? "Kaydedilmiş PAPER ayarı" : "Yerel API bağlantısı gerekli"}</small></article>
+            <article className="stat"><span>Risk profili</span><strong>Doğrulanamıyor</strong><small>Profil API bu arayüzde kullanılamıyor</small></article>
+            <article className="stat"><span>Bot durumu</span><strong>Bilinmiyor</strong><small>Çalışan servis doğrulaması yok</small></article>
           </div>
           <div className="dashboard-grid">
             <PaperDashboardOverview connected={connected} apiAddress={address} token={secret}/> 
@@ -341,35 +323,23 @@ export default function Dashboard() {
               <span>Bağlantı kurup pariteyi seçtikten sonra Geçmişi Göster'e dokun.</span>
             </div>}
         </section>}
-        {section==="bot"&&<section className="surface form">
-          <div className="section-title"><div><h2>Bot Yapılandırması</h2><p>Bu ayarlar tek başına işlem başlatmaz.</p></div>{saveButton}</div>
-          <h3>Hedef Piyasa</h3><div className="segmented" role="group" aria-label="Piyasa tercihi">
-            <button aria-pressed={risk.market_type==="spot"} className={risk.market_type==="spot"?"selected":""} onClick={()=>market("spot")}>Spot</button>
-            <button aria-pressed={risk.market_type==="futures"} className={risk.market_type==="futures"?"selected":""} onClick={()=>market("futures")}>Futures (Sanal)</button>
-          </div>
-          <Row label="Botu etkinleştirme isteği" desc="Yalnız PAPER ayarını kaydeder; scheduler servisinin çalıştığı anlamına gelmez.">
-            <Switch label="Bot etkinleşme tercihi" value={risk.bot_enabled} onChange={v=>change("bot_enabled",v)}/></Row>
-          <Row label="Manuel onay tercihi" desc="Varsayılan açık.">
-            <Switch label="Manuel işlem onayı" value={risk.manual_approval} onChange={v=>change("manual_approval",v)}/></Row>
-          <Row label="Pariteler" desc="Büyük harflerle, virgülle ayır.">
-            <input className="text-field" aria-label="İşlem pariteleri" value={risk.allowed_symbols.join(", ")}
-              onChange={e=>change("allowed_symbols",e.target.value.split(",").map(s=>s.trim().toUpperCase()).filter(Boolean))}/></Row>
+        {section==="bot"&&<section className="surface form" aria-label="Bot yönetimi">
+          <div className="section-title"><div><h2>Bot Yönetimi</h2><p>Worker durumu kalıcı lease ve güncel heartbeat ile doğrulanır.</p></div></div>
+          <div className="warning"><CirclePause size={19}/><div><strong>Başlatma devre dışı.</strong> Supervisor emir yetkisi vermez. Durdurma isteği, worker yanıt verene kadar tamamlanmış sayılmaz.</div></div>
+          <PaperWorkerSupervisor connected={connected} apiAddress={address} token={secret}/>
+          <PaperDashboardOverview connected={connected} apiAddress={address} token={secret}/>
         </section>}
-        {section==="risk"&&<section className="surface form">
-          <div className="section-title"><div><h2>Risk Yönetimi</h2><p>Spot ve Futures bütçelerini ayrı yönet.</p></div>{saveButton}</div>
-          <h3>Sanal Sermaye</h3>
-          <div className="field-grid">
-            <Row label="Spot bütçesi" desc="0 – 1.000.000 USDT"><NumberBox label="Spot bütçesi (USDT)" unit="USDT" value={risk.spot_capital_usdt} min={0} max={1000000} onChange={v=>change("spot_capital_usdt",v)}/></Row>
-            <Row label="Futures bütçesi" desc="0 – 1.000.000 USDT"><NumberBox label="Futures bütçesi (USDT)" unit="USDT" value={risk.futures_capital_usdt} min={0} max={1000000} onChange={v=>change("futures_capital_usdt",v)}/></Row>
-          </div>
-          <h3>Risk Limitleri</h3><div className="field-grid">
-            <Row label="İşlem başına risk" desc="%0,05 – %2"><NumberBox label="İşlem başına risk (%)" unit="%" step={0.05} min={0.05} max={2} value={risk.risk_per_trade_pct} onChange={v=>change("risk_per_trade_pct",v)}/></Row>
-            <Row label="Günlük zarar sınırı" desc="%0,1 – %5"><NumberBox label="Günlük zarar sınırı (%)" unit="%" step={0.1} min={0.1} max={5} value={risk.daily_loss_limit_pct} onChange={v=>change("daily_loss_limit_pct",v)}/></Row>
-            <Row label="Maksimum düşüş" desc="%1 – %15"><NumberBox label="Maksimum düşüş (%)" unit="%" min={1} max={15} value={risk.max_drawdown_pct} onChange={v=>change("max_drawdown_pct",v)}/></Row>
-            <Row label="Açık pozisyon sayısı" desc="1 – 10"><NumberBox label="Açık pozisyon sayısı" min={1} max={10} value={risk.max_open_positions} onChange={v=>change("max_open_positions",v)}/></Row>
-            <Row label="Maksimum kaldıraç" desc="Spot: 1×, sanal Futures: 1–5×"><NumberBox label="Maksimum kaldıraç (×)" unit="×" min={1} max={risk.market_type==="spot"?1:5} value={risk.max_leverage} onChange={v=>change("max_leverage",v)}/></Row>
-          </div>
-          <Row label="Stop-loss zorunlu" desc="Güvenlik gereği kapatılamaz."><Switch label="Stop-loss zorunlu" value={true} onChange={()=>{}} disabled/></Row>
+        {section==="risk"&&<section className="surface form" aria-label="Risk yönetimi">
+          <div className="section-title"><div><h2>Risk Yönetimi</h2><p>RiskGuard bağımsız koruma katmanıdır; arayüzdeki seçim onun denetimini değiştiremez.</p></div></div>
+          <RiskCapabilitiesPanel connected={connected} apiAddress={address} token={secret}/>
+          <h3>PAPER bütçe ve defter kaynağı</h3><p>Başlangıç sermayesi ve kullanılabilir nakit yalnızca kaydedilmiş PAPER ledger üzerinden okunur. Bu ekran sermaye değerini değiştirmez.</p>
+          <PaperDashboardOverview connected={connected} apiAddress={address} token={secret}/>
+          <p>Spot dışındaki yürütme ve Futures ayarları bu arayüzde pasiftir.</p>
+        </section>}
+        {section==="ai"&&<section className="surface form" aria-label="AI araştırma kayıtları">
+          <div className="section-title"><div><h2>AI Araştırma Kayıtları</h2><p>Model tahminleri araştırma verisidir; işlem garantisi veya onaylı sinyal değildir.</p></div></div>
+          <div className="warning"><BrainCircuit size={19}/><div>Scheduler kapalıdır. Bu ekran emir yürütmesini etkinleştiremez.</div></div>
+          <AiResearchPanel connected={connected} apiAddress={address} token={secret}/>
         </section>}
         {section==="logs"&&<section className="surface form">
           <div className="section-title"><div><h2>Kaydedilmiş Ayar Değişiklikleri</h2>
@@ -393,11 +363,6 @@ export default function Dashboard() {
             </div>}
         </section>}
         {section==="positions"&&<PaperSpotLedger connected={connected} apiAddress={address} token={secret}/>}
-        {section==="strategies"&&<section className="surface empty-page">
-          <FileClock size={34}/><h2>Bu modül henüz geliştirme aşamasında</h2>
-          <p>İşlem ve performans verileri uydurulmaz. Sonraki paketlerde açılacak.</p>
-          <button className="button outline" onClick={()=>setSection("dashboard")}>Genel Bakışa Dön</button>
-        </section>}
         <footer>TradePilot · Local Development · Gerçek işlemler kapalı</footer>
       </div>
     </main>

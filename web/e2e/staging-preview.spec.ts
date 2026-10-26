@@ -58,6 +58,42 @@ test("staging UI only renders persisted PAPER data from an explicitly mock API",
   await expect(page.getByRole("heading",{name:"Güvenli oturum aç"})).toBeVisible();
 });
 
+test("staging session material is not persisted in browser storage or URL", async ({page}) => {
+  test.skip(
+    process.env.NEXT_PUBLIC_TP_STAGING_PREVIEW !== "enabled",
+    "Only for the opt-in staging viewer build",
+  );
+  const passwordMarker = "synthetic-password-not-for-storage";
+  await page.route("https://api.staging.example/api/v1/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    const body = path.endsWith("/auth/login")
+      ? {role:"viewer",csrf_token:"b".repeat(64)}
+      : {mode:"paper",source:"persisted_paper_spot",initialized:false,account:null,
+        total_positions:0,open_positions:0,total_events:0,positions:[],events:[],
+        worker:{requested_enabled:false,process_verified_running:false,
+          last_status:null,last_attempt_at_ms:null,next_allowed_at_ms:null}};
+    await route.fulfill({status:200,headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body)});
+  });
+  await page.goto("/");
+  await page.getByLabel("Parola").fill(passwordMarker);
+  await page.getByRole("button",{name:"Giriş yap"}).click();
+  await expect(page.getByText("Henüz PAPER hesap verisi bulunmuyor")).toBeVisible();
+  const browserState = await page.evaluate(() => ({
+    localEntries:localStorage.length,
+    sessionEntries:sessionStorage.length,
+    url:location.href,
+    search:location.search,
+    hash:location.hash,
+  }));
+  expect(browserState.localEntries).toBe(0);
+  expect(browserState.sessionEntries).toBe(0);
+  expect(browserState.search).toBe("");
+  expect(browserState.hash).toBe("");
+  expect(browserState.url).not.toContain(passwordMarker);
+  expect(browserState.url).not.toContain("b".repeat(64));
+});
+
 
 
 test("staging formats persisted Decimal USDT balances without exposing fractional zero tails", async ({page}) => {

@@ -29,7 +29,14 @@ function stagingOnly() {
   test.skip(process.env.NEXT_PUBLIC_TP_STAGING_PREVIEW !== "enabled",
     "Only the isolated preview browser build");
 }
-async function mockConsole(page:Page, role:"viewer"|"operator", onWrite?:(body:unknown,head:Record<string,string>)=>void) {
+async function mockConsole(
+  page:Page,
+  role:"viewer"|"operator",
+  onWrite?:(body:unknown,head:Record<string,string>)=>void,
+  researchBody:unknown={available:false,source:"isolated_ai_research_store",status:"unavailable",
+    server_time:"2026-10-23T00:00:00Z",predictions:[],metrics_available:false,
+    metrics_reason:"research_store_not_configured"},
+) {
   await page.route(ORIGIN + "/api/v1/**", async route=>{
     const request=route.request();
     const url=new URL(request.url());
@@ -56,6 +63,12 @@ async function mockConsole(page:Page, role:"viewer"|"operator", onWrite?:(body:u
           body={version:2,settings:posted.settings};
         }
       } else body={version:1,settings};
+    } else if(url.pathname.endsWith("/risk/profiles")){
+      body={available:false,selectable:false,reason:"isolated_risk_store_not_configured",
+        active_profile_version:null,active_risk_level:null,runtime_revision:null,
+        bot_state:"STOPPED",schema_version:null,limits:null};
+    } else if(url.pathname.endsWith("/ai/research/predictions")){
+      body=researchBody;
     } else if(url.pathname.endsWith("/audit")){
       body={events:[{version:1,action:"settings_updated",created_at:"2026-10-22T08:00:00Z"}]};
     } else {status=404;body={detail:"Not Found"};}
@@ -95,8 +108,15 @@ for(const width of [360,390,768,1280]){
     await expect(page.getByRole("button",{name:/botu başlat/i})).toHaveCount(0);
     await nav(page,"Risk Yönetimi",width);
     await expect(page.getByRole("heading",{name:"Risk Yönetimi"})).toBeVisible();
-    await expect(page.getByText("Bot çalışma tercihi")).toBeVisible();
+    await expect(page.getByText(/RiskGuard profili kullanılamıyor/)).toBeVisible();
+    await expect(page.getByText(/uygulama ayarları RiskGuard profili yerine geçmez/)).toBeVisible();
     await expect(page.getByRole("button",{name:"Onaylı PAPER riskini kaydet"})).toHaveCount(0);
+    await expect(page.getByLabel(/İşlem başı tahmini risk/)).toHaveCount(0);
+    await nav(page,"AI Araştırma",width);
+    await expect(page.getByRole("heading",{name:"AI Araştırma"})).toBeVisible();
+    await expect(page.getByText("RESEARCH ONLY — NOT APPROVED").first()).toBeVisible();
+    await expect(page.getByText(/Araştırma deposu kullanılamıyor/)).toBeVisible();
+    await expect(page.getByText("Prospektif araştırma kaydı yok; tahmin üretilmez.")).toBeVisible();
     await nav(page,"Olay Kayıtları",width);
     await expect(page.getByRole("heading",{name:"Ayar Olay Kayıtları"})).toBeVisible();
     await expect(page.getByText("Ayarlar güncellendi")).toBeVisible();
@@ -108,34 +128,38 @@ for(const width of [360,390,768,1280]){
   });
 }
 
-test("BT-009H operator uses explicit approval, version and CSRF for paper risk only",async ({page})=>{
+test("staging cannot present legacy app settings as an independent RiskGuard profile",async ({page})=>{
   stagingOnly();
   await page.setViewportSize({width:1280,height:900});
-  let writes=0;
-  await mockConsole(page,"operator",(body,head)=>{
-    writes++;
-    const data=body as {expected_version:number;settings:typeof settings};
-    expect(data.expected_version).toBe(1);
-    expect(data.settings.risk_per_trade_pct).toBe(0.35);
-    expect(data.settings.bot_enabled).toBe(false);
-    expect(data.settings.manual_approval).toBe(true);
-    expect(data.settings.mode).toBe("paper");
-    expect(head["x-csrf-token"]).toBe("a".repeat(64));
-    expect(head["x-paper-settings-approval"]).toBe("PAPER_SETTINGS_ONLY");
-    expect(head["x-admin-token"]).toBeUndefined();
-  });
+  let settingsWrites=0;
+  await mockConsole(page,"operator",()=>{settingsWrites++;});
   await login(page,"operator");
   await nav(page,"Risk Yönetimi",1280);
   await expect(page.getByRole("heading",{name:"Risk Yönetimi"})).toBeVisible();
-  const button=page.getByRole("button",{name:"Onaylı PAPER riskini kaydet"});
-  await expect(button).toBeDisabled();
-  await page.getByRole("spinbutton",{name:/İşlem başı tahmini risk/}).fill("0.35");
-  await expect(button).toBeDisabled();
-  expect(writes).toBe(0);
-  await page.getByRole("checkbox",{name:/Yalnız PAPER risk sınırlarını/}).check();
-  await expect(button).toBeEnabled();
-  await button.click();
-  await expect(page.getByRole("status")).toContainText("PAPER risk ayarları sunucuda kaydedildi.");
-  expect(writes).toBe(1);
-  await expect(page.getByRole("checkbox",{name:/Yalnız PAPER risk sınırlarını/})).not.toBeChecked();
+  await expect(page.getByText(/RiskGuard profili kullanılamıyor/)).toBeVisible();
+  await expect(page.getByRole("button",{name:/risk.*kaydet/i})).toHaveCount(0);
+  await expect(page.getByRole("spinbutton")).toHaveCount(0);
+  expect(settingsWrites).toBe(0);
+});
+
+test("staging research receipt keeps provenance and approval status explicit",async ({page})=>{
+  stagingOnly();
+  const prediction={signal_id:"fixture_signal_0001",model_version:"fixture-model-v1",
+    artifact_sha256:"a".repeat(64),feature_schema_version:"1.0",
+    feature_sha256:"b".repeat(64),symbol:"ETHUSDT",interval:"15m",action:"NO_TRADE",
+    reason_code:"fixture_only",observed_close_at_ms:1800000000000,
+    received_at_ms:1800000001000,outcome_due_at_ms:1800000900000,
+    probabilities:{win:0.2,loss:0.2,flat:0.6},outcome:null,evaluated_at_ms:null,
+    outcome_source_sha256:null,approval_status:"RESEARCH_ONLY_NOT_APPROVED"};
+  await mockConsole(page,"viewer",undefined,{available:true,source:"isolated_ai_research_store",
+    status:"available",server_time:"2027-01-15T08:00:02Z",predictions:[prediction],
+    metrics_available:false,metrics_reason:"no_persisted_evaluation_metrics"});
+  await login(page,"viewer");
+  await nav(page,"AI Araştırma",1280);
+  await expect(page.getByText("ETHUSDT · 15m")).toBeVisible();
+  await expect(page.getByText("NO_TRADE")).toBeVisible();
+  await expect(page.getByText("fixture-model-v1 · 1.0")).toBeVisible();
+  await expect(page.getByText(/flat: 0.6/)).toBeVisible();
+  await expect(page.getByText("RESEARCH ONLY — NOT APPROVED").first()).toBeVisible();
+  await expect(page.getByText(/no_persisted_evaluation_metrics/)).toBeVisible();
 });

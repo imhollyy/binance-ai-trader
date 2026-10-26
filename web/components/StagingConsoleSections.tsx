@@ -24,6 +24,25 @@ type RiskSettings = {
   manual_approval: boolean; allowed_symbols: string[];
 };
 type SettingsSnapshot = {version: number; settings: RiskSettings};
+type RiskProfileView = {
+  available: boolean; selectable: boolean; reason: string;
+  active_profile_version: number|null; active_risk_level: number|null;
+  runtime_revision: number|null; bot_state: string;
+  schema_version: string|null; limits: Record<string, unknown>|null;
+};
+type ResearchPrediction = {
+  signal_id: string; model_version: string; artifact_sha256: string;
+  feature_schema_version: string; feature_sha256: string;
+  symbol: string; interval: string; action: string; reason_code: string;
+  observed_close_at_ms: number; received_at_ms: number; outcome_due_at_ms: number;
+  probabilities: Record<string,string|number>|null; outcome: string|null;
+  evaluated_at_ms: number|null; outcome_source_sha256: string|null;
+  approval_status: string;
+};
+type ResearchView = {
+  available: boolean; source: string; status: string; server_time: string;
+  predictions: ResearchPrediction[]; metrics_available: boolean; metrics_reason: string;
+};
 type AuditLog = {events: Array<{version:number;action:string;created_at:string}>};
 type WorkerRecord = {
   requested_enabled: boolean|null; process_verified_running: false;
@@ -71,10 +90,36 @@ function safeAudit(value: AuditLog): boolean {
       e.action === "settings_updated" && typeof e.created_at === "string" &&
       Number.isFinite(Date.parse(e.created_at)));
 }
-function validNumber(value: string, min: number, max: number): boolean {
-  if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)) return false;
-  const n = Number(value);
-  return Number.isFinite(n) && n >= min && n <= max;
+function safeResearch(value: ResearchView): boolean {
+  return typeof value?.available === "boolean" &&
+    value.source === "isolated_ai_research_store" &&
+    value.status === (value.available ? "available" : "unavailable") &&
+    Number.isFinite(Date.parse(value.server_time)) &&
+    typeof value.metrics_available === "boolean" && typeof value.metrics_reason === "string" &&
+    Array.isArray(value.predictions) && value.predictions.length <= 30 &&
+    value.predictions.every(row => typeof row.signal_id === "string" &&
+      typeof row.model_version === "string" && typeof row.artifact_sha256 === "string" &&
+      /^[0-9a-f]{64}$/.test(row.artifact_sha256) &&
+      typeof row.feature_schema_version === "string" &&
+      /^[0-9a-f]{64}$/.test(row.feature_sha256) &&
+      typeof row.reason_code === "string" &&
+      ["BTCUSDT","ETHUSDT"].includes(row.symbol) &&
+      ["1m","5m","15m"].includes(row.interval) &&
+      ["BUY","SELL","HOLD","NO_TRADE"].includes(row.action) &&
+      [row.observed_close_at_ms,row.received_at_ms,row.outcome_due_at_ms]
+        .every(time => Number.isSafeInteger(time) && time >= 0) &&
+      (row.evaluated_at_ms === null ||
+        (Number.isSafeInteger(row.evaluated_at_ms) && row.evaluated_at_ms >= 0)) &&
+      (row.outcome === null || typeof row.outcome === "string") &&
+      (row.outcome_source_sha256 === null || /^[0-9a-f]{64}$/.test(row.outcome_source_sha256)) &&
+      (row.probabilities === null || (typeof row.probabilities === "object" &&
+        ["win","loss","flat"].every(key => {
+          const probability = row.probabilities?.[key];
+          const parsed = typeof probability === "string" || typeof probability === "number"
+            ? Number(probability) : Number.NaN;
+          return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1;
+        }))) &&
+      row.approval_status === "RESEARCH_ONLY_NOT_APPROVED");
 }
 function utc(value: number | string): string {
   const date = typeof value === "number" ? new Date(value) : new Date(value);
@@ -82,37 +127,36 @@ function utc(value: number | string): string {
 }
 
 export default function StagingConsoleSections({
-  section, base, role, csrf, onExpired,
+  section, base, onExpired,
 }: {
-  section: DetailSection; base: string; role: string; csrf: string; onExpired: () => void;
+  section: DetailSection; base: string; onExpired: () => void;
 }) {
   const [symbol, setSymbol] = useState<SpotSymbol>("BTCUSDT");
   const [interval, setInterval] = useState<SpotInterval>("1m");
   const [reload, setReload] = useState(0);
   const [market, setMarket] = useState<MarketHistory|null>(null);
   const [settings, setSettings] = useState<SettingsSnapshot|null>(null);
+  const [riskProfile, setRiskProfile] = useState<RiskProfileView|null>(null);
+  const [research, setResearch] = useState<ResearchView|null>(null);
   const [audit, setAudit] = useState<AuditLog|null>(null);
   const [worker, setWorker] = useState<WorkerRecord|null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [approval, setApproval] = useState(false);
-  const [riskTrade, setRiskTrade] = useState("");
-  const [riskDay, setRiskDay] = useState("");
-  const [riskDrawdown, setRiskDrawdown] = useState("");
 
   useEffect(() => {
-    if (section === "strategies") {setLoading(false); return;}
     const controller = new AbortController();
     async function load() {
       setLoading(true); setMessage("");
       setMarket(null); setSettings(null); setAudit(null); setWorker(null);
-      setApproval(false);
+      setRiskProfile(null); setResearch(null);
       const query = new URLSearchParams({symbol, interval,limit:"30"});
       const endpoint = section === "market" ? "/api/v1/market/candles?" + query.toString()
-        : section === "logs" ? "/api/v1/audit?limit=30" : "/api/v1/settings";
+        : section === "logs" ? "/api/v1/audit?limit=30"
+        : section === "strategies" ? "/api/v1/ai/research/predictions?limit=30"
+        : "/api/v1/settings";
       try {
-        const response = await fetch(base + endpoint, {
+        const response = await fetch(base + (section === "risk"
+          ? "/api/v1/risk/profiles" : endpoint), {
           credentials:"include", cache:"no-store", signal:controller.signal,
         });
         if (response.status === 401) {
@@ -130,6 +174,23 @@ export default function StagingConsoleSections({
           const events = data as AuditLog;
           if (!safeAudit(events)) throw new Error("Denetim günlüğü doğrulanamadı.");
           setAudit(events);
+        } else if (section === "risk") {
+          const profile = data as RiskProfileView;
+          if (typeof profile.available !== "boolean" ||
+              typeof profile.selectable !== "boolean" || typeof profile.reason !== "string" ||
+              (profile.active_profile_version !== null &&
+                !Number.isSafeInteger(profile.active_profile_version)) ||
+              (profile.active_risk_level !== null &&
+                (!Number.isSafeInteger(profile.active_risk_level) ||
+                  profile.active_risk_level < 1 || profile.active_risk_level > 5)) ||
+              (profile.limits !== null && typeof profile.limits !== "object")) {
+            throw new Error("Bağımsız RiskGuard profili doğrulanamadı.");
+          }
+          setRiskProfile(profile);
+        } else if (section === "strategies") {
+          const view = data as ResearchView;
+          if (!safeResearch(view)) throw new Error("AI araştırma veri sözleşmesi doğrulanamadı.");
+          setResearch(view);
         } else {
           const snapshot = data as SettingsSnapshot;
           if (!isSettings(snapshot)) throw new Error("PAPER ayarları doğrulanamadı.");
@@ -145,9 +206,6 @@ export default function StagingConsoleSections({
             if (controller.signal.aborted) return;
             setWorker(workerResult.worker);
           }
-          setRiskTrade(String(snapshot.settings.risk_per_trade_pct));
-          setRiskDay(String(snapshot.settings.daily_loss_limit_pct));
-          setRiskDrawdown(String(snapshot.settings.max_drawdown_pct));
         }
       } catch (error) {
         if (!controller.signal.aborted) setMessage(error instanceof Error ? error.message : "Bağlantı hatası.");
@@ -159,61 +217,50 @@ export default function StagingConsoleSections({
     return () => controller.abort();
   }, [base, section, symbol, interval, reload, onExpired]);
 
-  const validRisks = validNumber(riskTrade, 0.05, 2) &&
-    validNumber(riskDay, 0.1, 5) && validNumber(riskDrawdown, 1, 15);
-
-  async function savePaperRisk() {
-    if (saving || role !== "operator" || !approval || !validRisks || !settings ||
-        settings.settings.bot_enabled || !settings.settings.manual_approval) return;
-    setSaving(true); setMessage("");
-    try {
-      const candidate: RiskSettings = {
-        ...settings.settings,
-        // Safeguard: never enable worker or Futures execution from this web form.
-        bot_enabled:false,
-        risk_per_trade_pct:Number(riskTrade),
-        daily_loss_limit_pct:Number(riskDay),
-        max_drawdown_pct:Number(riskDrawdown),
-      };
-      const response = await fetch(base + "/api/v1/settings", {
-        method:"PUT", credentials:"include", cache:"no-store",
-        headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,
-          "X-Paper-Settings-Approval":"PAPER_SETTINGS_ONLY"},
-        body:JSON.stringify({expected_version:settings.version, settings:candidate}),
-      });
-      if (response.status === 401) {onExpired(); return;}
-      if (response.status === 409) throw new Error("Ayar sürümü değişti. Yenile ve yeniden kontrol et.");
-      if (response.status === 403) throw new Error("Operatör yetkisi veya CSRF onayı reddedildi.");
-      if (response.status === 422) throw new Error("Risk sınırları reddedildi; ayar kaydedilmedi.");
-      if (!response.ok) throw new Error("Ayar kaydedilemedi (HTTP " + response.status + ").");
-      const updated: SettingsSnapshot = await response.json();
-      if (!isSettings(updated) || updated.version !== settings.version + 1 ||
-          updated.settings.bot_enabled !== false) throw new Error("Sunucu ayar doğrulaması başarısız.");
-      setSettings(updated);
-      setMessage("PAPER risk ayarları sunucuda kaydedildi.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Kaydetme hatası.");
-    } finally {
-      setApproval(false); setSaving(false);
-    }
-  }
-
   return <section className="staging-module" aria-label="Seçilen yönetim bölümü">
     <div className="staging-module-heading">
       <div>
         <span className="staging-module-kicker">TRADEPILOT · KAYITLI PAPER</span>
-        <h2>{section === "market" ? "Piyasa Verileri" : section === "bot" ? "Bot Yönetimi" :
-          section === "risk" ? "Risk Yönetimi" : section === "strategies" ? "Stratejiler" :
+      <h2>{section === "market" ? "Piyasa Verileri" : section === "bot" ? "Bot Yönetimi" :
+          section === "risk" ? "Risk Yönetimi" : section === "strategies" ? "AI Araştırma" :
           "Ayar Olay Kayıtları"}</h2>
       </div>
       {section !== "strategies" && <button type="button" className="staging-secondary"
-        disabled={loading || saving} onClick={() => setReload(v => v+1)}>Verileri yenile</button>}
+        disabled={loading} onClick={() => setReload(v => v+1)}>Verileri yenile</button>}
     </div>
-    {section === "strategies" ? <div className="staging-empty">
-      SMA çaprazlama ve kapalı mum sinyal denemeleri geliştirme ortamında mevcut.
-      Bu özel beta ekranında çalışan otomatik AI stratejisi veya kârlılık sonucu yok.
-      Otomatik worker ve gerçek emirler kapalıdır.
-    </div> : <>
+    {section === "strategies" ? <>
+      <p className="ai-research-badge">RESEARCH ONLY — NOT APPROVED</p>
+      <p>Prospektif kayıtlar yalnız araştırmadır; işlem sinyali veya onay değildir.</p>
+      {loading && <p role="status" className="staging-muted">AI araştırma kayıtları okunuyor…</p>}
+      {message && <p role="status" className="staging-notice">{message}</p>}
+      {research && <>
+        <p role="status" className="staging-muted">{research.available
+          ? `Kaynak: ${research.source} · Sunucu zamanı: ${utc(research.server_time)}`
+          : `Araştırma deposu kullanılamıyor (${research.metrics_reason}); kayıt gösterilmedi.`}</p>
+        <p>Kalibrasyon/Brier/log loss ölçümü: {research.metrics_available
+          ? "kayıtlı değerlendirme mevcut" : `mevcut değil (${research.metrics_reason})`}</p>
+        {research.predictions.length === 0
+          ? <p className="staging-empty">Prospektif araştırma kaydı yok; tahmin üretilmez.</p>
+          : <div className="staging-table-wrap"><table className="staging-table">
+            <thead><tr><th scope="col">Varlık / aralık</th><th scope="col">Yön</th>
+              <th scope="col">Model / şema</th><th scope="col">Gözlem / kayıt (UTC)</th>
+              <th scope="col">Olasılıklar</th><th scope="col">Prospektif sonuç</th>
+              <th scope="col">Durum</th></tr></thead>
+            <tbody>{research.predictions.map(row => <tr key={row.signal_id}>
+              <td>{row.symbol} · {row.interval}</td><td>{row.action}</td>
+              <td>{row.model_version} · {row.feature_schema_version}</td>
+              <td>{utc(row.observed_close_at_ms)} · {utc(row.received_at_ms)}
+                <small> Veri yaşı: {Math.max(0, Math.floor((Date.parse(research.server_time) - row.received_at_ms) / 1000))} sn</small></td>
+              <td>{row.probabilities
+                ? Object.entries(row.probabilities).map(([key,value]) => `${key}: ${value}`).join(" · ")
+                : "kaydedilmemiş"} · kalibrasyon doğrulanmadı</td>
+              <td>{row.outcome ?? "beklemede"} · vade {utc(row.outcome_due_at_ms)}</td>
+              <td>RESEARCH ONLY — NOT APPROVED</td>
+            </tr>)}</tbody></table></div>}
+      </>}
+      <button type="button" className="staging-secondary" disabled={loading}
+        onClick={() => setReload(v => v+1)}>Araştırma kayıtlarını yenile</button>
+    </> : <>
       {loading && <p role="status" className="staging-muted">Kaydedilmiş veriler okunuyor…</p>}
       {message && <p role="status" className="staging-notice">{message}</p>}
       {section === "market" && <>
@@ -247,7 +294,20 @@ export default function StagingConsoleSections({
           {market.candles.length === 0 && <p className="staging-empty">Kayıtlı mum bulunamadı; fiyat uydurulmaz.</p>}
         </>}
       </>}
-      {(section === "bot" || section === "risk") && settings && <>
+      {section === "risk" && riskProfile && <>
+        <h3>Bağımsız RiskGuard profili</h3>
+        {riskProfile.available ? riskProfile.active_profile_version === null
+          ? <p role="status" className="staging-empty">RiskGuard deposu erişilebilir, ancak kullanıcı onaylı etkin profil yok. Seviyeler 1–5 seçilemez.</p>
+          : <div className="staging-keyvalues">
+            <div><span>Risk seviyesi</span><strong>{riskProfile.active_risk_level ?? "—"}</strong></div>
+            <div><span>Profil sürümü</span><strong>{riskProfile.active_profile_version}</strong></div>
+            <div><span>Şema sürümü</span><strong>{riskProfile.schema_version ?? "—"}</strong></div>
+            <div><span>Bot durumu</span><strong>{riskProfile.bot_state}</strong></div>
+          </div>
+          : <p role="status" className="staging-empty">Bağımsız RiskGuard profili kullanılamıyor ({riskProfile.reason}). Risk seviyesi seçimi kapalı; uygulama ayarları RiskGuard profili yerine geçmez.</p>}
+        <p className="staging-data-warning">Bu özel önizleme RiskGuard limitlerini etkinleştirmez veya değiştirmez. Profil yönetimi izole RiskGuard deposu, kullanıcı onayı ve backend sürüm denetimi doğrulanınca açılabilir.</p>
+      </>}
+      {section === "bot" && settings && <>
         <div className="staging-keyvalues">
           <div><span>İşlem modu</span><strong>PAPER · Gerçek emir yok</strong></div>
           <div><span>Bot çalışma tercihi</span><strong>{settings.settings.bot_enabled ? "Etkinleştirme istenmiş (çalışıyor kanıtı yok)" : "Kapalı"}</strong></div>
@@ -271,38 +331,6 @@ export default function StagingConsoleSections({
             tercihi, çalışan bir işlem sürecinin kanıtı değildir. Bu ekranda
             otomatik bot başlatma veya gerçek Binance emir yetkisi bulunmaz.
             İlk otomatik PAPER denemesi yalnızca yerel bilgisayarda ayrı onayla başlatılır.</p>
-        </>}
-        {section === "risk" && <>
-          <h3>Risk sınırları</h3>
-          <div className="staging-risk-grid">
-            <label>İşlem başı tahmini risk (%) <small>0,05 – 2</small>
-              <input type="number" min="0.05" max="2" step="0.05" value={riskTrade}
-                readOnly={role !== "operator"} onChange={e=>setRiskTrade(e.target.value)}/>
-            </label>
-            <label>Günlük sanal zarar sınırı (%) <small>0,1 – 5</small>
-              <input type="number" min="0.1" max="5" step="0.1" value={riskDay}
-                readOnly={role !== "operator"} onChange={e=>setRiskDay(e.target.value)}/>
-            </label>
-            <label>Maksimum sanal düşüş (%) <small>1 – 15</small>
-              <input type="number" min="1" max="15" step="0.5" value={riskDrawdown}
-                readOnly={role !== "operator"} onChange={e=>setRiskDrawdown(e.target.value)}/>
-            </label>
-          </div>
-          <p className="staging-data-warning">Stop-loss zorunlu. Stop seviyeleri simülasyon
-            varsayımıdır ve otomatik stop emri oluşturmaz. Açık pozisyon limiti:
-            {settings.settings.max_open_positions}. Gerçekleşmiş zarar limiti güvence değildir.</p>
-          {role === "operator" && <div className="staging-settings-action">
-            {settings.settings.bot_enabled || !settings.settings.manual_approval
-              ? <p role="alert">Bot kapalı ve manuel onay zorunlu olmadıkça web'den risk kaydı yapılamaz.</p>
-              : <>
-                <label><input type="checkbox" checked={approval} onChange={e=>setApproval(e.target.checked)}/>
-                  Yalnız PAPER risk sınırlarını değiştirdiğimi ve otomatik bot başlatmadığımı onaylıyorum.
-                </label>
-                <button type="button" disabled={saving || loading || !approval || !validRisks}
-                  onClick={()=>void savePaperRisk()}>{saving ? "Kaydediliyor…" : "Onaylı PAPER riskini kaydet"}</button>
-              </>}
-          </div>}
-          {role !== "operator" && <p className="staging-muted">Görüntüleyici yalnızca okuyabilir; risk ayarı değiştiremez.</p>}
         </>}
       </>}
       {section === "logs" && audit && (audit.events.length === 0

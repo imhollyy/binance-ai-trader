@@ -2,22 +2,26 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import UTC, datetime
 from decimal import Decimal
 from hmac import compare_digest
 from os import environ
+from typing import Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import Engine, create_engine, select, text, update
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from binance_ai_trader.ai_paper_bot_controls_test import is_disposable_control_http_test
+from binance_ai_trader.ai_research_read_api import register_ai_research_read_route
 from binance_ai_trader.api_config import ApiConfig
 from binance_ai_trader.manual_paper_api import register_manual_paper_route
 from binance_ai_trader.models import (
@@ -29,8 +33,17 @@ from binance_ai_trader.models import (
 )
 from binance_ai_trader.paper_bot_control_test_api import register_bot_control_test_routes
 from binance_ai_trader.paper_dashboard_api import register_paper_dashboard_route
+from binance_ai_trader.paper_observation_manager import PaperObservationProcessManager
 from binance_ai_trader.paper_read_api import register_paper_spot_read_route
+from binance_ai_trader.paper_supervisor import (
+    SupervisorRejected,
+    observer_start_enabled,
+    read_worker_status,
+    request_worker_stop,
+)
 from binance_ai_trader.preview_preflight import verify_preview_environment
+from binance_ai_trader.risk_capabilities_api import register_risk_capabilities_route
+from binance_ai_trader.risk_profiles_api import register_risk_profiles_route
 from binance_ai_trader.risk_schemas import RiskSettings, SettingsSnapshot, SettingsUpdate
 from binance_ai_trader.staging_auth import StagingAccess
 from binance_ai_trader.staging_observability import StagingObservabilityMiddleware
@@ -74,10 +87,38 @@ class RuntimeStatus(BaseModel):
     live_orders_supported: bool = False
 
 
+class WorkerStatusView(BaseModel):
+    state: str
+    revision: int
+    worker_id: str | None
+    heartbeat_at_ms: int | None
+    lease_until_ms: int | None
+    verified_running: bool
+    stale: bool
+    start_supported: bool = False
+    generation: int = 0
+    manager_id: str | None = None
+    process_pid: int | None = None
+    process_manager_verified: bool = False
+    observation_only: bool = False
+
+
+class WorkerStopRequest(BaseModel):
+    expected_revision: int
+    expected_generation: int | None = None
+
+
+class WorkerStartRequest(BaseModel):
+    expected_revision: int
+    mode: Literal["OBSERVATION_ONLY"]
+
+
 def create_app(
     *,
     config: ApiConfig | None = None,
     engine: Engine | None = None,
+    risk_engine: Engine | None = None,
+    research_engine: Engine | None = None,
 ) -> FastAPI:
     """Create a localhost-only dev API; never connects to an exchange."""
 
@@ -86,7 +127,42 @@ def create_app(
     if db_engine is None and settings.database_url:
         db_engine = create_engine(settings.database_url, pool_pre_ping=True)
 
+    def isolated_engine_from_env(env_key: str, flag: str) -> Engine | None:
+        url = environ.get(env_key)
+        if not url or environ.get(flag) != "1":
+            return None
+        try:
+            parsed = make_url(url)
+            app_database = (
+                make_url(settings.database_url).database if settings.database_url else None
+            )
+            if (
+                parsed.drivername not in ("postgresql", "postgresql+psycopg")
+                or parsed.host not in ("localhost", "127.0.0.1")
+                or parsed.database != "trader_ai_research"
+                or parsed.database == app_database
+            ):
+                return None
+            return create_engine(url, pool_pre_ping=True)
+        except (ValueError, TypeError):
+            return None
+
+    if risk_engine is None:
+        risk_engine = isolated_engine_from_env(
+            "TRADEPILOT_RISK_DATABASE_URL", "TRADEPILOT_RISK_STORE"
+        )
+    if research_engine is None:
+        research_engine = isolated_engine_from_env(
+            "TRADEPILOT_RESEARCH_DATABASE_URL", "TRADEPILOT_RESEARCH_DB"
+        )
+
     staging = settings.auth_mode == "staging"
+    observer_manager: PaperObservationProcessManager | None = None
+    if not staging and db_engine is not None and observer_start_enabled(db_engine):
+        try:
+            observer_manager = PaperObservationProcessManager(db_engine)
+        except SupervisorRejected:
+            observer_manager = None
     staging_access = StagingAccess(settings, db_engine) if staging else None
     app = FastAPI(
         title="Binance AI Trader — Paper API",
@@ -101,11 +177,24 @@ def create_app(
             [settings.staging_origin or ""] if staging else list(settings.allowed_origins)
         ),
         allow_credentials=staging,
-        allow_methods=["GET", "POST", "PUT"] if staging else ["GET", "PUT"],
+        allow_methods=(
+            ["GET", "POST", "PUT"] if staging or observer_manager is not None else ["GET", "PUT"]
+        ),
         allow_headers=(
-            ["Content-Type", "X-CSRF-Token", "X-Paper-Settings-Approval"]
+            [
+                "Content-Type",
+                "X-CSRF-Token",
+                "X-Paper-Settings-Approval",
+                "X-Risk-Profile-Approval",
+                "Idempotency-Key",
+            ]
             if staging
-            else ["X-Admin-Token", "Content-Type"]
+            else [
+                "X-Admin-Token",
+                "Content-Type",
+                "X-Risk-Profile-Approval",
+                "Idempotency-Key",
+            ]
         ),
     )
     app.add_middleware(
@@ -371,8 +460,101 @@ def create_app(
                 raise HTTPException(status_code=503, detail="Database unavailable") from exc
         return SettingsSnapshot(version=payload.expected_version + 1, settings=payload.settings)
 
+    register_risk_capabilities_route(app, require_admin, risk_engine, db_engine)
+    register_risk_profiles_route(app, require_admin, require_write, risk_engine, db_engine)
+    register_ai_research_read_route(app, require_admin, research_engine)
     register_paper_spot_read_route(app, require_admin, db_engine)
     register_paper_dashboard_route(app, require_admin, db_engine)
+
+    @app.get(
+        "/api/v1/paper/worker",
+        response_model=WorkerStatusView,
+        dependencies=[Depends(require_admin)],
+    )
+    def get_worker_status(response: Response) -> WorkerStatusView:
+        response.headers["Cache-Control"] = "no-store, private"
+        response.headers["Pragma"] = "no-cache"
+        if db_engine is None:
+            raise HTTPException(status_code=503, detail="Worker status unavailable")
+        try:
+            status = (
+                observer_manager.status() if observer_manager else read_worker_status(db_engine)
+            )
+            return WorkerStatusView(**asdict(status))
+        except SQLAlchemyError as exc:
+            raise HTTPException(status_code=503, detail="Worker status unavailable") from exc
+
+    if observer_manager is not None:
+
+        @app.post(
+            "/api/v1/paper/worker/start",
+            response_model=WorkerStatusView,
+            dependencies=[Depends(require_write)],
+        )
+        def start_observation_worker(
+            payload: WorkerStartRequest,
+            response: Response,
+            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+            x_admin_token: str | None = Header(default=None),
+        ) -> WorkerStatusView:
+            response.headers["Cache-Control"] = "no-store, private"
+            if not idempotency_key or not x_admin_token:
+                raise HTTPException(status_code=422, detail="Idempotency key required")
+            try:
+                result = observer_manager.start(
+                    expected_revision=payload.expected_revision,
+                    idempotency_key=idempotency_key,
+                    actor_token=x_admin_token,
+                )
+                return WorkerStatusView(**asdict(result))
+            except SupervisorRejected as exc:
+                raise HTTPException(status_code=409, detail="Observation start rejected") from exc
+            except SQLAlchemyError as exc:
+                raise HTTPException(status_code=503, detail="Worker status unavailable") from exc
+
+        app.router.on_shutdown.append(observer_manager.shutdown)
+
+    @app.post(
+        "/api/v1/paper/worker/stop",
+        response_model=WorkerStatusView,
+        dependencies=[Depends(require_write)],
+    )
+    def stop_worker(
+        payload: WorkerStopRequest,
+        response: Response,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        x_admin_token: str | None = Header(default=None),
+    ) -> WorkerStatusView:
+        response.headers["Cache-Control"] = "no-store, private"
+        if db_engine is None:
+            raise HTTPException(status_code=503, detail="Worker stop unavailable")
+        if not idempotency_key or not x_admin_token:
+            raise HTTPException(status_code=422, detail="Idempotency key required")
+        try:
+            result = (
+                observer_manager.stop(
+                    expected_revision=payload.expected_revision,
+                    expected_generation=payload.expected_generation or 0,
+                    idempotency_key=idempotency_key,
+                    actor_token=x_admin_token,
+                )
+                if observer_manager is not None
+                else request_worker_stop(
+                    db_engine,
+                    expected_revision=payload.expected_revision,
+                    expected_generation=payload.expected_generation,
+                    idempotency_key=idempotency_key,
+                    actor_token=x_admin_token,
+                )
+            )
+            if result.state == "STOP_REQUESTED":
+                response.status_code = 202
+            return WorkerStatusView(**asdict(result))
+        except SupervisorRejected as exc:
+            raise HTTPException(status_code=409, detail="Worker stop request rejected") from exc
+        except SQLAlchemyError as exc:
+            raise HTTPException(status_code=503, detail="Worker status unavailable") from exc
+
     # Never expose a write route in local development or generic staging.
     # Registration requires exact isolated preview ENV *and* matching config;
     # invalid or missing flags fail closed rather than enabling trade routes.

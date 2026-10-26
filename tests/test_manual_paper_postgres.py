@@ -130,7 +130,9 @@ def _totals(db: Engine) -> tuple[int, int, int, D]:
         )
 
 
-def test_manual_paper_account_consent_replay_quote_audit_and_close(engine: Engine) -> None:
+def test_manual_paper_account_consent_replay_quote_audit_and_close(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
     with Session(engine) as session, session.begin():
         session.add(
             TradingSettingsRow(
@@ -142,6 +144,12 @@ def test_manual_paper_account_consent_replay_quote_audit_and_close(engine: Engin
     with Session(engine) as session:
         ensure_paper_spot_account(session)
     assert _totals(engine) == (0, 1, 0, D("1000"))
+
+    # Explicit test-only RiskGuard fixture: these integration tests exercise
+    # the ledger mechanics, not production authorization wiring.
+    import binance_ai_trader.manual_paper_execution as manual_execution
+
+    monkeypatch.setattr(manual_execution, "require_atomic_riskguard_authorization", lambda: None)
 
     # A non-price request failure, fake/outlier or Binance public 429 must not
     # create a position, journal row or a misleading quote audit.
@@ -214,6 +222,7 @@ def test_preview_risk_change_ledger_consistency_and_subsequent_paper_trades(
     """Fresh staging roles and PAPER journal must survive approved risk edit."""
     from fastapi.testclient import TestClient
 
+    import binance_ai_trader.manual_paper_execution as manual_execution
     from binance_ai_trader.api import create_app
     from binance_ai_trader.api_config import ApiConfig
     from binance_ai_trader.models import AuditRow
@@ -222,6 +231,8 @@ def test_preview_risk_change_ledger_consistency_and_subsequent_paper_trades(
     # Only a disposable migrated localhost trader_manual_test DB is accepted
     # by this module's fixture; NEVER point this test at an owner's preview DB.
     assert SAFE and URL is not None
+    # Test fixture only; production entry authorization remains fail closed.
+    monkeypatch.setattr(manual_execution, "require_atomic_riskguard_authorization", lambda: None)
     monkeypatch.setenv("PRIVATE_PREVIEW_OPT_IN", "isolated-paper-only")
     origin = "https://preview.staging.example"
     view_password = "synthetic-viewer-password-for-bt010b"
@@ -360,6 +371,18 @@ def test_preview_risk_change_ledger_consistency_and_subsequent_paper_trades(
             assert db.scalar(select(func.count()).select_from(PaperSpotJournalRow)) == 5
     finally:
         fresh.dispose()
+
+
+def test_persistent_manual_entry_fails_closed_without_atomic_riskguard(
+    engine: Engine,
+) -> None:
+    before = _totals(engine)
+    with pytest.raises(PaperExecutionRejected, match="riskguard_paper_atomicity_unavailable"):
+        run_manual_paper_once(
+            engine,
+            _request(request_id=UUID("00000000-0000-4000-8000-000000000099")),
+        )
+    assert _totals(engine) == before
 
 
 def test_autopilot_enable_disable_carries_unchanged_virtual_money(engine: Engine) -> None:

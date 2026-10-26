@@ -21,6 +21,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -296,6 +297,90 @@ class PaperSpotObservedQuoteRow(Base):
     fee_bps: Mapped[int] = mapped_column(Integer, nullable=False)
     slippage_bps: Mapped[int] = mapped_column(Integer, nullable=False)
     spread_bps: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PaperEntryAccountEvidenceRow(Base):
+    """Immutable ledger-derived account snapshot tied to one E1 intent."""
+
+    __tablename__ = "paper_entry_account_evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "account_id = 1 AND settings_version >= 1", name="ck_entry_account_evidence_scope"
+        ),
+        CheckConstraint(
+            "journal_head_id >= 1 AND journal_count >= 1", name="ck_entry_account_evidence_journal"
+        ),
+        CheckConstraint(
+            "snapshot_sha256 ~ '^[0-9a-f]{64}$'", name="ck_entry_account_evidence_hash"
+        ).ddl_if(dialect="postgresql"),
+    )
+
+    # Coordinator tables are declared in Alembic SQL, not ORM metadata. Keep
+    # metadata usable by SQLite unit-test fixtures; PostgreSQL migration owns
+    # the actual FK constraint.
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("paper_spot_accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    settings_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    journal_head_id: Mapped[int] = mapped_column(
+        ForeignKey("paper_spot_journal.id", ondelete="RESTRICT"), nullable=False
+    )
+    journal_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PaperEntryMarketEvidenceRow(Base):
+    """Immutable pre-entry public market observations and versioned cost assumptions."""
+
+    __tablename__ = "paper_entry_market_evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "symbol IN ('BTCUSDT','ETHUSDT') AND interval = '1m'", name="ck_entry_market_scope"
+        ),
+        CheckConstraint("source = 'binance_public_spot_coherence'", name="ck_entry_market_source"),
+        CheckConstraint(
+            "observed_at_ms > 0 AND reference_price > 0 AND bid_price > 0 "
+            "AND ask_price > bid_price",
+            name="ck_entry_market_prices",
+        ),
+        CheckConstraint(
+            "spread_bps > 0 AND fee_assumption_bps > 0 AND slippage_assumption_bps > 0",
+            name="ck_entry_market_costs",
+        ),
+        CheckConstraint(
+            "length(fee_assumption_version) BETWEEN 1 AND 64 AND "
+            "length(slippage_assumption_version) BETWEEN 1 AND 64",
+            name="ck_entry_market_assumption_versions",
+        ),
+        CheckConstraint(
+            "cost_evidence_sha256 ~ '^[0-9a-f]{64}$'", name="ck_entry_market_evidence_hash"
+        ).ddl_if(dialect="postgresql"),
+    )
+
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    interval: Mapped[str] = mapped_column(String(5), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    observed_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    reference_price: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
+    bid_price: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
+    ask_price: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
+    spread_bps: Mapped[Decimal] = mapped_column(Numeric(20, 10), nullable=False)
+    fee_assumption_bps: Mapped[Decimal] = mapped_column(Numeric(20, 10), nullable=False)
+    fee_assumption_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    slippage_assumption_bps: Mapped[Decimal] = mapped_column(Numeric(20, 10), nullable=False)
+    slippage_assumption_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    expected_net_advantage_usdt: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
+    cost_evidence_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

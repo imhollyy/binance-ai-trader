@@ -41,6 +41,14 @@ jobs:
           NEXT_PUBLIC_TP_STAGING_PREVIEW: enabled
           NEXT_PUBLIC_STAGING_API_ORIGIN: https://api.staging.example
         run: npx playwright test e2e/staging-preview.spec.ts e2e/staging-console.spec.ts
+      - name: Verify isolated staging production bundle
+        working-directory: web
+        env:
+          NEXT_PUBLIC_TP_STAGING_PREVIEW: enabled
+          NEXT_PUBLIC_STAGING_API_ORIGIN: https://api.staging.example
+        run: |
+          npm run build
+          node scripts/check-staging-bundle.mjs
       - name: Retain responsive chart QA screenshots
         if: always()
         uses: actions/upload-artifact@v4

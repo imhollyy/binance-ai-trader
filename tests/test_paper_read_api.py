@@ -1,6 +1,7 @@
 """Read-only PAPER Spot API never bootstraps balances or exposes orders."""
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -11,7 +12,13 @@ from sqlalchemy.pool import StaticPool
 
 from binance_ai_trader.api import create_app
 from binance_ai_trader.api_config import ApiConfig
-from binance_ai_trader.models import Base, PaperSpotAccountRow, PaperSpotJournalRow
+from binance_ai_trader.models import (
+    Base,
+    PaperSpotAccountRow,
+    PaperSpotJournalRow,
+    PaperSpotObservedQuoteRow,
+    PaperSpotPositionRow,
+)
 
 TOKEN = "paper-read-unit-test-token-with-40-chars"
 
@@ -89,6 +96,90 @@ def test_paper_account_values_are_strings_not_live_equity(
     for forbidden in ("equity", "unrealized_pnl", "net_worth", "live_price", "trade_endpoint"):
         assert forbidden not in body
         assert forbidden not in body["account"]
+
+
+def test_journal_quote_cost_evidence_is_attached_and_missing_spread_stays_unknown(
+    ledger: tuple[TestClient, Session],
+) -> None:
+    client, session = ledger
+    account = PaperSpotAccountRow(
+        id=1,
+        settings_version=1,
+        initial_capital_usdt=Decimal("1000"),
+        cash_usdt=Decimal("900"),
+        realized_pnl_usdt=Decimal("0"),
+        paid_fees_usdt=Decimal("0.1"),
+    )
+    session.add(account)
+    session.flush()
+    session.add(
+        PaperSpotPositionRow(
+            id=1,
+            account_id=1,
+            trade_id="paper-trade-1",
+            idempotency_key="paper-trade-key-1",
+            symbol="BTCUSDT",
+            status="closed",
+            quantity=Decimal("1"),
+            entry_fill_price=Decimal("100"),
+            entry_notional_usdt=Decimal("100"),
+            entry_fee_usdt=Decimal("1"),
+            stop_price=Decimal("95"),
+            estimated_stop_loss_usdt=Decimal("5.1"),
+            exit_fill_price=Decimal("99"),
+            exit_fee_usdt=Decimal("2"),
+            net_proceeds_usdt=Decimal("98.8"),
+            realized_pnl_usdt=Decimal("-13"),
+            opened_at=datetime(2026, 10, 22, tzinfo=UTC),
+            closed_at=datetime(2026, 10, 23, tzinfo=UTC),
+        )
+    )
+    session.flush()
+    event = PaperSpotJournalRow(
+        id=1,
+        account_id=1,
+        position_id=1,
+        event_id="paper-buy-event",
+        idempotency_key="paper-buy-idempotency",
+        event_type="spot_buy",
+        cash_delta_usdt=Decimal("-100"),
+        balance_after_usdt=Decimal("900"),
+        fee_usdt=Decimal("0.1"),
+        realized_pnl_delta_usdt=Decimal("0"),
+        quantity_delta=Decimal("1"),
+    )
+    session.add(event)
+    session.flush()
+    session.add(
+        PaperSpotObservedQuoteRow(
+            id=1,
+            journal_id=1,
+            symbol="BTCUSDT",
+            interval="1m",
+            source="binance_public_spot_ticker_price",
+            signal_close_time_ms=1_800_000_000_000,
+            requested_at_ms=1_800_000_000_100,
+            received_at_ms=1_800_000_000_150,
+            reference_price=Decimal("100"),
+            fee_bps=10,
+            slippage_bps=5,
+            spread_bps=None,
+        )
+    )
+    session.commit()
+
+    response = client.get("/api/v1/paper/spot", headers={"X-Admin-Token": TOKEN})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["events"][0]["quantity_delta"] == "1.000000000000000000"
+    quote = body["events"][0]["observed_quote"]
+    assert quote["reference_price"] == "100.000000000000000000"
+    assert quote["fee_bps"] == 10
+    assert quote["slippage_bps"] == 5
+    assert quote["spread_bps"] is None
+    position = body["positions"][0]
+    assert position["realized_pnl_usdt"] == "-13.000000000000000000"
+    assert position["gross_realized_pnl_usdt"] == "-10.000000000000000000"
 
 
 def test_paper_read_requires_database_and_configured_token() -> None:
