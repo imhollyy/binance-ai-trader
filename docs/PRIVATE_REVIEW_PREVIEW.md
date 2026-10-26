@@ -57,6 +57,31 @@ Stop only the isolated review services and tunnel with:
 This uses Compose `stop`; it does not remove the review database volume. Do not
 run `down -v` or volume prune. It does not target `tradepilot_quick`.
 
+## Reconnect the existing review after a Windows restart
+
+The original ephemeral Cloudflare hostname cannot be reused after its tunnel
+stops. **Do not run the initial Start script again** against this already
+created project. Never delete or prune a database volume to restart.
+
+On the owner PC, update this same PR #107 branch after checking local changes
+with `git status`. Then, from the repository root, run:
+
+```powershell
+.\scripts\Resume-TradePilotReviewPreview.ps1
+```
+
+The resume script requires the exact four existing review containers, their
+existing project-scoped PostgreSQL volume, the original ignored env file,
+and a healthy review DB. It never creates or resets the PAPER account.
+It rejects another active tunnel, creates a new `--allowed-mail` PIN-protected
+Quick Tunnel, rotates only the public Host/Origin while preserving the
+existing hashed passwords and DB secret, and rebuilds only review API/Web/Ingress.
+It verifies the exact local Host, HTTP 401 on the HTTPS-authenticated session
+route without a cookie, and a protected HTTPS edge response. These checks
+do NOT replace the owner's browser email-PIN, viewer-password and logout checks.
+
+On any error, the newly started tunnel is stopped and named DB volumes remain.
+Do not share the ignored env file, credentials, PIN, or local tunnel logs.
 ## Browser acceptance
 
 The review API must trust **only** its Docker ingress `172.30.220.10` for
