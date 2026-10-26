@@ -71,3 +71,16 @@ def test_review_preview_only_accepts_its_own_ignored_environment_filename(
             tmp_path / ".env.preview.quick",
             "local-review-password-with-more-than-16",
         )
+
+
+def test_review_proxy_trust_matches_isolated_ingress_network() -> None:
+    root = Path(__file__).resolve().parents[1]
+    base = (root / "compose.preview.yaml").read_text(encoding="utf-8")
+    review = (root / "compose.preview.review.yaml").read_text(encoding="utf-8")
+
+    # The review overlay replaces the base command: only its own ingress may
+    # assert X-Forwarded-Proto=https for staging auth behind Cloudflare PIN.
+    assert "--forwarded-allow-ips 172.30.210.10" in base
+    assert "ipv4_address: 172.30.220.10" in review
+    assert "--proxy-headers --forwarded-allow-ips 172.30.220.10" in review
+    assert "--forwarded-allow-ips 172.30.210.10" not in review

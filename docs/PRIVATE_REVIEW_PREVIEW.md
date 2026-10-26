@@ -59,6 +59,13 @@ run `down -v` or volume prune. It does not target `tradepilot_quick`.
 
 ## Browser acceptance
 
+The review API must trust **only** its Docker ingress `172.30.220.10` for
+`X-Forwarded-Proto: https`; the normal quick-preview ingress is
+`172.30.210.10` and must not be trusted in this isolated review network.
+A successful local HTTP 200 page response does **not** prove the HTTPS-only
+viewer login path works. Browser PIN/password acceptance still requires the
+owner's manual check after deploying this reviewed commit.
+
 1. Confirm the empty account is presented as empty/unavailable, not fabricated
    capital or P&L.
 2. Check recorded candle timestamps and that historical data is not labeled

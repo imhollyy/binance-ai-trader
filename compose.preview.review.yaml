@@ -7,6 +7,17 @@ services:
 
   preview-api:
     profiles: ["review"]
+    # Override the base preview's 172.30.210.10 proxy trust: this review
+    # ingress uses 172.30.220.10. Otherwise HTTPS-only login fails closed.
+    command:
+      - sh
+      - -c
+      - >-
+        python -m binance_ai_trader.preview_preflight
+        && alembic upgrade head
+        && exec uvicorn binance_ai_trader.api:app
+        --host 0.0.0.0 --port 8000
+        --proxy-headers --forwarded-allow-ips 172.30.220.10 --no-access-log
     networks: !override [review_private]
 
   preview-web:
